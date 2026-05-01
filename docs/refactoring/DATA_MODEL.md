@@ -38,12 +38,12 @@
 }
 ```
 
-## 정규화된 Day 객체
+## 정규화된 Day 객체 (DL.getDay 결과)
 
 ```js
 DL.getDay('2026-04-30') = {
   date: '2026-04-30',
-  thawing: [...],
+  thawing: [...],      // 정규화된 배열
   preprocess: [...],
   cooking: [...],
   shredding: [...],
@@ -51,38 +51,58 @@ DL.getDay('2026-04-30') = {
   outerpacking: [...],
 
   summary: {
-    rmKgByPart: {우둔: 750.6, 홍두깨: 0, 설도: 0},
+    rmKgByPart: {우둔: 750.6},     // 부위별 원육 KG (testRun 제외)
     rmKgTotal: 750.6,
-    pkEaByPart: {우둔: 12772, 홍두깨: 0, 설도: 0},
-    pkEaNoMeat: 4032,
-    meatKgByPart: {우둔: 385.37, 홍두깨: 0, 설도: 0},
+
+    pkEaByPart: {우둔: 12772},     // 부위별 포장 EA (noMeat·testRun 제외)
+    pkEaNoMeat: 4032,              // 무육 제품 포장 EA 합
+    pkEaUnresolved: 0,             // _typeList 빈값 packing의 EA 합 (Step 1.6 후 0)
+
+    meatKgByPart: {우둔: 385.37},  // 부위별 완제품 고기 KG
     meatKgTotal: 385.37,
+
     yields: {
-      원육수율: 0.513,    // meatKgTotal / rmKgTotal
-      공정수율: {
-        전처리: ...,
-        자숙: ...,
-        파쇄: ...,
-        포장: ...
+      원육수율: 0.5134,            // meatKgTotal / rmKgTotal (소수, 0~1)
+      공정수율: {                  // 체인 방식: 각 단계 / 직전 단계
+        전처리: 0.9726,            // ppKg / rmKg
+        자숙:   0.5638,            // ckKg / ppKg
+        파쇄:   0.9038,            // shKg / ckKg
+        포장:   1.0359             // meatKg / shKg
       }
     },
-    workers: {
+
+    noMeatYields: {                // noMeat 제품 메인부재료별
+      메추리알: {
+        theoreticalKg: 362.88,     // EA × subKgea
+        actualKg: 370,             // sum(subKg)
+        yield: 0.9808              // 이론/실제
+      }
+    },
+
+    workers: {                     // 사용자분 룰: 시간겹침 합산, 안겹침 max
       preprocess: 7,
       cooking: 2,
       shredding: 14,
-      packing: 6
+      packing: 12                  // G1(09:15~16:50)=9 vs G2(17~18)=12 → max=12
     },
-    hours: {
-      preprocess: 0.9,
-      cooking: 2.8,
+    hours: {                       // 인터벌 머지 (겹친 시간 1번만)
+      preprocess: 0.92,
+      cooking: 2.83,
       shredding: 1.5,
-      packing: 5.2
-    }
+      packing: 8.58                // (09:15~16:50)+(17:00~18:00) = 7.58+1
+    },
+
+    // 디버깅·검증 보조
+    _ppKgTotal: 730,
+    _ckKgTotal: 411.6,
+    _shKgTotal: 372
   },
 
   validation: {
-    errors: [],
-    warnings: []
+    errors: [],                    // 수율 100% 초과 등 (코드 진입 차단급)
+    warnings: [                    // 부위 미해결 등 (정보용)
+      // {code, msg, ids?, ea?, ...}
+    ]
   }
 }
 ```

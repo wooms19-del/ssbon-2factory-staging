@@ -291,6 +291,300 @@
     return out;
   }
 
+  // ─── 시간 유틸 ────────────────────────────────────────
+  function _t2m(t){
+    if(!t) return null;
+    var p = String(t).split(':');
+    if(p.length < 2) return null;
+    var h = parseInt(p[0], 10), m = parseInt(p[1], 10);
+    if(!isFinite(h) || !isFinite(m)) return null;
+    return h*60 + m;
+  }
+  function _r4(n){ if(!isFinite(+n)) return 0; return Math.round((+n)*10000)/10000; }
+
+  // ─── 인원·시간 계산 (사용자분 룰 적용) ─────────────────
+  // 룰:
+  //   - 시간 = 설비 가동 시간 = 인터벌 머지(겹친 시간 1번만 카운트), 그룹 duration 합
+  //   - 인원 = 시간 겹치는 작업끼리는 합산, 안 겹치면 max (작은 쪽은 옮겨갔다고 봄)
+  //         → "그날 그 공정에 사용된 실제 인원 수"
+  //   - testRun 제외, start/end 빈값 record는 skip
+  function _calcWH(records){
+    var intervals = [];
+    records.forEach(function(r){
+      if(r._isTestRun) return;
+      var s = _t2m(r.start), e = _t2m(r.end);
+      if(s == null || e == null) return;
+      if(e < s) e += 24*60;  // 자정 넘김
+      intervals.push({ s: s, e: e, w: _num(r.workers) });
+    });
+    if(!intervals.length) return { workers: 0, hours: 0 };
+    intervals.sort(function(a,b){ return a.s - b.s; });
+
+    // 그룹핑 (transitive overlap): 시작 시각 < 그룹 내 max(end) → 같은 그룹
+    //   ※ 경계만 맞닿는 케이스(예: 10:00~10:45 + 10:45~11:30)는 "안 겹침"
+    //     → 같은 사람이 이어서 일한 것으로 봐서 max 처리
+    var groups = [[intervals[0]]];
+    var groupMaxEnd = intervals[0].e;
+    for(var i=1; i<intervals.length; i++){
+      var cur = intervals[i];
+      if(cur.s < groupMaxEnd){
+        groups[groups.length-1].push(cur);
+        if(cur.e > groupMaxEnd) groupMaxEnd = cur.e;
+      } else {
+        groups.push([cur]);
+        groupMaxEnd = cur.e;
+      }
+    }
+
+    var groupSums = groups.map(function(g){
+      var sumW = g.reduce(function(s,x){ return s + x.w; }, 0);
+      var minS = Math.min.apply(null, g.map(function(x){return x.s;}));
+      var maxE = Math.max.apply(null, g.map(function(x){return x.e;}));
+      return { workers: sumW, hours: (maxE - minS) / 60 };
+    });
+
+    var totalWorkers = groupSums.reduce(function(m,x){ return Math.max(m, x.workers); }, 0);
+    var totalHours = groupSums.reduce(function(s,x){ return s + x.hours; }, 0);
+    return { workers: totalWorkers, hours: _r2(totalHours) };
+  }
+
+  // ─── 데이터 로드 헬퍼 (L 글로벌 또는 opts override) ───
+  function _loadColl(coll, opts){
+    if(opts && Array.isArray(opts[coll])) return opts[coll];
+    if(typeof L === 'undefined' || !L) return [];
+    return Array.isArray(L[coll]) ? L[coll] : [];
+  }
+
+  // ─── DL.getDay(date) ──────────────────────────────────
+  // 하루치 모든 공정 데이터 + summary + validation
+  // 위험 시나리오 사전 점검:
+  //   - testRun 제외 (DECISIONS 룰)
+  //   - noMeat 제품: 부위 그룹과 완전 분리 (DECISIONS 룰)
+  //   - _typeList 빈값 packing: pkEaUnresolved로 분리, warning
+  //   - multi-type packing: typeKgs 비율로 분배, 비율 못 정하면 균등
+  //   - multi-type thawing (콤마): warning, 첫 부위에 카운트
+  //   - 데이터 없는 공정: 0 처리
+  //   - 모든 record 빈값 (날짜 매칭 0): 빈 day 객체 반환
+  function _getDay(date, opts){
+    date = _trim(date).slice(0, 10);
+    opts = opts || {};
+
+    function filterAndNorm(coll, normFn){
+      return _loadColl(coll, opts)
+        .filter(function(r){ return _trim(r && r.date).slice(0,10) === date; })
+        .map(normFn)
+        .filter(Boolean);
+    }
+
+    var thawing      = filterAndNorm('thawing',      _normalizeThawing);
+    var preprocess   = filterAndNorm('preprocess',   _normalizePreprocess);
+    var cooking      = filterAndNorm('cooking',      _normalizeCooking);
+    var shredding    = filterAndNorm('shredding',    _normalizeShredding);
+    var packing      = filterAndNorm('packing',      _normalizePacking);
+    var outerpacking = filterAndNorm('outerpacking', _normalizeOuterpacking);
+
+    // testRun 제외 헬퍼
+    function ex(arr){ return arr.filter(function(r){ return !r._isTestRun; }); }
+    var thRec = ex(thawing);
+    var ppRec = ex(preprocess);
+    var ckRec = ex(cooking);
+    var shRec = ex(shredding);
+    var pkRec = ex(packing);
+
+    // ── 원육 부위별 KG (thawing) ──
+    var rmKgByPart = {};
+    var thMultiTypeFound = [];
+    thRec.forEach(function(r){
+      var t = (r.type || '').trim();
+      if(!t) return;
+      // multi-type 처리: 콤마 분리
+      if(t.indexOf(',') !== -1){
+        thMultiTypeFound.push(r._id || r.id);
+        // 일단 첫 부위에 카운트 (warning에 표시됨)
+        t = t.split(',')[0].trim();
+      }
+      rmKgByPart[t] = (rmKgByPart[t] || 0) + r.totalKg;
+    });
+    Object.keys(rmKgByPart).forEach(function(k){ rmKgByPart[k] = _r2(rmKgByPart[k]); });
+    var rmKgTotal = _r2(thRec.reduce(function(s,r){ return s + r.totalKg; }, 0));
+
+    // ── 포장 EA / meatKg 부위별 ──
+    var pkEaByPart = {};
+    var meatKgByPart = {};
+    var pkEaUnresolved = 0;
+    var pkEaNoMeat = 0;
+    var pkUnresolvedIds = [];
+    pkRec.forEach(function(r){
+      if(r._isNoMeat){
+        pkEaNoMeat += r.ea;
+        return;
+      }
+      var tl = r._typeList || [];
+      if(tl.length === 0){
+        pkEaUnresolved += r.ea;
+        pkUnresolvedIds.push(r._id || r.id);
+        return;
+      }
+      if(tl.length === 1){
+        var t1 = tl[0];
+        pkEaByPart[t1] = (pkEaByPart[t1] || 0) + r.ea;
+        meatKgByPart[t1] = (meatKgByPart[t1] || 0) + r._meatKg;
+      } else {
+        // multi-type: typeKgs 비율로 분배
+        var totalKgs = r._typeKgsSum;
+        if(totalKgs > 0){
+          tl.forEach(function(t){
+            var ratio = _num(r.typeKgs[t]) / totalKgs;
+            pkEaByPart[t] = (pkEaByPart[t] || 0) + r.ea * ratio;
+            meatKgByPart[t] = (meatKgByPart[t] || 0) + r._meatKg * ratio;
+          });
+        } else {
+          // 비율 못 정함 → 균등 분배
+          var n = tl.length;
+          tl.forEach(function(t){
+            pkEaByPart[t] = (pkEaByPart[t] || 0) + r.ea / n;
+            meatKgByPart[t] = (meatKgByPart[t] || 0) + r._meatKg / n;
+          });
+        }
+      }
+    });
+    Object.keys(pkEaByPart).forEach(function(k){ pkEaByPart[k] = Math.round(pkEaByPart[k]); });
+    Object.keys(meatKgByPart).forEach(function(k){ meatKgByPart[k] = _r2(meatKgByPart[k]); });
+    var meatKgTotal = _r2(Object.keys(meatKgByPart).reduce(function(s,k){ return s + meatKgByPart[k]; }, 0));
+
+    // ── 공정 KG (수율 계산용) ──
+    var ppKg = _r2(ppRec.reduce(function(s,r){ return s + r.kg; }, 0));
+    var ckKg = _r2(ckRec.reduce(function(s,r){ return s + r.kg; }, 0));
+    var shKg = _r2(shRec.reduce(function(s,r){ return s + r.kg; }, 0));
+
+    // ── 수율 (소수, 0~1 범위) ──
+    var origYield = rmKgTotal > 0 ? _r4(meatKgTotal / rmKgTotal) : 0;
+    var procYields = {
+      전처리: rmKgTotal > 0 ? _r4(ppKg / rmKgTotal) : 0,
+      자숙:   ppKg > 0 ? _r4(ckKg / ppKg) : 0,
+      파쇄:   ckKg > 0 ? _r4(shKg / ckKg) : 0,
+      포장:   shKg > 0 ? _r4(meatKgTotal / shKg) : 0
+    };
+
+    // ── noMeat 수율 (별도) ──
+    // 무육 제품을 subName(메인 부재료)별로 그룹핑
+    //   이론량 = sum(EA × subKgea)
+    //   실제량 = sum(subKg)
+    //   수율 = 이론량 / 실제량
+    // ※ 시그니처 130g 같은 일반 제품에 들어간 깐메추리알(부재료)은 별도 로직 필요 — Step 1.5+
+    var noMeatYields = {};
+    var nmGroups = {};  // {subName: {theoretical, actual}}
+    pkRec.forEach(function(r){
+      if(!r._isNoMeat) return;
+      var prod = _getProduct(r.product);
+      if(!prod) return;
+      var subName = (prod.subName || '').trim();
+      if(!subName) return;
+      var subKgea = parseFloat(prod.subKgea) || 0;
+      if(!nmGroups[subName]) nmGroups[subName] = { theoretical: 0, actual: 0 };
+      nmGroups[subName].theoretical += r.ea * subKgea;
+      nmGroups[subName].actual += _num(r.subKg);
+    });
+    Object.keys(nmGroups).forEach(function(sub){
+      var g = nmGroups[sub];
+      noMeatYields[sub] = {
+        theoreticalKg: _r2(g.theoretical),
+        actualKg: _r2(g.actual),
+        yield: g.actual > 0 ? _r4(g.theoretical / g.actual) : 0
+      };
+    });
+
+    // ── workers / hours per stage ──
+    var ppWH = _calcWH(ppRec);
+    var ckWH = _calcWH(ckRec);
+    var shWH = _calcWH(shRec);
+    var pkWH = _calcWH(pkRec);
+
+    var summary = {
+      rmKgByPart: rmKgByPart,
+      rmKgTotal: rmKgTotal,
+      pkEaByPart: pkEaByPart,
+      pkEaNoMeat: pkEaNoMeat,
+      pkEaUnresolved: pkEaUnresolved,
+      meatKgByPart: meatKgByPart,
+      meatKgTotal: meatKgTotal,
+      yields: {
+        원육수율: origYield,
+        공정수율: procYields
+      },
+      noMeatYields: noMeatYields,
+      workers: {
+        preprocess: ppWH.workers,
+        cooking:    ckWH.workers,
+        shredding:  shWH.workers,
+        packing:    pkWH.workers
+      },
+      hours: {
+        preprocess: ppWH.hours,
+        cooking:    ckWH.hours,
+        shredding:  shWH.hours,
+        packing:    pkWH.hours
+      },
+      // 디버깅·검증용 보조 (KG 합계)
+      _ppKgTotal: ppKg,
+      _ckKgTotal: ckKg,
+      _shKgTotal: shKg
+    };
+
+    // ── validation (errors / warnings) ──
+    var errors = [];
+    var warnings = [];
+
+    if(pkEaUnresolved > 0){
+      warnings.push({
+        code: 'PK_TYPE_UNRESOLVED',
+        msg: '부위 정보 없는 packing record ' + pkUnresolvedIds.length + '건 (Step 1.6 resolveType 필요)',
+        ea: pkEaUnresolved,
+        ids: pkUnresolvedIds
+      });
+    }
+    if(thMultiTypeFound.length > 0){
+      warnings.push({
+        code: 'TH_MULTI_TYPE',
+        msg: 'thawing.type에 콤마 (' + thMultiTypeFound.length + '건). 첫 부위에 카운트',
+        ids: thMultiTypeFound
+      });
+    }
+    // 정합성 깨진 packing
+    var inconsistent = pkRec.filter(function(r){ return r._isConsistent === false; });
+    if(inconsistent.length > 0){
+      warnings.push({
+        code: 'PK_INCONSISTENT',
+        msg: 'wagonDistSum != typeKgsSum (' + inconsistent.length + '건)',
+        ids: inconsistent.map(function(r){ return r._id || r.id; })
+      });
+    }
+    // 수율 100% 초과
+    if(rmKgTotal > 0 && ppKg > rmKgTotal){
+      errors.push({ code: 'YIELD_PP_OVER', msg: '전처리 KG > 원육 KG (' + ppKg + ' > ' + rmKgTotal + ')' });
+    }
+    if(ppKg > 0 && ckKg > ppKg){
+      errors.push({ code: 'YIELD_CK_OVER', msg: '자숙 KG > 전처리 KG (' + ckKg + ' > ' + ppKg + ')' });
+    }
+    if(ckKg > 0 && shKg > ckKg){
+      errors.push({ code: 'YIELD_SH_OVER', msg: '파쇄 KG > 자숙 KG (' + shKg + ' > ' + ckKg + ')' });
+    }
+
+    var validation = { errors: errors, warnings: warnings };
+
+    return {
+      date: date,
+      thawing: thawing,
+      preprocess: preprocess,
+      cooking: cooking,
+      shredding: shredding,
+      packing: packing,
+      outerpacking: outerpacking,
+      summary: summary,
+      validation: validation
+    };
+  }
+
   // ─── 외부 노출 ─────────────────────────────────────────
   global.DL = {
     VERSION: DL_VERSION,
@@ -317,7 +611,14 @@
     normalizeCooking: _normalizeCooking,
     normalizePreprocess: _normalizePreprocess,
     normalizeOuterpacking: _normalizeOuterpacking,
-    getDay: null,
+
+    // 시간/인원 계산 헬퍼 (외부에서 검증·재사용 가능)
+    _calcWH: _calcWH,
+    _t2m: _t2m,
+    _r4: _r4,
+
+    // 조회
+    getDay: _getDay,
     getMonth: null,
     resolveType: null,
     validate: null,
