@@ -27,7 +27,7 @@
 - [x] Step 1.3: 다른 normalize 함수 5개 ✅ 2026-05-01
 - [x] Step 1.4: DL.getDay() + 04-30 검증 ✅ 2026-05-02
 - [ ] Step 1.5: DL.getMonth()
-- [ ] Step 1.6: DL.resolveType()
+- [x] Step 1.6: DL.resolveType() + 와곤 추적 ✅ 2026-05-02
 - [ ] Step 1.7: DL.validate()
 
 ---
@@ -94,3 +94,39 @@
     * 16일에 _typeList 빈값 packing 32건 발견 (Step 1.6에서 자동 해결 예정)
   - 추가된 함수: _calcWH, _t2m, _r4, _getDay
   - 라인 수: 328 → 629 (+301)
+
+- [x] Step 1.6: DL.resolveType + 와곤 추적 (2026-05-02)
+  - 추적 흐름:
+    cooking.wagonOut → shredding.wagonIn → shredding.wagonOut → packing.wagon
+    부위(type)는 cooking에만 있으니 와곤번호로 역추적
+  - 도메인 룰 준수:
+    * 와곤번호 날짜별 재사용 → 같은 날짜 cooking·shredding과만 매칭
+    * 04-29 와곤 23 = 홍두깨 / 04-30 와곤 23 = 우둔 — 격리 검증 통과
+    * noMeat(메추리알) 제품은 절대 부위 추론 X
+  - 추가 함수:
+    * _buildWagonTypeMap(date) - 날짜별 와곤→부위 맵 (cooking 직접 + shredding 전파)
+    * _resolveType(date, wagon) - 단일 와곤 → 부위
+    * _resolveTypesForPacking(record) - packing 전체 부위 추론 (반환 {types, source})
+  - getDay() 통합:
+    * normalizePacking 후 _typeList 빈값이면 자동 호출
+    * _resolvedBy 필드로 출처 표시 (typeKgs/type/wagon/fallback/noMeat)
+  - 4월 22일치 검증:
+    * packing 44건 중:
+      - typeKgs 결정: 3건
+      - type 필드: 11건
+      - 와곤추적: 27건
+      - fallback (같은날 cook 단일부위): 2건
+      - noMeat: 1건
+      - 미해결: 0건
+    * 추론된 부위가 같은 날 cooking에 없는 경우: 0건 (모든 추론 정확)
+    * 16일 모두 원육수율 정상 (47.9%~56.0%, 이전엔 0%)
+  - 04-14 화면값 회귀 검증:
+    meatKgTotal 885.6 / 원육수율 55.3% — 화면과 100% 일치 ✅
+  - 04-30 회귀 검증: 모든 값 그대로 통과 ✅
+  - 멀티부위 케이스 정상 동작:
+    04-07 트레이더스 (와곤 7,26,27) → 설도+홍두깨 (typeKgs 없으니 균등)
+    04-09 (와곤 20,21,26) → 설도+우둔
+  - Edge case 정상 동작:
+    04-08 트레이더스 (와곤 6,18, sh.wagonOut 빈값) → fallback 처리
+    04-13 시그니처 (와곤 빈값) → fallback (같은날 cook 모두 설도)
+  - 라인 수: 629 → 800+ (+170)

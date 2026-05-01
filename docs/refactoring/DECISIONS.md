@@ -146,3 +146,34 @@
 - 적용: 검증 룰에서 파쇄 > 자숙은 error 처리 X
 - 단, 50%+ 증가 시 warning (입력 오류 의심)
 - 예시: 04-14 자숙 876.4 → 파쇄 973.5 (111.1%) — 정상
+
+---
+
+## 와곤 부위 추적 룰 (Step 1.6 확정)
+
+### 추적 흐름
+```
+cooking.wagonOut(type) → shredding.wagonIn → shredding.wagonOut → packing.wagon
+부위(type)는 cooking에만 있음 → 와곤번호로 역추적
+```
+
+### 와곤 매핑 단계
+1. **cooking 직접 맵**: cooking.wagonOut의 각 와곤 → cooking.type
+2. **shredding 전파**:
+   - sh.wagonIn 와곤들이 어느 cooking type에서 왔는지 확인
+   - 단일 부위면 → sh.wagonOut의 모든 와곤도 그 부위
+   - 멀티 부위면 → wagonInDist 가중치로 우세 부위 선택 (4월엔 거의 없음)
+3. **packing 추론**: packing.wagon의 각 와곤을 위 맵에서 lookup
+
+### Fallback (와곤 매칭 실패 또는 와곤 빈값)
+- 같은 날 cooking이 모두 단일 부위면 → 그 부위로 추론
+- 멀티 부위면 추론 불가 → 빈배열
+
+### noMeat 절대 룰
+- noMeat 제품(메추리알)은 어떤 경우에도 부위 추론 X (DECISIONS 기존 룰 강화)
+- _resolveTypesForPacking에서 즉시 빈배열 반환
+
+### 와곤 재사용 격리
+- 일자: 2026-05-02
+- 모든 추적은 같은 날짜의 cooking·shredding으로만 (date 매칭 강제)
+- 검증: 와곤 23번 - 04-29=홍두깨, 04-30=우둔 → 정확히 격리됨

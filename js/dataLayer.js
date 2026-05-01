@@ -370,6 +370,138 @@
     return Array.isArray(L[coll]) ? L[coll] : [];
   }
 
+  // ─── 와곤 콤마 문자열 → 배열 ──────────────────────────
+  function _parseWagons(s){
+    if(!s) return [];
+    return String(s).split(',').map(function(w){return w.trim();}).filter(Boolean);
+  }
+
+  // ─── 와곤 → 부위 맵 (특정 날짜) ────────────────────────
+  // 도메인 룰: 와곤번호는 날짜별 재사용. 반드시 같은 날짜 cooking·shredding과만 매칭
+  // 흐름: cooking.wagonOut → shredding.wagonIn → shredding.wagonOut → packing.wagon
+  // 부위(type)는 cooking에만 있음.
+  // 위험 시나리오:
+  //   - shredding.wagonOut 빈값 (04-08 sh2 케이스): wagonIn에서 부위 추정해도 sh.wagonOut으로 전달 못 함
+  //     → 같은 sh의 다른 wagonIn으로 sh.type 알면, packing이 그 sh의 어느 wagonOut과 매칭되는지 모름
+  //     → 이 경우는 fallback에 의존
+  //   - shredding.wagonIn에 여러 부위가 들어옴 (멀티부위 자숙→파쇄): wagonInDist+wagonOutDist 비율로 매칭
+  //   - 와곤 재사용 (04-29 와곤23=홍두깨, 04-30 와곤23=우둔): date별로 격리되어 안전
+  //   - testRun 제외
+  function _buildWagonTypeMap(date, opts){
+    opts = opts || {};
+    var dateStr = _trim(date).slice(0,10);
+    var ckArr = _loadColl('cooking', opts).filter(function(r){
+      return _trim(r && r.date).slice(0,10) === dateStr && !_isTestRun(r);
+    });
+    var shArr = _loadColl('shredding', opts).filter(function(r){
+      return _trim(r && r.date).slice(0,10) === dateStr && !_isTestRun(r);
+    });
+
+    // 1) cooking.wagonOut → cooking.type 직접 맵
+    var ckW2T = {};  // {와곤: 부위}
+    ckArr.forEach(function(c){
+      var t = (c.type || '').trim();
+      if(!t) return;
+      _parseWagons(c.wagonOut).forEach(function(w){
+        // 같은 와곤이 같은 날 두 cooking에 있으면 (이론상 없어야 함)
+        // 첫 매핑 우선 (warning은 호출측에서)
+        if(!ckW2T[w]) ckW2T[w] = t;
+      });
+    });
+
+    // 2) shredding: wagonIn → 부위 추정 → wagonOut에 전파
+    var shW2T = {};  // {와곤: 부위}
+    shArr.forEach(function(s){
+      var inWagons = _parseWagons(s.wagonIn);
+      var inTypes = {};  // {부위: kg비중} — 가능하면 wagonInDist로 가중
+      inWagons.forEach(function(w){
+        var t = ckW2T[w];
+        if(!t) return;
+        var inDist = (s.wagonInDist && typeof s.wagonInDist === 'object') ? s.wagonInDist : {};
+        var weight = _num(inDist[w]) || 1;
+        inTypes[t] = (inTypes[t] || 0) + weight;
+      });
+      var distinctTypes = Object.keys(inTypes);
+      if(distinctTypes.length === 0){
+        // wagonIn 어디서도 cooking type 못 찾음 — drop
+        return;
+      }
+      var outWagons = _parseWagons(s.wagonOut);
+      if(distinctTypes.length === 1){
+        // 단일 부위가 들어왔으니 모든 wagonOut도 그 부위
+        var theType = distinctTypes[0];
+        outWagons.forEach(function(w){
+          if(!shW2T[w]) shW2T[w] = theType;
+        });
+      } else {
+        // 멀티 부위 동시 파쇄 — wagonOutDist 활용 시도
+        // (이런 케이스는 4월에 거의 없을 듯, 일단 가장 비중 큰 부위로 일괄)
+        var maxType = distinctTypes.sort(function(a,b){ return inTypes[b] - inTypes[a]; })[0];
+        outWagons.forEach(function(w){
+          if(!shW2T[w]) shW2T[w] = maxType;
+        });
+      }
+    });
+
+    // 3) cooking 같은 날 distinct types (fallback에 사용)
+    var ckTypeSet = {};
+    ckArr.forEach(function(c){
+      var t = (c.type || '').trim();
+      if(t) ckTypeSet[t] = true;
+    });
+    var ckDistinctTypes = Object.keys(ckTypeSet);
+
+    return {
+      shW2T: shW2T,
+      ckW2T: ckW2T,
+      ckDistinctTypes: ckDistinctTypes
+    };
+  }
+
+  // ─── DL.resolveType(date, wagon) — 단일 와곤 → 부위 ────
+  function _resolveType(date, wagon, opts){
+    var w = _trim(wagon);
+    if(!w) return '';
+    var map = _buildWagonTypeMap(date, opts);
+    return map.shW2T[w] || map.ckW2T[w] || '';
+  }
+
+  // ─── DL.resolveTypesForPacking(record) — packing 부위 추론 ───
+  // 우선순위:
+  //   1. typeKgs 키들 (이미 normalize에서 _typeList에 반영)
+  //   2. type 필드 (이미 반영)
+  //   3. 와곤 추적 (shW2T → ckW2T)
+  //   4. fallback: 와곤 빈값/매칭실패 + 같은날 cooking 모두 단일 부위 → 그 부위
+  //   5. 빈 배열
+  // noMeat 제품은 절대 추론 안 함 (DECISIONS 룰)
+  // 반환: {types: [...], source: 'wagon'|'fallback'|'noMeat'|''}
+  function _resolveTypesForPacking(record, opts){
+    if(!record) return { types: [], source: '' };
+    if(_isNoMeat(record.product)) return { types: [], source: 'noMeat' };
+
+    var date = _trim(record.date).slice(0,10);
+    var wagons = _parseWagons(record.wagon);
+    var map = _buildWagonTypeMap(date, opts);
+
+    // 와곤 추적
+    if(wagons.length > 0){
+      var typeSet = {};
+      wagons.forEach(function(w){
+        var t = map.shW2T[w] || map.ckW2T[w];
+        if(t) typeSet[t] = true;
+      });
+      var arr = Object.keys(typeSet);
+      if(arr.length > 0) return { types: arr, source: 'wagon' };
+    }
+
+    // fallback: 같은 날 cooking 모두 단일 부위
+    if(map.ckDistinctTypes.length === 1){
+      return { types: [map.ckDistinctTypes[0]], source: 'fallback' };
+    }
+
+    return { types: [], source: '' };
+  }
+
   // ─── DL.getDay(date) ──────────────────────────────────
   // 하루치 모든 공정 데이터 + summary + validation
   // 위험 시나리오 사전 점검:
@@ -397,6 +529,32 @@
     var shredding    = filterAndNorm('shredding',    _normalizeShredding);
     var packing      = filterAndNorm('packing',      _normalizePacking);
     var outerpacking = filterAndNorm('outerpacking', _normalizeOuterpacking);
+
+    // ── packing _typeList 빈값 보정 (와곤 추적) ──
+    // normalizePacking은 record 단독 처리 (typeKgs/type 필드만)
+    // 여기서 같은 날 cooking·shredding 데이터로 추론해서 채움
+    // _resolvedBy 필드로 출처 표시 (디버깅용): 'typeKgs' / 'type' / 'wagon' / 'fallback' / ''
+    packing.forEach(function(r){
+      if(r._isNoMeat){
+        r._resolvedBy = r._typeList.length ? 'typeKgs' : '';
+        return;
+      }
+      if(r._typeList && r._typeList.length > 0){
+        // 이미 typeKgs/type으로 결정됨
+        var hasTypeKgs = Object.keys(r.typeKgs || {}).length > 0;
+        r._resolvedBy = hasTypeKgs ? 'typeKgs' : 'type';
+        return;
+      }
+      // 빈값 → 와곤 추적
+      var resolvedRes = _resolveTypesForPacking(r, opts);
+      if(resolvedRes.types.length > 0){
+        r._typeList = resolvedRes.types;
+        r._primaryType = resolvedRes.types[0];
+        r._resolvedBy = resolvedRes.source;
+      } else {
+        r._resolvedBy = '';
+      }
+    });
 
     // testRun 제외 헬퍼
     function ex(arr){ return arr.filter(function(r){ return !r._isTestRun; }); }
@@ -638,11 +796,14 @@
     _calcWH: _calcWH,
     _t2m: _t2m,
     _r4: _r4,
+    _parseWagons: _parseWagons,
 
     // 조회
     getDay: _getDay,
     getMonth: null,
-    resolveType: null,
+    resolveType: _resolveType,
+    resolveTypesForPacking: _resolveTypesForPacking,
+    buildWagonTypeMap: _buildWagonTypeMap,
     validate: null,
   };
 
