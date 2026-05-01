@@ -16,6 +16,99 @@ firebase.initializeApp(firebaseConfig);
 var db = firebase.firestore();
 
 // ============================================================
+// 🔧 STAGING MODE - production은 절대 영향받지 않음
+// ============================================================
+const _STAGING_MODE = true;
+
+if(_STAGING_MODE){
+  // 1) 화면에 "STAGING" 빨간 배지 표시
+  window.addEventListener('DOMContentLoaded', function(){
+    var badge = document.createElement('div');
+    badge.style.cssText = 'position:fixed;top:0;right:0;background:#dc2626;color:#fff;padding:6px 14px;font-weight:700;font-size:12px;z-index:99999;border-bottom-left-radius:8px;font-family:system-ui;box-shadow:0 2px 8px rgba(0,0,0,0.3);letter-spacing:0.5px';
+    badge.innerHTML = '🔧 STAGING — 저장 차단됨';
+    badge.title = '리팩토링 테스트 환경입니다. 모든 저장 동작이 콘솔로만 출력되고 실제 DB에 반영되지 않습니다.';
+    document.body.appendChild(badge);
+    console.log('%c🔧 STAGING MODE', 'background:#dc2626;color:#fff;padding:4px 8px;font-size:14px;font-weight:bold');
+    console.log('%c모든 Firebase write가 차단됩니다 (read만 가능)', 'color:#dc2626;font-weight:bold');
+  });
+
+  // 2) Firebase write 차단
+  //    common.js 뒤쪽에서 fbSave/fbUpdate/fbDelete 정의되므로
+  //    setTimeout으로 정의 후 wrap
+  setTimeout(function(){
+    var origSave   = window.fbSave;
+    var origUpdate = window.fbUpdate;
+    var origDelete = window.fbDelete;
+    var origSet    = window.fbSet;
+
+    window.fbSave = function(coll, data){
+      console.log('[STAGING] fbSave 차단:', coll, data);
+      if(typeof toast === 'function') toast('🔧 STAGING - 저장 시뮬레이션 (실제 저장 안됨)','d');
+      return Promise.resolve({id: 'staging-' + Date.now()});
+    };
+    window.fbUpdate = function(coll, id, data){
+      console.log('[STAGING] fbUpdate 차단:', coll, id, data);
+      return Promise.resolve();
+    };
+    window.fbDelete = function(coll, id){
+      console.log('[STAGING] fbDelete 차단:', coll, id);
+      return Promise.resolve();
+    };
+    if(origSet){
+      window.fbSet = function(coll, id, data){
+        console.log('[STAGING] fbSet 차단:', coll, id, data);
+        return Promise.resolve();
+      };
+    }
+    console.log('%c[STAGING] Firebase write 차단 완료', 'color:#16a34a');
+  }, 100);
+
+  // 3) Firestore 직접 호출도 차단 (firebase.firestore().collection().add() 등)
+  //    SDK 자체를 wrap
+  if(typeof firebase !== 'undefined' && firebase.firestore){
+    var _origFirestore = firebase.firestore;
+    firebase.firestore = function(){
+      var fs = _origFirestore.apply(firebase, arguments);
+      var _origCollection = fs.collection.bind(fs);
+      fs.collection = function(name){
+        var coll = _origCollection(name);
+        var _origAdd = coll.add ? coll.add.bind(coll) : null;
+        var _origDoc = coll.doc.bind(coll);
+        if(_origAdd){
+          coll.add = function(data){
+            console.log('[STAGING] firestore add 차단:', name, data);
+            return Promise.resolve({id: 'staging-' + Date.now()});
+          };
+        }
+        coll.doc = function(id){
+          var doc = _origDoc(id);
+          var _origSet = doc.set.bind(doc);
+          var _origUpdate = doc.update.bind(doc);
+          var _origDelete = doc.delete.bind(doc);
+          doc.set = function(data, opts){
+            console.log('[STAGING] firestore set 차단:', name, id, data);
+            return Promise.resolve();
+          };
+          doc.update = function(data){
+            console.log('[STAGING] firestore update 차단:', name, id, data);
+            return Promise.resolve();
+          };
+          doc.delete = function(){
+            console.log('[STAGING] firestore delete 차단:', name, id);
+            return Promise.resolve();
+          };
+          return doc;
+        };
+        return coll;
+      };
+      return fs;
+    };
+  }
+}
+// ============================================================
+
+
+// ============================================================
 // 상태 변수
 // ============================================================
 var SK = 'ssbon_v6';
