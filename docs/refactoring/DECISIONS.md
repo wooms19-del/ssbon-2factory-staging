@@ -62,27 +62,37 @@
 
 ---
 
-## 외포장 EA 처리 룰 (Step 2.x 발견 후 확정)
+## 외포장 EA 처리 룰 (Step 2.x)
 
-### 🚨 legacy monthly_production.js의 외포장 우선 EA 룰은 BUG
+### 외포장 EA 우선 룰 (legacy 정확)
 - 발견: 2026-05-02
-- legacy 코드:
+- ⚠️ 이전 분석 정정: 처음 "★2배 부풀림 BUG" 라고 보고했으나 **잘못된 분석**이었음
+- 실제 legacy 코드:
   ```js
-  p.eaDisp = oe>0 ? oe : p.ea;  // monthly_production.js line 433
+  // monthly_production.js line 413-433
+  var byDP = {};
+  pkClean.forEach(function(r){
+    var k = dt+'|'+prod;             // (date+product) 그룹화
+    if(!byDP[k]) byDP[k] = {ea:0};
+    byDP[k].ea += _num(r.ea);        // ★ 그룹 단위로 합산
+  });
+  Object.keys(byDP).forEach(function(k){
+    var oe = opMap[k] || 0;
+    byDP[k].eaDisp = oe>0 ? oe : byDP[k].ea;  // ★ 그룹당 1번만 적용
+  });
   ```
-- 문제: 같은 (날짜+제품)에 packing record N건이 있을 때, **N개 record 모두에 같은 oe 적용** = 중복 카운트
-- 4월 영향:
-  - 04-02 시그니처 130g: packing 2건, 외포장 16861 EA → legacy=33722 (★2배 부풀려짐)
-  - 04-27 시그니처: packing 3건 → legacy=42588 (★3배 부풀려짐)
-  - 4월 누적 부풀림: 약 +200,000 EA (실제 226,437 → legacy 표시 ~429,337)
-- 추가 도메인 문제:
-  - 외포장이 다른 날 packing의 결과인 경우 (예: 04-16 inner=0, outer=14232)
-  - 시점이 어긋난 EA를 같은 날짜로 카운트 → 부정확
-- DL 결정:
-  - 기본 분석은 packing.ea (내포장) 기준 = 도메인적 정확
-  - 외포장 EA는 별도 metric `outerEaTotal`로 정확히 노출 (중복 없음)
-  - legacy의 잘못된 합산 로직은 **재현하지 않음**
-- 사용자분 보고 필요: 월단위생산량 화면이 EA를 ~2배 부풀려 보여주는 가능성
+- byDP가 (date+product) 그룹화하므로 **packing 여러 건이라도 그룹 1개로 합쳐짐**
+- eaDisp는 그룹 단위로 1번만 적용 → **중복 카운트 없음, 부풀림 없음**
+- 정확한 비교 (4월):
+  - legacy 외포장 우선 합: 225,880 EA
+  - 내포장 합: 226,437 EA
+  - 차이: 단 557 EA (~0.25%) — 외포장 안 한 packing 일부
+
+### DL 처리
+- 기본: packing.ea (내포장) → `pkEaByPart`, `pkByProduct[].ea`
+- 호환: `pkEaTotalDisp`, `meatKgTotalDisp` (legacy의 정확한 byDP 그룹 단위 동일 결과)
+- 보조: `outerEaTotal` (외포장 자체 합)
+- 검증 결과: 4월 legacy vs DL 외포장 우선 룰 100% 일치 ✅
 
 ---
 

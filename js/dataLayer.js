@@ -1001,6 +1001,39 @@
       outerEaTotal += sum.opByProduct[prod].outerEa;
     });
 
+    // ── legacy monthly_production 호환: byDP 그룹 단위로 eaDisp 계산 ──
+    // 정확한 룰: (date+product) 그룹화 후 외포장 있으면 외포장 합, 없으면 내포장 합
+    // 이전 잘못된 분석 정정: legacy는 byDP 그룹화로 중복 없음
+    var byDP = {};
+    days.forEach(function(day){
+      day.packing.forEach(function(r){
+        if(r._isTestRun) return;
+        var k = (r.date || '') + '|' + (r.product || '');
+        if(!byDP[k]) byDP[k] = { date: r.date, product: r.product, ea: 0, defect: 0 };
+        byDP[k].ea += r.ea;
+        byDP[k].defect += _num(r.defect);
+      });
+      // 외포장 매핑
+      day.outerpacking.forEach(function(r){
+        if(r._isTestRun) return;
+        var k = (r.date || '') + '|' + (r.product || '');
+        if(!byDP[k]) byDP[k] = { date: r.date, product: r.product, ea: 0, defect: 0, _outerOnly: true };
+        if(!byDP[k].oe) byDP[k].oe = 0;
+        byDP[k].oe += _num(r.outerEa);
+      });
+    });
+
+    var pkEaTotalDisp = 0;       // 외포장 우선 합 (legacy 호환, byDP 그룹 단위)
+    var meatKgTotalDisp = 0;
+    Object.keys(byDP).forEach(function(k){
+      var g = byDP[k];
+      var eaDisp = (g.oe || 0) > 0 ? g.oe : g.ea;
+      pkEaTotalDisp += eaDisp;
+      var pInfo = _getProduct(g.product);
+      var kgea = pInfo ? (parseFloat(pInfo.kgea) || 0) : 0;
+      meatKgTotalDisp += eaDisp * kgea;
+    });
+
     // 4) 정리/반올림
     Object.keys(sum.rmKgByPart).forEach(function(k){ sum.rmKgByPart[k] = _r2(sum.rmKgByPart[k]); });
     Object.keys(sum.pkEaByPart).forEach(function(k){ sum.pkEaByPart[k] = Math.round(sum.pkEaByPart[k]); });
@@ -1069,10 +1102,13 @@
       meatKgByPart: sum.meatKgByPart,
       meatKgTotal: sum.meatKgTotal,
 
-      // 외포장 정확값 (별도 metric, 내포장과 분리)
-      // 주의: legacy monthly_production은 외포장을 packing record에 잘못 곱해 ~2배 부풀려짐 (BUG)
-      //       DL은 외포장 자체 합으로만 노출 → 정확
+      // 외포장 정확값
       outerEaTotal: outerEaTotal,
+      // 외포장 우선 EA (legacy monthly_production 호환, byDP 그룹 단위로 정확히 계산)
+      // 룰: (date+product) 그룹마다 외포장 있으면 외포장 합, 없으면 내포장 합
+      // 이는 legacy의 정확한 동작 (이전 "부풀림" 분석은 byDP 그룹화 못 봐서 생긴 오류)
+      pkEaTotalDisp: pkEaTotalDisp,
+      meatKgTotalDisp: _r2(meatKgTotalDisp),
 
       // 수율
       yields: {

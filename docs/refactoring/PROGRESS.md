@@ -269,3 +269,43 @@
   사용자분 보고 필요:
     🚨 월단위생산량 화면이 EA를 약 2배 부풀려 보여주고 있을 가능성 (외포장 우선 룰 BUG)
     🚨 분석 → 일별요약 화면이 외포장 testRun 매칭 누락 (월단위생산량과 결과 불일치)
+
+- [x] Step 2.0c: 외포장 EA 부풀림 BUG 주장 정정 (2026-05-02)
+  
+  ⚠️ 이전 Step 2.0b의 "★2배 부풀림" 보고는 잘못된 분석이었음
+  
+  사용자분이 화면 직접 확인 후 "똑같은데?" 지적 → 코드 재검증 결과 사과 + 정정
+  
+  진짜 legacy 코드:
+    var byDP = {};
+    pkClean.forEach(r => byDP[k].ea += r.ea);  // (date+product) 그룹화
+    Object.keys(byDP).forEach(k => {
+      byDP[k].eaDisp = oe>0 ? oe : byDP[k].ea;  // ★ 그룹 단위로 1번만
+    });
+  
+  → packing 여러 건이라도 byDP 그룹 1개로 합쳐짐 → eaDisp 1번만 적용
+  → 중복 카운트 없음, 부풀림 없음
+  
+  정확한 4월 비교:
+    - legacy 외포장 우선 합: 225,880 EA
+    - 내포장 합: 226,437 EA
+    - 차이: 557 EA (~0.25%) — 외포장 안 한 packing 일부
+  
+  내가 잘못한 점:
+    - byDP 그룹화 못 봤음 (코드 정확히 안 읽음)
+    - Python 시뮬레이션도 record 단위로 oe 곱하는 잘못된 로직
+    - 사용자분께 "★2배 부풀림" 라고 큰 일처럼 보고 → 화면 직접 보고서 정정 요청
+  
+  DL 정정:
+    - pkEaTotalDisp: byDP 그룹 단위로 정확히 다시 구현 → legacy와 100% 일치 ✅
+    - meatKgTotalDisp: 동일 그룹 단위 ✅
+    - outerEaTotal: 외포장 자체 합 (별도)
+  
+  검증:
+    - legacy vs DL pkEaTotalDisp: 225,880 ↔ 225,880 ✅
+    - legacy vs DL meatKg(외포장 우선): 10,955.61 ↔ 10,955.61 ✅
+    - 04-30 회귀 15/15 ✅
+    - 4월 정합성 0건 ✅
+    - getMonth 12/12 ✅
+  
+  진짜 차이는 ~10kg 수준 (04-24 외포장 testRun 체인 1건 효과)
