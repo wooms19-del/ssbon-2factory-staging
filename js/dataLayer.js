@@ -62,6 +62,87 @@
     return !!(record.testRun || record.isTest);
   }
 
+  // ─── Packing 정규화 ────────────────────────────────────
+  // record를 받아서 표준 형식으로 변환 (원본 필드 모두 보존 + _ prefix 부착)
+  // 위험 시나리오 사전 점검:
+  //   - typeKgs 빈값 다수: typeList는 wagon 추론 등으로 fallback
+  //   - testRun/isTest 둘 다 가능: DL.isTestRun()이 둘 다 처리
+  //   - wagon/cart 빈값 (noMeat 케이스): 정상 처리
+  //   - 음수 ea/defect: 그대로 보존 (사용자 입력 신뢰)
+  //   - id/fbId/_id 세 식별자: 모두 보존
+  function _normalizePacking(record){
+    if(!record || typeof record !== 'object') return null;
+
+    // 원본 필드 그대로 보존
+    var out = Object.assign({}, record);
+
+    // 안전 변환
+    out.date = _trim(record.date).slice(0, 10);
+    out.product = _trim(record.product);
+    out.ea = _num(record.ea);
+    out.defect = _num(record.defect);
+    out.pouch = _num(record.pouch);
+    out.workers = _num(record.workers);
+    out.machine = _trim(record.machine);
+    out.start = _trim(record.start);
+    out.end = _trim(record.end);
+    out.wagon = _trim(record.wagon);
+    out.cart = _trim(record.cart);
+
+    // 객체형 필드 (None 방어)
+    out.wagonDist = (record.wagonDist && typeof record.wagonDist === 'object') ? record.wagonDist : {};
+    out.cartDist  = (record.cartDist  && typeof record.cartDist  === 'object') ? record.cartDist  : {};
+    out.typeKgs   = (record.typeKgs   && typeof record.typeKgs   === 'object') ? record.typeKgs   : {};
+    out.sauceTanks = Array.isArray(record.sauceTanks) ? record.sauceTanks : [];
+
+    // ── 정규화 추가 필드 (_ prefix) ──
+    out._kgea = _getKgea(out.product);
+    out._isNoMeat = _isNoMeat(out.product);
+    out._isTestRun = _isTestRun(record);
+
+    // wagonDistSum / cartDistSum / typeKgsSum
+    out._wagonDistSum = Object.keys(out.wagonDist).reduce(function(s, k){
+      return s + _num(out.wagonDist[k]);
+    }, 0);
+    out._cartDistSum = Object.keys(out.cartDist).reduce(function(s, k){
+      return s + _num(out.cartDist[k]);
+    }, 0);
+    out._typeKgsSum = Object.keys(out.typeKgs).reduce(function(s, k){
+      return s + _num(out.typeKgs[k]);
+    }, 0);
+
+    // meatKg = ea × kgea (완제품 고기 무게)
+    out._meatKg = _r2(out.ea * out._kgea);
+
+    // typeList 결정 (우선순위)
+    //   1. typeKgs 키들 (kg 큰 순)
+    //   2. type 필드 (단일 string)
+    //   3. wagon → 추적 (resolveType, 다음 step에서 구현 — 지금은 빈값)
+    //   4. 빈 배열
+    var typeList = [];
+    var tkKeys = Object.keys(out.typeKgs).filter(function(k){ return _num(out.typeKgs[k]) > 0; });
+    if(tkKeys.length > 0){
+      typeList = tkKeys.sort(function(a,b){ return _num(out.typeKgs[b]) - _num(out.typeKgs[a]); });
+    } else if(_trim(record.type)){
+      typeList = [_trim(record.type)];
+    }
+    // noMeat 제품은 type 자동 추론 절대 안 함
+    if(out._isNoMeat){
+      typeList = [];
+    }
+    out._typeList = typeList;
+    out._primaryType = typeList[0] || '';
+
+    // 정합성 체크: wagonDistSum이 typeKgsSum과 일치하는지 (둘 다 있을 때만)
+    if(out._wagonDistSum > 0 && out._typeKgsSum > 0){
+      out._isConsistent = Math.abs(out._wagonDistSum - out._typeKgsSum) < 0.5;  // 0.5kg 오차 허용
+    } else {
+      out._isConsistent = true;  // 한 쪽만 있으면 검증 불가 → 통과
+    }
+
+    return out;
+  }
+
   // ─── 외부 노출 ─────────────────────────────────────────
   global.DL = {
     VERSION: DL_VERSION,
@@ -81,8 +162,8 @@
     // testRun
     isTestRun: _isTestRun,
 
-    // 다음 Step에서 추가될 함수들 placeholder
-    normalizePacking: null,
+    // 정규화 함수 (Step 1.2~1.3에서 작성)
+    normalizePacking: _normalizePacking,
     normalizeShredding: null,
     normalizeThawing: null,
     normalizeCooking: null,
