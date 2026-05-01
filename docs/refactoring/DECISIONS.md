@@ -34,6 +34,8 @@
 - 결정: testRun packing record 1건 발견되면 그 위 모든 공정도 testRun으로 마킹
 - 추적 흐름:
   ```
+  outerpacking.testRun (같은 날짜+같은 제품)
+    → packing.testRun → 체인 시작
   testRun packing.wagon/cart
     → shredding.wagonOut/cartOut 매칭 → testRun
     → shredding.wagonIn → cooking.wagonOut 매칭 → testRun
@@ -42,10 +44,45 @@
   ```
 - 일자: 2026-05-02
 - 발견 케이스 (4월 데이터):
-  - 04-02: testRun pk(35EA, 와곤20) → 체인 추적 → th 98kg(홍두깨, cart=5) 까지 testRun
-  - 04-15: testRun pk(8EA, 와곤22) → 체인 추적 → th 25.68kg(홍두깨, cart=8) 까지 testRun
-- 적용: dataLayer.js _markTestRunChain() — _isTestRun=true + _testRunReason='chain'
+  - 04-02: testRun pk(35EA, 와곤20) → 체인 → th 98kg(홍두깨, cart=5) 까지 testRun
+  - 04-15: testRun pk(8EA, 와곤22) → 체인 → th 25.68kg(홍두깨, cart=8) 까지 testRun
+  - 04-24: outerpacking testRun (FC 3KG 8EA) → packing.testRun=null이지만 매칭됨
+           → 체인 → th 25.28kg(홍두깨) 까지 testRun
+- 적용: dataLayer.js _markTestRunChain() — _isTestRun=true + _testRunReason='chain'/'op_chain'
 - 효과: legacy renderDaily(analysis.js)와 4월 22일치 154/154 (100%) 일치
+
+### legacy 화면 간 룰 불일치 발견 (정정 필요)
+- 발견: 2026-05-02
+- 내용:
+  - **monthly_production.js**: outerpacking.testRun → packing.testRun 전파 룰 **있음** (정확)
+  - **analysis.js (renderDaily)**: 외포장 → packing 전파 **누락** (BUG)
+  - 같은 4월 04-24 데이터에 두 화면이 다른 결과 표시 가능
+- 해결: DL은 monthly_production의 정확한 룰 따름
+- 영향: legacy analysis.js 일별요약 화면이 외포장 testRun 매칭 1건 누락됨 (Phase 2 마이그레이션 시 자동 정정)
+
+---
+
+## 외포장 EA 처리 룰 (Step 2.x 발견 후 확정)
+
+### 🚨 legacy monthly_production.js의 외포장 우선 EA 룰은 BUG
+- 발견: 2026-05-02
+- legacy 코드:
+  ```js
+  p.eaDisp = oe>0 ? oe : p.ea;  // monthly_production.js line 433
+  ```
+- 문제: 같은 (날짜+제품)에 packing record N건이 있을 때, **N개 record 모두에 같은 oe 적용** = 중복 카운트
+- 4월 영향:
+  - 04-02 시그니처 130g: packing 2건, 외포장 16861 EA → legacy=33722 (★2배 부풀려짐)
+  - 04-27 시그니처: packing 3건 → legacy=42588 (★3배 부풀려짐)
+  - 4월 누적 부풀림: 약 +200,000 EA (실제 226,437 → legacy 표시 ~429,337)
+- 추가 도메인 문제:
+  - 외포장이 다른 날 packing의 결과인 경우 (예: 04-16 inner=0, outer=14232)
+  - 시점이 어긋난 EA를 같은 날짜로 카운트 → 부정확
+- DL 결정:
+  - 기본 분석은 packing.ea (내포장) 기준 = 도메인적 정확
+  - 외포장 EA는 별도 metric `outerEaTotal`로 정확히 노출 (중복 없음)
+  - legacy의 잘못된 합산 로직은 **재현하지 않음**
+- 사용자분 보고 필요: 월단위생산량 화면이 EA를 ~2배 부풀려 보여주는 가능성
 
 ---
 

@@ -228,3 +228,44 @@
 - [ ] Step 2.3: 월단위생산량 (monthly_production.js, ||0.05 버그 정정 효과)
 - [ ] Step 2.4: 일별실적 (performance.js, 가장 위험)
 - [ ] Step 2.5: 이력추적 (trace.js, 가장 복잡)
+
+- [x] Step 2.0b: monthly_production.js 비교 + 외포장 testRun + 외포장 EA 버그 발견 (2026-05-02)
+  
+  legacy monthly_production을 Node 포팅해서 DL.getMonth와 4월 비교
+  
+  발견 1: 외포장 testRun → packing 전파 (DL에 누락)
+    - monthly_production.js의 isTestPk: r.testRun || testOpKeys.has(date+product)
+    - 4월 04-24: packing FC 3KG 8EA (testRun=null) + 외포장 testRun=true
+      → legacy는 매칭으로 packing도 testRun 처리, DL은 누락
+    → DL._markTestRunChain()에 외포장 처리 추가 (op_chain reason)
+  
+  발견 2: legacy 화면 간 룰 불일치 (analysis.js 버그)
+    - monthly_production.js: 외포장 testRun → packing 전파 있음
+    - analysis.js renderDaily: 전파 누락
+    - 같은 4월 04-24가 두 화면에서 다른 숫자 표시
+    → DL은 monthly의 정확한 룰 따름 (analysis.js Phase 2에서 자동 정정)
+  
+  발견 3: 🚨 monthly_production.js의 외포장 EA 우선 룰은 명백한 BUG
+    - 코드: p.eaDisp = oe>0 ? oe : p.ea
+    - 같은 (날짜+제품)에 packing N건이면 N개 모두 같은 oe 받음 = 중복 카운트
+    - 04-02 시그니처: packing 2건 + 외포장 16861 → legacy=33722 (★2배)
+    - 04-27 시그니처: packing 3건 → legacy=42588 (★3배)
+    - 4월 누적: 실제 226437 EA → legacy 표시 ~429337 EA (★~2배 부풀려짐)
+    - 추가 문제: 외포장이 다른 날 packing 결과인 경우도 시점 어긋남 (04-16 inner=0, outer=14232)
+    → DL: 기본 packing.ea 사용 (정확), 외포장은 outerEaTotal 별도 metric (정확)
+  
+  ||0.05 분석:
+    - 4월 모든 제품이 L.products에 정상 등록 (kgea 다 있음)
+    - 4월 데이터에선 ||0.05 실제 발동 안 함
+    - 잠재 위험만 존재 → DL은 절대 사용 안 함
+
+  검증:
+    - rmKg/ppKg/ckKg/shKg 합계 100% 일치 (외포장 testRun 추가 후) ✅
+    - 14/20 항목 일치 (나머지 6은 legacy 부풀림 BUG 때문에 비교 의미 없음)
+    - 04-30 회귀 15/15 ✅
+    - 4월 22일 정합성 0건 ✅
+    - getMonth 자체 검증 12/12 ✅
+  
+  사용자분 보고 필요:
+    🚨 월단위생산량 화면이 EA를 약 2배 부풀려 보여주고 있을 가능성 (외포장 우선 룰 BUG)
+    🚨 분석 → 일별요약 화면이 외포장 testRun 매칭 누락 (월단위생산량과 결과 불일치)

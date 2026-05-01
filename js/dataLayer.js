@@ -503,6 +503,7 @@
   }
 
   // ─── testRun 체인 역추적 ───────────────────────────────
+  // outerpacking testRun → packing testRun (같은 날짜+같은 제품)
   // testRun packing → 그 위 모든 공정(sh/ck/pp/th)도 testRun으로 마킹
   // 와곤·카트·케이지·wagons로 체인 추적
   // 도메인 룰: testRun 작업은 분석에서 완전 제외 (DECISIONS)
@@ -511,7 +512,28 @@
   //   - 와곤 빈값인 testRun packing → 체인 추적 불가, 해당 record만 제외
   //   - 같은 와곤이 testRun 외 다른 record에도 사용된 경우: 체인이 더 깊어질 수 있음
   //     (이 경우는 정상 — 그 record들도 testRun에 오염된 것으로 봄)
-  function _markTestRunChain(date, packing, shredding, cooking, preprocess, thawing){
+  //   - 외포장 testRun이 같은 날 packing과 매칭되면 그 packing도 testRun
+  //     (legacy monthly_production isTestPk 룰)
+  function _markTestRunChain(date, packing, shredding, cooking, preprocess, thawing, outerpacking){
+    // 0) outerpacking testRun → packing testRun 전파 (날짜+제품 매칭)
+    if(Array.isArray(outerpacking)){
+      var testOpKeys = {};
+      outerpacking.forEach(function(r){
+        if(r._isTestRun){
+          var k = (r.date || '') + '|' + (r.product || '');
+          testOpKeys[k] = true;
+        }
+      });
+      packing.forEach(function(r){
+        if(r._isTestRun) return;
+        var k = (r.date || '') + '|' + (r.product || '');
+        if(testOpKeys[k]){
+          r._isTestRun = true;
+          r._testRunReason = 'op_chain';  // 외포장 매칭으로 testRun
+        }
+      });
+    }
+
     // 1) testRun packing 직접
     var testPk = packing.filter(function(r){ return r._isTestRun; });
     if(testPk.length === 0) return;  // testRun 없으면 체인 안 탐
@@ -614,9 +636,9 @@
     var outerpacking = filterAndNorm('outerpacking', _normalizeOuterpacking);
 
     // ── testRun 체인 역추적 ──
-    // testRun packing → sh → ck → pp → th 까지 _isTestRun=true 마킹
+    // outerpacking testRun → packing testRun → sh → ck → pp → th 까지 _isTestRun=true 마킹
     // 도메인 룰: testRun 작업은 분석에서 완전 제외
-    _markTestRunChain(date, packing, shredding, cooking, preprocess, thawing);
+    _markTestRunChain(date, packing, shredding, cooking, preprocess, thawing, outerpacking);
 
     // ── packing _typeList 빈값 보정 (와곤 추적) ──
     // normalizePacking은 record 단독 처리 (typeKgs/type 필드만)
@@ -905,6 +927,7 @@
       _dailyWorkers: { preprocess: [], cooking: [], shredding: [], packing: [] },
       // 제품별 포장
       pkByProduct: {}, // {제품명: {ea, defect, pouch, count, meatKg, subKg}}
+      opByProduct: {}, // {제품명: {innerEa, outerEa, count}} — 외포장 별도
       // noMeat 누적
       _nmAccum: {}     // {subName: {theoretical, actual}}
     };
@@ -915,6 +938,7 @@
       });
     }
 
+    // 제품별 packing 누적 + 외포장 매칭
     days.forEach(function(day){
       var s = day.summary;
       addObj(sum.rmKgByPart, s.rmKgByPart);
@@ -953,12 +977,28 @@
         bp.subKg += _num(r.subKg);
       });
 
+      // 외포장 누적 (별도 metric)
+      day.outerpacking.forEach(function(r){
+        if(r._isTestRun) return;
+        var prod = r.product || '?';
+        if(!sum.opByProduct[prod]) sum.opByProduct[prod] = { innerEa: 0, outerEa: 0, count: 0 };
+        sum.opByProduct[prod].innerEa += _num(r.innerEa);
+        sum.opByProduct[prod].outerEa += _num(r.outerEa);
+        sum.opByProduct[prod].count += 1;
+      });
+
       // noMeat 누적 (일별 noMeatYields의 raw 데이터)
       Object.keys(s.noMeatYields || {}).forEach(function(sub){
         if(!sum._nmAccum[sub]) sum._nmAccum[sub] = { theoretical: 0, actual: 0 };
         sum._nmAccum[sub].theoretical += s.noMeatYields[sub].theoreticalKg;
         sum._nmAccum[sub].actual += s.noMeatYields[sub].actualKg;
       });
+    });
+
+    // 외포장 합 (별도 metric, 내포장과 분리)
+    var outerEaTotal = 0;
+    Object.keys(sum.opByProduct).forEach(function(prod){
+      outerEaTotal += sum.opByProduct[prod].outerEa;
     });
 
     // 4) 정리/반올림
@@ -1029,6 +1069,11 @@
       meatKgByPart: sum.meatKgByPart,
       meatKgTotal: sum.meatKgTotal,
 
+      // 외포장 정확값 (별도 metric, 내포장과 분리)
+      // 주의: legacy monthly_production은 외포장을 packing record에 잘못 곱해 ~2배 부풀려짐 (BUG)
+      //       DL은 외포장 자체 합으로만 노출 → 정확
+      outerEaTotal: outerEaTotal,
+
       // 수율
       yields: {
         원육수율: origYield,
@@ -1037,11 +1082,11 @@
       noMeatYields: noMeatYields,
 
       // 인원/시간
-      hoursTotal: sum.hoursTotal,         // 월 총 가동시간
-      personHours: sum.personHours,       // 월 총 인시
-      workersAvg: workersAvg,             // 일별 인원 평균
-      workersMax: workersMax,             // 일별 인원 max
-      personDays: personDays,             // 인일 (일별 인원 합)
+      hoursTotal: sum.hoursTotal,
+      personHours: sum.personHours,
+      workersAvg: workersAvg,
+      workersMax: workersMax,
+      personDays: personDays,
 
       // 제품별
       pkByProduct: sum.pkByProduct,
