@@ -24,7 +24,7 @@
 ### Phase 1 (대기)
 - [x] Step 1.1: js/dataLayer.js 빈 파일 + index.html 등록 ✅ 2026-05-01
 - [x] Step 1.2: DL.normalizePacking() + 4월 데이터로 자동 검증 ✅ 2026-05-01
-- [ ] Step 1.3: 다른 normalize 함수 5개
+- [x] Step 1.3: 다른 normalize 함수 5개 ✅ 2026-05-01
 - [ ] Step 1.4: DL.getDay() + 04-30 검증
 - [ ] Step 1.5: DL.getMonth()
 - [ ] Step 1.6: DL.resolveType()
@@ -61,3 +61,10 @@
   - 04-30 우둔 케이스 정밀 검증: 미니쇠고기 _meatKg=243.46, 코스트코 _meatKg=141.91 정확
   - typeList 분포: 우둔 10건, 홍두깨 4건, 빈값 33건 (다음 Step에서 wagon 추적으로 채울 예정)
   - 사전 점검 시나리오 10개 모두 통과
+
+- [x] Step 1.3: normalize 5개 추가 (Shredding, Thawing, Cooking, Preprocess, Outerpacking)
+  - 4월 데이터 197건 중 197/197 통과
+  - shredding _isConsistent 로직 1차 잘못 → 발견 후 즉시 수정
+    (wagonOutDist 빈값일 때 검증 안 하도록)
+  - 04-30 thawing 합 검증: 750.60kg (예상 750.6) ✅
+  - 04-30 shredding 분배: 6=95, 23=93.8, 12=38.2, 24=145 ✅

@@ -143,6 +143,154 @@
     return out;
   }
 
+
+  // ─── Shredding 정규화 ──────────────────────────────────
+  // 위험 시나리오:
+  //   - wagonOutDist 빈값 / cartOutDist 빈값 → 정상
+  //   - kgIn 누락 가능
+  //   - waste 음수 가능 (방어)
+  //   - type 필드 없음 (cooking에서 추론) → 별도 step에서
+  function _normalizeShredding(record){
+    if(!record || typeof record !== 'object') return null;
+    var out = Object.assign({}, record);
+    out.date = _trim(record.date).slice(0, 10);
+    out.kg = _num(record.kg);
+    out.kgIn = _num(record.kgIn);
+    out.waste = _num(record.waste);
+    out.workers = _num(record.workers);
+    out.start = _trim(record.start);
+    out.end = _trim(record.end);
+    out.wagonIn = _trim(record.wagonIn);
+    out.wagonOut = _trim(record.wagonOut);
+    out.cartOut = _trim(record.cartOut);
+    out.wagonOutDist = (record.wagonOutDist && typeof record.wagonOutDist === 'object') ? record.wagonOutDist : {};
+    out.cartOutDist  = (record.cartOutDist  && typeof record.cartOutDist  === 'object') ? record.cartOutDist  : {};
+
+    out._isTestRun = _isTestRun(record);
+    out._wagonOutSum = Object.keys(out.wagonOutDist).reduce(function(s,k){ return s + _num(out.wagonOutDist[k]); }, 0);
+    out._cartOutSum  = Object.keys(out.cartOutDist).reduce(function(s,k){ return s + _num(out.cartOutDist[k]); }, 0);
+    out._totalDistSum = out._wagonOutSum + out._cartOutSum;
+    // 정합성: wagonOutDist/cartOutDist 모두 빈값이면 검증 불가 → 통과
+    //         값이 있으면 totalDistSum이 kg과 일치해야 (waste는 보통 별도 처리)
+    if(out._totalDistSum === 0){
+      out._isConsistent = true;  // 분배 정보 없음 → 검증 안 함
+    } else {
+      out._isConsistent = Math.abs(out.kg - out._totalDistSum) < 1.0;
+    }
+    return out;
+  }
+
+  // ─── Thawing 정규화 ───────────────────────────────────
+  // 위험 시나리오:
+  //   - workers가 string 빈값 ('') → _num이 0 처리
+  //   - importCodes 배열 길이 다양 (1~50)
+  //   - part vs type 둘 다 있음 (type 우선, part는 fallback)
+  //   - testRun 3건만, 대다수는 정상
+  function _normalizeThawing(record){
+    if(!record || typeof record !== 'object') return null;
+    var out = Object.assign({}, record);
+    out.date = _trim(record.date).slice(0, 10);
+    out.totalKg = _num(record.totalKg);
+    out.remainKg = _num(record.remainKg);
+    out.boxes = _num(record.boxes);
+    out.workers = _num(record.workers);
+    out.start = _trim(record.start);
+    out.end = _trim(record.end);
+    out.cart = _trim(record.cart);
+    out.wagon = _trim(record.wagon);
+    out.importCodes = Array.isArray(record.importCodes) ? record.importCodes : [];
+
+    // type 우선, 없으면 part
+    out.type = _trim(record.type) || _trim(record.part);
+    out._isTestRun = _isTestRun(record);
+    out._isNoMeat = !out.type;  // 부위 없으면 무육 추정
+    return out;
+  }
+
+  // ─── Cooking 정규화 ───────────────────────────────────
+  // 위험 시나리오:
+  //   - wagonDist / wagonInDist 둘 다 있음 (의미 다름)
+  //   - cage가 콤마 분리 string ("9,10")
+  //   - tank 정보 (소스 탱크와 다름, 자숙 탱크)
+  function _normalizeCooking(record){
+    if(!record || typeof record !== 'object') return null;
+    var out = Object.assign({}, record);
+    out.date = _trim(record.date).slice(0, 10);
+    out.kg = _num(record.kg);
+    out.kgIn = _num(record.kgIn);
+    out.workers = _num(record.workers);
+    out.start = _trim(record.start);
+    out.end = _trim(record.end);
+    out.cage = _trim(record.cage);
+    out.tank = _trim(record.tank);
+    out.type = _trim(record.type);
+    out.wagonOut = _trim(record.wagonOut);
+    out.wagonDist = (record.wagonDist && typeof record.wagonDist === 'object') ? record.wagonDist : {};
+    out.wagonInDist = (record.wagonInDist && typeof record.wagonInDist === 'object') ? record.wagonInDist : {};
+
+    out._isTestRun = _isTestRun(record);
+    out._wagonOutSum = Object.keys(out.wagonDist).reduce(function(s,k){ return s + _num(out.wagonDist[k]); }, 0);
+    out._wagonInSum = Object.keys(out.wagonInDist).reduce(function(s,k){ return s + _num(out.wagonInDist[k]); }, 0);
+    return out;
+  }
+
+  // ─── Preprocess 정규화 ──────────────────────────────────
+  // 위험 시나리오:
+  //   - distribution 객체가 복잡 (cage별 type/start/end/cages/cagesIn 등)
+  //   - cageTanks 객체
+  //   - waste 음수 가능
+  //   - wagons 콤마 분리 가능
+  function _normalizePreprocess(record){
+    if(!record || typeof record !== 'object') return null;
+    var out = Object.assign({}, record);
+    out.date = _trim(record.date).slice(0, 10);
+    out.kg = _num(record.kg);
+    out.waste = _num(record.waste);
+    out.workers = _num(record.workers);
+    out.start = _trim(record.start);
+    out.end = _trim(record.end);
+    out.cage = _trim(record.cage);
+    out.wagons = _trim(record.wagons);
+    out.type = _trim(record.type);
+    out.distribution = (record.distribution && typeof record.distribution === 'object') ? record.distribution : {};
+    out.cageTanks = (record.cageTanks && typeof record.cageTanks === 'object') ? record.cageTanks : {};
+
+    out._isTestRun = _isTestRun(record);
+    return out;
+  }
+
+  // ─── Outerpacking 정규화 ───────────────────────────────
+  // 위험 시나리오:
+  //   - product 필드 있음 (packing과 다름)
+  //   - innerEa는 float 가능 (4718.0)
+  //   - materials 배열 (자재 사용량)
+  //   - outerBoxes float (1179.0)
+  function _normalizeOuterpacking(record){
+    if(!record || typeof record !== 'object') return null;
+    var out = Object.assign({}, record);
+    out.date = _trim(record.date).slice(0, 10);
+    out.product = _trim(record.product);
+    out.innerEa = _num(record.innerEa);
+    out.outerEa = _num(record.outerEa);
+    out.outerBoxes = _num(record.outerBoxes);
+    out.boxDefect = _num(record.boxDefect);
+    out.trayDefect = _num(record.trayDefect);
+    out.trayUsed = _num(record.trayUsed);
+    out.partialBoxEa = _num(record.partialBoxEa);
+    out.remainBoxes = _num(record.remainBoxes);
+    out.remainEa = _num(record.remainEa);
+    out.productDefect = _num(record.productDefect);
+    out.sample = _num(record.sample);
+    out.defectRate = _num(record.defectRate);
+    out.materials = Array.isArray(record.materials) ? record.materials : [];
+
+    out._kgea = _getKgea(out.product);
+    out._isNoMeat = _isNoMeat(out.product);
+    out._isTestRun = _isTestRun(record);
+    out._meatKg = _r2(out.outerEa * out._kgea);
+    return out;
+  }
+
   // ─── 외부 노출 ─────────────────────────────────────────
   global.DL = {
     VERSION: DL_VERSION,
@@ -164,10 +312,11 @@
 
     // 정규화 함수 (Step 1.2~1.3에서 작성)
     normalizePacking: _normalizePacking,
-    normalizeShredding: null,
-    normalizeThawing: null,
-    normalizeCooking: null,
-    normalizePreprocess: null,
+    normalizeShredding: _normalizeShredding,
+    normalizeThawing: _normalizeThawing,
+    normalizeCooking: _normalizeCooking,
+    normalizePreprocess: _normalizePreprocess,
+    normalizeOuterpacking: _normalizeOuterpacking,
     getDay: null,
     getMonth: null,
     resolveType: null,
