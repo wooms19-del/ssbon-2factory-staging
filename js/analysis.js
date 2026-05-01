@@ -1202,9 +1202,13 @@ function renderDailyFromLocal_(d){
   const shAll=L.shredding.filter(r=>String(r.date||'').slice(0,10)===d);
   const ckAll=L.cooking.filter(r=>String(r.date||'').slice(0,10)===d);
   const ppAll=L.preprocess.filter(r=>String(r.date||'').slice(0,10)===d);
+  // 외포장 testRun → packing testRun 전파 (monthly_production과 룰 일관성)
+  // 외포장만 testRun=true이고 packing.testRun=null인 케이스(예: 04-24 FC 3KG 8EA) 처리
+  const opAll=(L.outerpacking||[]).filter(r=>String(r.date||'').slice(0,10)===d);
+  const _testOpProds=new Set(opAll.filter(r=>r.testRun||r.isTest).map(r=>String(r.product||'')));
 
-  // ① 내포장 중 테스트 레코드 와건 / 카트 추출
-  const _testPk=pkAll.filter(r=>r.testRun||r.isTest);
+  // ① 내포장 중 테스트 레코드 와건 / 카트 추출 (외포장 매칭도 포함)
+  const _testPk=pkAll.filter(r=>r.testRun||r.isTest||_testOpProds.has(String(r.product||'')));
   const _testPkW=new Set(_testPk.flatMap(r=>(r.wagon||'').split(',').map(w=>w.trim()).filter(Boolean)));
   const _testPkC=new Set(_testPk.flatMap(r=>(r.cart ||'').split(',').map(w=>w.trim()).filter(Boolean)));
 
