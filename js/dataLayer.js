@@ -308,7 +308,9 @@
   //   - 인원 = 시간 겹치는 작업끼리는 합산, 안 겹치면 max (작은 쪽은 옮겨갔다고 봄)
   //         → "그날 그 공정에 사용된 실제 인원 수"
   //   - testRun 제외, start/end 빈값 record는 skip
-  function _calcWH(records){
+  // opts.cookingRule: 'always_max' (자숙 전용 룰 — 시간 겹침 무관 max)
+  function _calcWH(records, opts){
+    opts = opts || {};
     var intervals = [];
     records.forEach(function(r){
       if(r._isTestRun) return;
@@ -338,12 +340,25 @@
 
     var groupSums = groups.map(function(g){
       var sumW = g.reduce(function(s,x){ return s + x.w; }, 0);
+      var maxW = g.reduce(function(m,x){ return Math.max(m, x.w); }, 0);
       var minS = Math.min.apply(null, g.map(function(x){return x.s;}));
       var maxE = Math.max.apply(null, g.map(function(x){return x.e;}));
-      return { workers: sumW, hours: (maxE - minS) / 60 };
+      return {
+        workers: sumW,    // 시간 겹침 = 다른 사람 = 합산
+        maxWorkers: maxW, // 같은 그룹 내 max (cooking 룰 등에서 사용)
+        hours: (maxE - minS) / 60
+      };
     });
 
-    var totalWorkers = groupSums.reduce(function(m,x){ return Math.max(m, x.workers); }, 0);
+    var totalWorkers;
+    if(opts.cookingRule === 'always_max'){
+      // 자숙 전용: 시간 겹침 무관, 항상 max (보통 2명 거의 고정)
+      // → 모든 record의 인원 중 max
+      totalWorkers = intervals.reduce(function(m,x){ return Math.max(m, x.w); }, 0);
+    } else {
+      // 표준 룰: 시간겹침 합산 → 그룹별 합 중 max
+      totalWorkers = groupSums.reduce(function(m,x){ return Math.max(m, x.workers); }, 0);
+    }
     var totalHours = groupSums.reduce(function(s,x){ return s + x.hours; }, 0);
     return { workers: totalWorkers, hours: _r2(totalHours) };
   }
@@ -495,8 +510,9 @@
     });
 
     // ── workers / hours per stage ──
+    // 자숙은 "항상 2명 거의 고정" 룰 → opts.cookingRule='always_max' 적용
     var ppWH = _calcWH(ppRec);
-    var ckWH = _calcWH(ckRec);
+    var ckWH = _calcWH(ckRec, { cookingRule: 'always_max' });
     var shWH = _calcWH(shRec);
     var pkWH = _calcWH(pkRec);
 
@@ -559,15 +575,21 @@
         ids: inconsistent.map(function(r){ return r._id || r.id; })
       });
     }
-    // 수율 100% 초과
+    // 수율 100% 초과 (단, 파쇄는 자숙 후 물 흡수로 중량 증가가 정상이므로 검증 안 함)
     if(rmKgTotal > 0 && ppKg > rmKgTotal){
       errors.push({ code: 'YIELD_PP_OVER', msg: '전처리 KG > 원육 KG (' + ppKg + ' > ' + rmKgTotal + ')' });
     }
     if(ppKg > 0 && ckKg > ppKg){
       errors.push({ code: 'YIELD_CK_OVER', msg: '자숙 KG > 전처리 KG (' + ckKg + ' > ' + ppKg + ')' });
     }
-    if(ckKg > 0 && shKg > ckKg){
-      errors.push({ code: 'YIELD_SH_OVER', msg: '파쇄 KG > 자숙 KG (' + shKg + ' > ' + ckKg + ')' });
+    // 파쇄 KG > 자숙 KG: 정상 현상 (자숙→파쇄 사이 원육이 물 흡수해서 중량 증가)
+    // → 검증 X. 단, 너무 비정상적으로 큰 경우만 info 수준 알림
+    if(ckKg > 0 && shKg > ckKg * 1.5){
+      warnings.push({
+        code: 'SH_GAIN_HIGH',
+        msg: '파쇄 KG가 자숙 대비 50%+ 증가 (' + ckKg + ' → ' + shKg + ', +' + (((shKg/ckKg-1)*100).toFixed(1)) + '%)',
+        ckKg: ckKg, shKg: shKg
+      });
     }
 
     var validation = { errors: errors, warnings: warnings };

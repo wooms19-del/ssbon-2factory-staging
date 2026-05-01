@@ -142,4 +142,9 @@ DL.validate(date) 자동 검사 항목:
 2. shredding.wagonOutDist 합 == sum(packing.wagonDist[해당와곤])
 3. noMeat 제품의 typeKgs는 비어있어야 함
 4. wagon 번호가 같은 날짜 shredding에 존재해야 함
-5. preprocess.kg ≥ cooking.kg ≥ shredding.kg ≥ meatKg (수율 100% 미만)
+5. 수율 검증:
+   - 전처리 KG ≤ 원육 KG (초과 시 error)
+   - 자숙 KG ≤ 전처리 KG (초과 시 error)
+   - **파쇄 KG > 자숙 KG는 정상** (자숙 후 물 흡수로 중량 증가, 검증 X)
+   - 단, 파쇄가 자숙 대비 50%+ 증가 시 warning (이상치 의심)
+   - 포장 meatKg ≤ 파쇄 KG (초과 시 error)
