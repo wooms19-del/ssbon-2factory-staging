@@ -502,6 +502,89 @@
     return { types: [], source: '' };
   }
 
+  // ─── testRun 체인 역추적 ───────────────────────────────
+  // testRun packing → 그 위 모든 공정(sh/ck/pp/th)도 testRun으로 마킹
+  // 와곤·카트·케이지·wagons로 체인 추적
+  // 도메인 룰: testRun 작업은 분석에서 완전 제외 (DECISIONS)
+  // 위험 시나리오:
+  //   - testRun packing 0건이면 체인 자체 안 만듦 (조기 반환)
+  //   - 와곤 빈값인 testRun packing → 체인 추적 불가, 해당 record만 제외
+  //   - 같은 와곤이 testRun 외 다른 record에도 사용된 경우: 체인이 더 깊어질 수 있음
+  //     (이 경우는 정상 — 그 record들도 testRun에 오염된 것으로 봄)
+  function _markTestRunChain(date, packing, shredding, cooking, preprocess, thawing){
+    // 1) testRun packing 직접
+    var testPk = packing.filter(function(r){ return r._isTestRun; });
+    if(testPk.length === 0) return;  // testRun 없으면 체인 안 탐
+
+    var testPkW = new Set();
+    var testPkC = new Set();
+    testPk.forEach(function(r){
+      _parseWagons(r.wagon).forEach(function(w){ testPkW.add(w); });
+      _parseWagons(r.cart).forEach(function(c){ testPkC.add(c); });
+    });
+
+    // 2) shredding: testRun packing 와곤/카트와 매칭되는 sh
+    shredding.forEach(function(s){
+      if(s._isTestRun) return;
+      var hitW = _parseWagons(s.wagonOut).some(function(w){ return testPkW.has(w); });
+      var hitC = _parseWagons(s.cartOut).some(function(c){ return testPkC.has(c); });
+      if(hitW || hitC){
+        s._isTestRun = true;
+        s._testRunReason = 'chain';
+      }
+    });
+
+    // 3) cooking: testRun sh의 wagonIn과 매칭되는 ck
+    var testShW = new Set();
+    shredding.forEach(function(s){
+      if(s._isTestRun){
+        _parseWagons(s.wagonIn).forEach(function(w){ testShW.add(w); });
+      }
+    });
+    cooking.forEach(function(c){
+      if(c._isTestRun) return;
+      var hit = _parseWagons(c.wagonOut).some(function(w){ return testShW.has(w); });
+      if(hit){
+        c._isTestRun = true;
+        c._testRunReason = 'chain';
+      }
+    });
+
+    // 4) preprocess: testRun ck의 cage와 매칭되는 pp
+    var testCkCages = new Set();
+    cooking.forEach(function(c){
+      if(c._isTestRun){
+        _parseWagons(c.cage).forEach(function(cg){ testCkCages.add(cg); });
+      }
+    });
+    preprocess.forEach(function(p){
+      if(p._isTestRun) return;
+      var hit = _parseWagons(p.cage).some(function(cg){ return testCkCages.has(cg); });
+      if(hit){
+        p._isTestRun = true;
+        p._testRunReason = 'chain';
+      }
+    });
+
+    // 5) thawing: testRun pp의 wagons와 매칭되는 th
+    //    (wagons 정규화 — "7호"/"7번" → "7")
+    function _normW(w){ return String(w||'').replace(/[^0-9]/g, '') || String(w||'').trim(); }
+    var testPpWagons = new Set();
+    preprocess.forEach(function(p){
+      if(p._isTestRun){
+        _parseWagons(p.wagons).forEach(function(w){ testPpWagons.add(_normW(w)); });
+      }
+    });
+    thawing.forEach(function(t){
+      if(t._isTestRun) return;
+      var w = _normW(t.cart);
+      if(testPpWagons.has(w)){
+        t._isTestRun = true;
+        t._testRunReason = 'chain';
+      }
+    });
+  }
+
   // ─── DL.getDay(date) ──────────────────────────────────
   // 하루치 모든 공정 데이터 + summary + validation
   // 위험 시나리오 사전 점검:
@@ -529,6 +612,11 @@
     var shredding    = filterAndNorm('shredding',    _normalizeShredding);
     var packing      = filterAndNorm('packing',      _normalizePacking);
     var outerpacking = filterAndNorm('outerpacking', _normalizeOuterpacking);
+
+    // ── testRun 체인 역추적 ──
+    // testRun packing → sh → ck → pp → th 까지 _isTestRun=true 마킹
+    // 도메인 룰: testRun 작업은 분석에서 완전 제외
+    _markTestRunChain(date, packing, shredding, cooking, preprocess, thawing);
 
     // ── packing _typeList 빈값 보정 (와곤 추적) ──
     // normalizePacking은 record 단독 처리 (typeKgs/type 필드만)

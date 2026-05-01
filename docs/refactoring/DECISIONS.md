@@ -30,6 +30,23 @@
 - 결정: 모든 분석/차트/표에서 제외. KPI도 제외
 - 일자: 2026-05-01
 
+### testRun 체인 역추적 (Step 2.0 발견 후 보강)
+- 결정: testRun packing record 1건 발견되면 그 위 모든 공정도 testRun으로 마킹
+- 추적 흐름:
+  ```
+  testRun packing.wagon/cart
+    → shredding.wagonOut/cartOut 매칭 → testRun
+    → shredding.wagonIn → cooking.wagonOut 매칭 → testRun
+    → cooking.cage → preprocess.cage 매칭 → testRun
+    → preprocess.wagons → thawing.cart 매칭 (정규화: "7호"→"7") → testRun
+  ```
+- 일자: 2026-05-02
+- 발견 케이스 (4월 데이터):
+  - 04-02: testRun pk(35EA, 와곤20) → 체인 추적 → th 98kg(홍두깨, cart=5) 까지 testRun
+  - 04-15: testRun pk(8EA, 와곤22) → 체인 추적 → th 25.68kg(홍두깨, cart=8) 까지 testRun
+- 적용: dataLayer.js _markTestRunChain() — _isTestRun=true + _testRunReason='chain'
+- 효과: legacy renderDaily(analysis.js)와 4월 22일치 154/154 (100%) 일치
+
 ---
 
 ## 작업 방식

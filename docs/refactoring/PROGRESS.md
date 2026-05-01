@@ -178,3 +178,53 @@
   - 잘못된 입력: error 필드와 함께 빈 결과
   
   라인 수: 812 → 1000+ (+188)
+
+### Phase 2 진입 (2026-05-02)
+
+- [x] Step 2.0: legacy vs DL 자동 비교 인프라 + testRun 체인 발견·해결 (2026-05-02)
+  
+  접근: 화면 마이그레이션 전에 legacy 계산 로직을 Node에 포팅해서
+        DL과 4월 22일치 자동 비교 → 차이 발견 → 원인 분석 → DL 강화
+  
+  목적: 마이그레이션 시 회귀 테스트 자동화 + legacy 버그/DL 버그 분리
+  
+  발견:
+    legacy renderDaily(analysis.js) vs DL.getDay() 비교 결과:
+    - 22일 × 7항목 = 154건 비교
+    - 1차: 144건 일치, 10건 차이 (04-02, 04-15)
+    - 차이 원인: testRun 체인 역추적 누락
+      * Legacy는 testRun packing → sh → ck → pp → th 까지 체인 추적해서 모두 제외
+      * DL은 packing.testRun 플래그만 봄 → 그 위 공정 record들이 살아있음
+      * 04-02: DL 898.25kg vs Legacy 800.25kg (98kg 차이 = th 홍두깨 testRun체인)
+      * 04-15: DL 825.97kg vs Legacy 800.29kg (25.68kg 차이 = th 홍두깨 testRun체인)
+  
+  해결:
+    dataLayer.js에 _markTestRunChain() 함수 추가
+    추적 흐름:
+      testPk.wagon/cart
+        → shredding.wagonOut/cartOut 매칭 → testRun 마킹
+        → shredding.wagonIn → cooking.wagonOut 매칭 → testRun
+        → cooking.cage → preprocess.cage 매칭 → testRun
+        → preprocess.wagons → thawing.cart 매칭 (와곤번호 정규화) → testRun
+    _isTestRun=true 추가, _testRunReason='chain' 으로 출처 표시
+    getDay() 안에서 normalize 후 자동 호출
+  
+  검증:
+    Legacy vs DL: 154/154 (100%) 일치 ✅
+    회귀: 04-30 15/15 통과 ✅, 4월 22일치 정합성 0건 ✅
+    getMonth: 12/12 통과 (testRun 체인 정확히 제외된 합계)
+    
+  영향:
+    - 이전 검증값 정정: thRmTotal 21253.6 → 21129.93 (정확)
+    - 부위별: 홍두깨 3547 → 3423.3 (testRun 123.68kg 정확히 제외)
+    - DL이 더 정확해짐
+  
+  생성된 인프라 (Phase 2 마이그레이션 검증에 재사용):
+    - /home/claude/verify/legacy_daily.js (legacy 로직 Node 포팅)
+    - /home/claude/verify/compare_legacy_vs_dl.js (자동 비교)
+
+- [ ] Step 2.1: 일별요약 화면 마이그레이션 (analysis.js renderDaily)
+- [ ] Step 2.2: 월별현황 화면
+- [ ] Step 2.3: 월단위생산량 (monthly_production.js, ||0.05 버그 정정 효과)
+- [ ] Step 2.4: 일별실적 (performance.js, 가장 위험)
+- [ ] Step 2.5: 이력추적 (trace.js, 가장 복잡)
