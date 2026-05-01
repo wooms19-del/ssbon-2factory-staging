@@ -63,6 +63,56 @@ if(_STAGING_MODE){
     console.log('%c[STAGING] Firebase write 차단 완료', 'color:#16a34a');
   }, 100);
 
+  // 4) localStorage 차단 (production과 origin 같아 공유되는 문제 해결)
+  //    메모리 객체에만 저장 — staging 새로고침 시 초기화 (의도된 동작)
+  (function(){
+    var _stagingMem = {};
+    var _origGet = localStorage.getItem.bind(localStorage);
+    var _origSet = localStorage.setItem.bind(localStorage);
+    var _origRemove = localStorage.removeItem.bind(localStorage);
+    var _origClear = localStorage.clear.bind(localStorage);
+
+    // staging이 격리해야 할 키 패턴
+    function _isStagingKey(k){
+      if(!k) return false;
+      return k.startsWith('att_day_') ||
+             k.startsWith('att_employees') ||
+             k.startsWith('ssbon_') ||
+             k.startsWith('schedule_') ||
+             k.startsWith('recipe_') ||
+             k.startsWith('inventory_') ||
+             k.startsWith('settings_');
+    }
+
+    Storage.prototype.setItem = function(k, v){
+      if(this === localStorage && _isStagingKey(k)){
+        _stagingMem[k] = String(v);
+        console.log('[STAGING] localStorage.setItem 격리:', k);
+        return;
+      }
+      return _origSet(k, v);
+    };
+    Storage.prototype.getItem = function(k){
+      if(this === localStorage && _isStagingKey(k)){
+        // 메모리 우선, 없으면 production 데이터를 한 번 read하지만 staging 메모리에는 복사 안 함
+        // 즉 처음 읽을 땐 production 데이터 보여주되, 수정 시작하면 staging 메모리에서만 동작
+        if(_stagingMem[k] !== undefined) return _stagingMem[k];
+        return _origGet(k);  // production 캐시 읽기는 허용 (read-only 효과)
+      }
+      return _origGet(k);
+    };
+    Storage.prototype.removeItem = function(k){
+      if(this === localStorage && _isStagingKey(k)){
+        delete _stagingMem[k];
+        console.log('[STAGING] localStorage.removeItem 격리:', k);
+        return;
+      }
+      return _origRemove(k);
+    };
+
+    console.log('%c[STAGING] localStorage 격리 완료 (메모리에만 저장, production 오염 차단)', 'color:#16a34a');
+  })();
+
   // 3) Firestore 직접 호출도 차단 (firebase.firestore().collection().add() 등)
   //    SDK 자체를 wrap
   if(typeof firebase !== 'undefined' && firebase.firestore){
