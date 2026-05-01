@@ -148,3 +148,68 @@ DL.validate(date) 자동 검사 항목:
    - **파쇄 KG > 자숙 KG는 정상** (자숙 후 물 흡수로 중량 증가, 검증 X)
    - 단, 파쇄가 자숙 대비 50%+ 증가 시 warning (이상치 의심)
    - 포장 meatKg ≤ 파쇄 KG (초과 시 error)
+
+---
+
+## 정규화된 Month 객체 (DL.getMonth 결과)
+
+```js
+DL.getMonth('2026-04') = {
+  yearMonth: '2026-04',
+  days: [...],   // 정규화된 Day 객체 배열 (데이터 있는 일자만)
+
+  monthSummary: {
+    // 부위별/합계 (월 누적)
+    rmKgByPart: {설도: 12525.68, 우둔: 5180.95, 홍두깨: 3546.98},
+    rmKgTotal: 21253.61,
+
+    pkEaByPart: {설도: 130384, 우둔: 88357, 홍두깨: 3672},
+    pkEaNoMeat: 4032,
+    pkEaUnresolved: 0,
+
+    meatKgByPart: {설도: 6346.05, 우둔: 2829.89, 홍두깨: 1847.13},
+    meatKgTotal: 11023.07,
+
+    // 월간 수율 (가중평균: 합계끼리 재계산)
+    yields: {
+      원육수율: 0.5186,           // 51.86%
+      공정수율: {                  // chain 방식
+        전처리: 0.9703,
+        자숙:   0.5623,
+        파쇄:   0.9424,
+        포장:   1.0087
+      }
+    },
+
+    // noMeat 월간 수율
+    noMeatYields: {
+      메추리알: { theoreticalKg, actualKg, yield }
+    },
+
+    // 인원/시간 통계 (4가지 다 노출)
+    hoursTotal:  {preprocess, cooking, shredding, packing},  // 월 총 가동시간
+    personHours: {preprocess, cooking, shredding, packing},  // 월 총 인시
+    workersAvg:  {...},                                       // 일별 인원 평균
+    workersMax:  {...},                                       // 일별 인원 max
+    personDays:  {...},                                       // 인일 (일별 인원 합)
+
+    // 제품별 누적
+    pkByProduct: {
+      '시그니처 장조림 130g': {ea, defect, pouch, count, meatKg, subKg},
+      ...
+    },
+
+    // 메타
+    dayCount: 22,                  // 데이터 있는 일수
+    daysWithErrors: 0,             // 일별 validation.errors 있는 일수
+    daysWithWarnings: 0,
+
+    // 보조
+    _ppKgTotal, _ckKgTotal, _shKgTotal
+  }
+}
+```
+
+### 일평균 계산 (legacy 화면 룰)
+- 일평균 = monthSummary.{지표} / monthSummary.dayCount
+- 비율(수율 등)은 합계끼리 재계산이 정확 (분자/분모 단순 평균은 부정확)

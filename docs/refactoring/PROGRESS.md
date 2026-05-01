@@ -26,7 +26,7 @@
 - [x] Step 1.2: DL.normalizePacking() + 4월 데이터로 자동 검증 ✅ 2026-05-01
 - [x] Step 1.3: 다른 normalize 함수 5개 ✅ 2026-05-01
 - [x] Step 1.4: DL.getDay() + 04-30 검증 ✅ 2026-05-02
-- [ ] Step 1.5: DL.getMonth()
+- [x] Step 1.5: DL.getMonth() ✅ 2026-05-02
 - [x] Step 1.6: DL.resolveType() + 와곤 추적 ✅ 2026-05-02
 - [ ] Step 1.7: DL.validate()
 
@@ -130,3 +130,51 @@
     04-08 트레이더스 (와곤 6,18, sh.wagonOut 빈값) → fallback 처리
     04-13 시그니처 (와곤 빈값) → fallback (같은날 cook 모두 설도)
   - 라인 수: 629 → 800+ (+170)
+
+- [x] Step 1.5: DL.getMonth(yearMonth) (2026-05-02)
+  - 입력: 'YYYY-MM' (예: '2026-04')
+  - 반환:
+    {
+      yearMonth, 
+      days: [getDay 결과 배열],
+      monthSummary: { 부위별 합계 + 수율 + 인원/시간 + 제품별 + validation집계 }
+    }
+  - 룰 (legacy monthly_production 분석 후 확정):
+    * 월합계 = 단순 sum (kg, ea, defect)
+    * 월수율 = 합계끼리 재계산 (가중평균 자동 됨)
+      예: 원육수율_월 = meatKgTotal_월 / rmKgTotal_월
+    * 공정수율 chain: 전처리=ppKg/rmKg, 자숙=ckKg/ppKg, 파쇄=shKg/ckKg, 포장=meatKg/shKg
+    * 일평균 = 합계 / dayCount (데이터 있는 일수만)
+    * dayCount = 데이터 있는 일자 수 (캘린더 일수 X)
+  - 인원/시간 통계:
+    * hoursTotal: 월 총 가동시간
+    * personHours: 월 총 인시 (= sum(daily.hours × daily.workers))
+    * workersAvg: 일별 인원 평균
+    * workersMax: 일별 인원 max
+    * personDays: 인일 (일별 인원 합)
+    → 4가지 다 노출, 화면이 골라 쓰도록
+  - 제품별 누적: pkByProduct[제품명] = {ea, defect, pouch, count, meatKg, subKg}
+  - noMeat 누적: 일별 theoretical/actual 합산 후 월간 yield 재계산
+  - validation 집계: daysWithErrors, daysWithWarnings
+  
+  4월 검증 (12/12 통과):
+  ✅ rmKgTotal=21253.61, 부위별 (설도 12525.68 / 우둔 5180.95 / 홍두깨 3546.98)
+  ✅ ppKg=20623, ckKg=11595.7, shKg=10928.11
+  ✅ 일별 누적 = 월합계 (5개 항목 모두 일치)
+  ✅ 부위별 합 = 총합 (rmKg, meatKg)
+  ✅ 제품별 EA합 = pkEaByPart합 + noMeat + unresolved (=226445)
+  
+  4월 결과:
+  - 원육수율: 51.86% (11023.07 / 21253.61)
+  - 공정수율: 전처리 97.03% / 자숙 56.23% / 파쇄 94.24% / 포장 100.87%
+  - 메추리알 수율: 98.08% (이론 362.88 / 실제 370)
+  - 데이터 있는 일수: 22일
+  - daysWithErrors: 0, daysWithWarnings: 0
+  - workersMax: pp 14, ck 2, sh 23, pk 18
+  
+  성능: 22일치 17ms (0.8ms/day)
+  엣지 케이스:
+  - 빈 월(5월): dayCount=0, 안전 반환
+  - 잘못된 입력: error 필드와 함께 빈 결과
+  
+  라인 수: 812 → 1000+ (+188)

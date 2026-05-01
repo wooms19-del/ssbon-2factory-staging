@@ -765,6 +765,217 @@
     };
   }
 
+  // ─── DL.getMonth(yearMonth) ────────────────────────────
+  // 한 달치 일별 데이터 + 월합계 + 월간 수율
+  // 입력: 'YYYY-MM' (예: '2026-04')
+  // 위험 시나리오 사전 점검:
+  //   - 데이터 0인 날 처리: days 배열에 포함 X (캘린더 일수 아님)
+  //   - 월간 수율: 일별 수율 평균이 아니라 합계끼리 재계산 (가중평균)
+  //   - 부위별 누적: 단순 합산
+  //   - workers: 일별 max → 월간은 평균/max/sum 모두 노출 (해석 다양)
+  //   - hours: 일별 합 → 월간 합 (총 가동시간)
+  //   - testRun: 일별에서 이미 제외됨
+  //   - noMeat: 별도 그룹화 유지
+  //   - validation 에러 있는 날 카운트 노출
+  function _getMonth(yearMonth, opts){
+    yearMonth = _trim(yearMonth).slice(0, 7);  // 'YYYY-MM'
+    if(!/^\d{4}-\d{2}$/.test(yearMonth)){
+      return { yearMonth: yearMonth, days: [], monthSummary: null, error: 'invalid yearMonth' };
+    }
+    opts = opts || {};
+
+    // 1) 해당 월에 데이터가 있는 모든 날짜 수집 (어느 컬렉션이든)
+    var dateSet = {};
+    ['thawing','preprocess','cooking','shredding','packing','outerpacking','sauce']
+      .forEach(function(coll){
+        _loadColl(coll, opts).forEach(function(r){
+          var d = _trim(r && r.date).slice(0,10);
+          if(d.indexOf(yearMonth) === 0) dateSet[d] = true;
+        });
+      });
+    var dates = Object.keys(dateSet).sort();
+
+    // 2) 일별 getDay
+    var days = dates.map(function(d){ return _getDay(d, opts); });
+
+    // 3) 월 합계 누적
+    var sum = {
+      rmKgByPart: {},
+      rmKgTotal: 0,
+      pkEaByPart: {},
+      pkEaNoMeat: 0,
+      pkEaUnresolved: 0,
+      meatKgByPart: {},
+      meatKgTotal: 0,
+      _ppKgTotal: 0,
+      _ckKgTotal: 0,
+      _shKgTotal: 0,
+      // 인원/시간/인시 누적
+      personHours: { preprocess: 0, cooking: 0, shredding: 0, packing: 0 },
+      hoursTotal: { preprocess: 0, cooking: 0, shredding: 0, packing: 0 },
+      // 일별 인원 모음 (avg/max/sum 계산용)
+      _dailyWorkers: { preprocess: [], cooking: [], shredding: [], packing: [] },
+      // 제품별 포장
+      pkByProduct: {}, // {제품명: {ea, defect, pouch, count, meatKg, subKg}}
+      // noMeat 누적
+      _nmAccum: {}     // {subName: {theoretical, actual}}
+    };
+
+    function addObj(target, src){
+      Object.keys(src || {}).forEach(function(k){
+        target[k] = (target[k] || 0) + (_num(src[k]));
+      });
+    }
+
+    days.forEach(function(day){
+      var s = day.summary;
+      addObj(sum.rmKgByPart, s.rmKgByPart);
+      addObj(sum.pkEaByPart, s.pkEaByPart);
+      addObj(sum.meatKgByPart, s.meatKgByPart);
+      sum.rmKgTotal += s.rmKgTotal;
+      sum.pkEaNoMeat += s.pkEaNoMeat;
+      sum.pkEaUnresolved += s.pkEaUnresolved;
+      sum.meatKgTotal += s.meatKgTotal;
+      sum._ppKgTotal += s._ppKgTotal;
+      sum._ckKgTotal += s._ckKgTotal;
+      sum._shKgTotal += s._shKgTotal;
+
+      // 인원/시간: 일별 hours × workers를 누적해 인시 합 만들기
+      ['preprocess','cooking','shredding','packing'].forEach(function(stage){
+        var w = s.workers[stage] || 0;
+        var h = s.hours[stage] || 0;
+        sum.hoursTotal[stage] += h;
+        sum.personHours[stage] += w * h;
+        if(h > 0) sum._dailyWorkers[stage].push(w);
+      });
+
+      // 제품별 packing 누적
+      day.packing.forEach(function(r){
+        if(r._isTestRun) return;
+        var prod = r.product || '?';
+        if(!sum.pkByProduct[prod]){
+          sum.pkByProduct[prod] = { ea: 0, defect: 0, pouch: 0, count: 0, meatKg: 0, subKg: 0 };
+        }
+        var bp = sum.pkByProduct[prod];
+        bp.ea += r.ea;
+        bp.defect += _num(r.defect);
+        bp.pouch += _num(r.pouch);
+        bp.count += 1;
+        bp.meatKg += r._meatKg;
+        bp.subKg += _num(r.subKg);
+      });
+
+      // noMeat 누적 (일별 noMeatYields의 raw 데이터)
+      Object.keys(s.noMeatYields || {}).forEach(function(sub){
+        if(!sum._nmAccum[sub]) sum._nmAccum[sub] = { theoretical: 0, actual: 0 };
+        sum._nmAccum[sub].theoretical += s.noMeatYields[sub].theoreticalKg;
+        sum._nmAccum[sub].actual += s.noMeatYields[sub].actualKg;
+      });
+    });
+
+    // 4) 정리/반올림
+    Object.keys(sum.rmKgByPart).forEach(function(k){ sum.rmKgByPart[k] = _r2(sum.rmKgByPart[k]); });
+    Object.keys(sum.pkEaByPart).forEach(function(k){ sum.pkEaByPart[k] = Math.round(sum.pkEaByPart[k]); });
+    Object.keys(sum.meatKgByPart).forEach(function(k){ sum.meatKgByPart[k] = _r2(sum.meatKgByPart[k]); });
+    sum.rmKgTotal = _r2(sum.rmKgTotal);
+    sum.meatKgTotal = _r2(sum.meatKgTotal);
+    sum._ppKgTotal = _r2(sum._ppKgTotal);
+    sum._ckKgTotal = _r2(sum._ckKgTotal);
+    sum._shKgTotal = _r2(sum._shKgTotal);
+    ['preprocess','cooking','shredding','packing'].forEach(function(stage){
+      sum.hoursTotal[stage] = _r2(sum.hoursTotal[stage]);
+      sum.personHours[stage] = _r2(sum.personHours[stage]);
+    });
+    Object.keys(sum.pkByProduct).forEach(function(k){
+      var b = sum.pkByProduct[k];
+      b.meatKg = _r2(b.meatKg);
+      b.subKg = _r2(b.subKg);
+    });
+
+    // 5) 월간 수율 (가중평균: 합계끼리 나눔)
+    var origYield = sum.rmKgTotal > 0 ? _r4(sum.meatKgTotal / sum.rmKgTotal) : 0;
+    var procYields = {
+      전처리: sum.rmKgTotal > 0 ? _r4(sum._ppKgTotal / sum.rmKgTotal) : 0,
+      자숙:   sum._ppKgTotal > 0 ? _r4(sum._ckKgTotal / sum._ppKgTotal) : 0,
+      파쇄:   sum._ckKgTotal > 0 ? _r4(sum._shKgTotal / sum._ckKgTotal) : 0,
+      포장:   sum._shKgTotal > 0 ? _r4(sum.meatKgTotal / sum._shKgTotal) : 0
+    };
+
+    // 6) noMeat 월간 수율
+    var noMeatYields = {};
+    Object.keys(sum._nmAccum).forEach(function(sub){
+      var g = sum._nmAccum[sub];
+      noMeatYields[sub] = {
+        theoreticalKg: _r2(g.theoretical),
+        actualKg: _r2(g.actual),
+        yield: g.actual > 0 ? _r4(g.theoretical / g.actual) : 0
+      };
+    });
+
+    // 7) 인원 통계 (avg/max/sum)
+    function arrAvg(a){
+      if(!a.length) return 0;
+      return _r2(a.reduce(function(s,v){return s+v;}, 0) / a.length);
+    }
+    function arrMax(a){ return a.length ? Math.max.apply(null, a) : 0; }
+    function arrSum(a){ return a.reduce(function(s,v){return s+v;}, 0); }
+    var workersAvg = {}, workersMax = {}, personDays = {};
+    ['preprocess','cooking','shredding','packing'].forEach(function(stage){
+      var arr = sum._dailyWorkers[stage];
+      workersAvg[stage] = arrAvg(arr);
+      workersMax[stage] = arrMax(arr);
+      personDays[stage] = arrSum(arr);  // 인일 = 일별 인원의 합
+    });
+
+    // 8) validation 집계
+    var daysWithErrors = days.filter(function(d){ return d.validation.errors.length > 0; }).length;
+    var daysWithWarnings = days.filter(function(d){ return d.validation.warnings.length > 0; }).length;
+
+    var monthSummary = {
+      // 부위별 / 합계
+      rmKgByPart: sum.rmKgByPart,
+      rmKgTotal: sum.rmKgTotal,
+      pkEaByPart: sum.pkEaByPart,
+      pkEaNoMeat: sum.pkEaNoMeat,
+      pkEaUnresolved: sum.pkEaUnresolved,
+      meatKgByPart: sum.meatKgByPart,
+      meatKgTotal: sum.meatKgTotal,
+
+      // 수율
+      yields: {
+        원육수율: origYield,
+        공정수율: procYields
+      },
+      noMeatYields: noMeatYields,
+
+      // 인원/시간
+      hoursTotal: sum.hoursTotal,         // 월 총 가동시간
+      personHours: sum.personHours,       // 월 총 인시
+      workersAvg: workersAvg,             // 일별 인원 평균
+      workersMax: workersMax,             // 일별 인원 max
+      personDays: personDays,             // 인일 (일별 인원 합)
+
+      // 제품별
+      pkByProduct: sum.pkByProduct,
+
+      // 메타
+      dayCount: dates.length,
+      daysWithErrors: daysWithErrors,
+      daysWithWarnings: daysWithWarnings,
+
+      // 보조
+      _ppKgTotal: sum._ppKgTotal,
+      _ckKgTotal: sum._ckKgTotal,
+      _shKgTotal: sum._shKgTotal
+    };
+
+    return {
+      yearMonth: yearMonth,
+      days: days,
+      monthSummary: monthSummary
+    };
+  }
+
   // ─── 외부 노출 ─────────────────────────────────────────
   global.DL = {
     VERSION: DL_VERSION,
@@ -800,7 +1011,7 @@
 
     // 조회
     getDay: _getDay,
-    getMonth: null,
+    getMonth: _getMonth,
     resolveType: _resolveType,
     resolveTypesForPacking: _resolveTypesForPacking,
     buildWagonTypeMap: _buildWagonTypeMap,
