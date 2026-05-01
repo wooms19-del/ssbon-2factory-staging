@@ -533,9 +533,19 @@ function _perfBuildRows(th, pp, ck, sh, pk, op, sc){
   });
 
   // 날짜별 dayRowIdx / dayTotalSpan 계산 (테스트 행 제외)
+  // testRow는 day-level 메타데이터를 일반 행과 분리 처리:
+  // - dayRowIdx, dayTotalSpan, dayAllSingle, dayFirstMeatIdx, dayMeatSpan 모두 명시 초기화
+  // - 이 분리가 일관성 있게 적용되어야 isRMcol skip 룰(line 641)이 testRow를 잘못 처리하지 않음
   var _dayIdx={}, _dayCnt={};
   combined.forEach(function(r){
-    if(r.isTest){ r.dayRowIdx=-1; r.dayTotalSpan=1; return; }
+    if(r.isTest){
+      r.dayRowIdx=-1;
+      r.dayTotalSpan=1;
+      r.dayAllSingle=false;       // testRow는 dayAllSingle 룰 적용 X (자기 cells[4-8] 항상 표시)
+      r.dayFirstMeatIdx=-1;       // 일반 행 first idx와 매칭 안 됨
+      r.dayMeatSpan=0;            // dayMeatSpan>0 조건 안 통과
+      return;
+    }
     if(_dayIdx[r.date]===undefined) _dayIdx[r.date]=0;
     r.dayRowIdx = _dayIdx[r.date]++;
     _dayCnt[r.date] = (_dayCnt[r.date]||0)+1;
@@ -551,7 +561,10 @@ function _perfBuildRows(th, pp, ck, sh, pk, op, sc){
     if((r.totalSub||1)>1) _dayAllSingle[r.date]=false;
     else if(_dayAllSingle[r.date]===undefined) _dayAllSingle[r.date]=true;
   });
-  combined.forEach(function(r){ r.dayAllSingle=(_dayAllSingle[r.date]!==false); });
+  combined.forEach(function(r){
+    if(r.isTest) return;  // testRow는 위에서 이미 dayAllSingle=false 설정됨 (덮어쓰기 방지)
+    r.dayAllSingle=(_dayAllSingle[r.date]!==false);
+  });
   // 무육 제외 — 첫 비-무육 행 idx + 그날 비-무육 행 수
   var _dayFirstMeatIdx = {};
   var _dayMeatCnt = {};
@@ -561,6 +574,7 @@ function _perfBuildRows(th, pp, ck, sh, pk, op, sc){
     _dayMeatCnt[r.date] = (_dayMeatCnt[r.date]||0)+1;
   });
   combined.forEach(function(r){
+    if(r.isTest) return;  // testRow는 위에서 이미 dayFirstMeatIdx=-1, dayMeatSpan=0 설정됨
     r.dayFirstMeatIdx = _dayFirstMeatIdx[r.date];
     r.dayMeatSpan = _dayMeatCnt[r.date] || 0;
   });
