@@ -22,7 +22,7 @@
 - [x] docs/refactoring/ 4개 파일 작성
 
 ### Phase 1 (대기)
-- [ ] Step 1.1: js/dataLayer.js 빈 파일 + index.html 등록
+- [x] Step 1.1: js/dataLayer.js 빈 파일 + index.html 등록 ✅ 2026-05-01
 - [ ] Step 1.2: DL.normalizePacking() + 4월 데이터로 자동 검증
 - [ ] Step 1.3: 다른 normalize 함수 5개
 - [ ] Step 1.4: DL.getDay() + 04-30 검증
@@ -44,3 +44,12 @@
 ### 2026-05-01
 - Phase 0 시작 및 완료
 - Staging URL: https://wooms19-del.github.io/ssbon-2factory-staging/
+
+### Phase 1 진행
+- [x] Step 1.1: dataLayer.js 빈 모듈 + index.html 등록
+  - 파일: js/dataLayer.js (3,307 bytes)
+  - 기본 유틸: _num, _r2, _str, _trim
+  - 제품 조회: getProduct, getKgea, isNoMeat, getKgTot
+  - testRun 판정: isTestRun
+  - placeholder: normalizePacking 등 9개
+  - 자동 검증: 19/19 통과
