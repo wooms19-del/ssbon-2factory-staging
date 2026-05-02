@@ -391,6 +391,25 @@ function _perfBuildRows(th, pp, ck, sh, pk, op, sc){
     if(isNoMeat){
       return {bx:{}, kg:{}, poolKey:'NOMEAT-'+product, status:'NOMEAT'};
     }
+    // fallback: 그날 thClean 합계 + poolKey도 그날 thClean 기준 (trace 성공 제품과 같은 풀이면 같은 poolKey가 됨)
+    var _fallback = function(status){
+      var thDay = thClean.filter(function(r){ return d(r)===date; });
+      var seen = new Set(); var ded = [];
+      thDay.forEach(function(r){
+        var k = (r.cart||'')+'|'+d(r)+'|'+(r.type||'');
+        if(seen.has(k)) return; seen.add(k); ded.push(r);
+      });
+      var bx={}, kg={};
+      ded.forEach(function(r){
+        var p = r.part||r.type||'';
+        bx[p] = (bx[p]||0) + (parseInt(r.boxes)||0);
+        kg[p] = (kg[p]||0) + (parseFloat(r.totalKg)||0);
+      });
+      var poolKey = ded.map(function(r){ return d(r)+'|'+r.cart+'|'+(r.part||r.type); }).sort().join(';');
+      // 그날 thClean도 0건이면 정말 빈칸 (poolKey 고유로)
+      if(!ded.length) poolKey = status+'-'+date+'-'+product;
+      return {bx:bx, kg:kg, poolKey:poolKey, status:status, fallback:true};
+    };
     var pkD = pkClean.filter(function(r){ return d(r)===date && r.product===product; });
     if(!pkD.length) return {bx:{}, kg:{}, poolKey:'NODATA-'+date+'-'+product, status:'NODATA'};
     var pkW = new Set(); var pkC = new Set();
@@ -399,8 +418,8 @@ function _perfBuildRows(th, pp, ck, sh, pk, op, sc){
       _perfSplit(r.cart).forEach(function(c){pkC.add(c);});
     });
     if(!pkW.size && !pkC.size){
-      try{ console.warn('[부위추적 PK_EMPTY]', date, product, '- packing wagon/cart 둘 다 빈값. 부위 빈칸 표시.'); }catch(_){}
-      return {bx:{}, kg:{}, poolKey:'PK_EMPTY-'+date+'-'+product, status:'PK_EMPTY'};
+      try{ console.warn('[부위추적 PK_EMPTY → fallback]', date, product, '- packing wagon/cart 둘 다 빈값. 그날 thawing 합계로 추정.'); }catch(_){}
+      return _fallback('PK_EMPTY');
     }
     var prevD = _perfPrevD(date);
     // sh
@@ -410,8 +429,8 @@ function _perfBuildRows(th, pp, ck, sh, pk, op, sc){
     });
     if(shRes.used==='PREV'){ try{ console.warn('[부위추적 SH_PREV]', date, product, '- 같은 날 sh 0건, 전날 매칭 사용.'); }catch(_){} }
     if(shRes.used==='NONE'){
-      try{ console.warn('[부위추적 SH_NONE]', date, product, '- sh 매칭 0건. 부위 빈칸.'); }catch(_){}
-      return {bx:{}, kg:{}, poolKey:'SH_NONE-'+date+'-'+product, status:'SH_NONE'};
+      try{ console.warn('[부위추적 SH_NONE → fallback]', date, product, '- sh 매칭 0건. 그날 thawing 합계로 추정.'); }catch(_){}
+      return _fallback('SH_NONE');
     }
     var shWi = new Set();
     shRes.recs.forEach(function(r){_perfSplit(r.wagonIn).forEach(function(w){shWi.add(w);});});
@@ -421,8 +440,8 @@ function _perfBuildRows(th, pp, ck, sh, pk, op, sc){
     });
     if(ckRes.used==='PREV'){ try{ console.warn('[부위추적 CK_PREV]', date, product, '- 같은 날 ck 0건, 전날 매칭 사용.'); }catch(_){} }
     if(ckRes.used==='NONE'){
-      try{ console.warn('[부위추적 CK_NONE]', date, product, '- ck 매칭 0건. 부위 빈칸.'); }catch(_){}
-      return {bx:{}, kg:{}, poolKey:'CK_NONE-'+date+'-'+product, status:'CK_NONE'};
+      try{ console.warn('[부위추적 CK_NONE → fallback]', date, product, '- ck 매칭 0건. 그날 thawing 합계로 추정.'); }catch(_){}
+      return _fallback('CK_NONE');
     }
     var ckCg = new Set();
     ckRes.recs.forEach(function(r){_perfSplit(r.cage).forEach(function(c){ckCg.add(c);});});
@@ -432,22 +451,22 @@ function _perfBuildRows(th, pp, ck, sh, pk, op, sc){
     });
     if(ppRes.used==='PREV'){ try{ console.warn('[부위추적 PP_PREV]', date, product, '- 같은 날 pp 0건, 전날 매칭 사용.'); }catch(_){} }
     if(ppRes.used==='NONE'){
-      try{ console.warn('[부위추적 PP_NONE]', date, product, '- pp 매칭 0건. 부위 빈칸.'); }catch(_){}
-      return {bx:{}, kg:{}, poolKey:'PP_NONE-'+date+'-'+product, status:'PP_NONE'};
+      try{ console.warn('[부위추적 PP_NONE → fallback]', date, product, '- pp 매칭 0건. 그날 thawing 합계로 추정.'); }catch(_){}
+      return _fallback('PP_NONE');
     }
     var ppWg = new Set();
     ppRes.recs.forEach(function(r){_perfSplit(r.wagons).forEach(function(w){ppWg.add(w);});});
     if(!ppWg.size){
-      try{ console.warn('[부위추적 PP_WAGONS_EMPTY]', date, product, '- pp 매칭됐으나 wagons 빈값. 부위 빈칸.'); }catch(_){}
-      return {bx:{}, kg:{}, poolKey:'PP_EMPTY-'+date+'-'+product, status:'PP_WAGONS_EMPTY'};
+      try{ console.warn('[부위추적 PP_WAGONS_EMPTY → fallback]', date, product, '- pp 매칭됐으나 wagons 빈값. 그날 thawing 합계로 추정.'); }catch(_){}
+      return _fallback('PP_WAGONS_EMPTY');
     }
     // th: 같은 날 우선, 없으면 전날
     var thM = thClean.filter(function(r){ return d(r)===date && ppWg.has(String(r.cart||'').trim()); });
     var thUsed = 'SAME';
     if(!thM.length){ thM = thClean.filter(function(r){ return d(r)===prevD && ppWg.has(String(r.cart||'').trim()); }); thUsed='PREV'; }
     if(!thM.length){
-      try{ console.warn('[부위추적 TH_NONE]', date, product, '- thawing 매칭 0건. 부위 빈칸.'); }catch(_){}
-      return {bx:{}, kg:{}, poolKey:'TH_NONE-'+date+'-'+product, status:'TH_NONE'};
+      try{ console.warn('[부위추적 TH_NONE → fallback]', date, product, '- thawing 매칭 0건. 그날 thawing 합계로 추정.'); }catch(_){}
+      return _fallback('TH_NONE');
     }
     if(thUsed==='PREV'){ try{ console.warn('[부위추적 TH_PREV]', date, product, '- 같은 날 thawing 0건, 전날 매칭 사용.'); }catch(_){} }
     var seen = new Set(); var ded = [];
