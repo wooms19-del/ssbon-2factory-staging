@@ -166,6 +166,31 @@ async function doTrace(){
 
   _traceData = { bc, th, pp, ck, sh, pk, date: q };
 
+  // ─── Phase 2.5 마이그레이션: dataLayer.getDay 비교 모니터 (사용자 영향 0) ───
+  // 이력추적은 단일 날짜 q 기반이므로 DL.getDay와 직접 비교 가능
+  if(typeof window !== 'undefined' && window.DL && typeof window.DL.getDay === 'function'){
+    try{
+      const _dlD = window.DL.getDay(q);
+      const _checkT = (label, legacy, dl, tol=0.5) => {
+        const diff = Math.abs((legacy||0) - (dl||0));
+        if(diff > tol) console.warn(`[Phase2.5 비교 차이] ${q} ${label}: legacy=${legacy}, DL=${dl}, Δ=${diff.toFixed(2)}`);
+      };
+      // ⚠ trace는 자체 체인 추적이므로 DL과 약간 다를 수 있음 (testRun 처리 룰 차이)
+      // 그래도 큰 차이(>1) 발생 시 리포팅
+      if(_dlD.summary){
+        _checkT('rmKg(trace vs DL)', thKgRaw, _dlD.summary.rmKgTotal, 1);
+        _checkT('ppKg', ppKg, _dlD.summary._ppKgTotal, 1);
+        _checkT('ckKg', ckKg, _dlD.summary._ckKgTotal, 1);
+        _checkT('shKg', shKg, _dlD.summary._shKgTotal, 1);
+        const _dlEa = Object.values(_dlD.summary.pkEaByPart||{}).reduce((a,b)=>a+b,0)
+                    + (_dlD.summary.pkEaNoMeat||0) + (_dlD.summary.pkEaUnresolved||0);
+        _checkT('totalEA', totalEA, _dlEa, 5);
+      }
+    }catch(_e){
+      console.error('[Phase2.5 DL 비교 오류]', _e.message);
+    }
+  }
+
   const items = [
     { key:'bc',  label:'해동',   sub:`${thBoxes}박스 · ${thKg}kg`,                                  color:'var(--p)',  dateStr: dateRange(th) },
     { key:'th',  label:'방혈',   sub:`${th.length}건 · ${thBoxesRaw}박스 · ${thKgRaw}kg`,                  color:'#0369a1',  dateStr: dateRange(th) },

@@ -168,6 +168,38 @@ async function _perfReload(showLoading){
     var rows = _perfBuildRows(th, pp, ck, sh, pk, op, sc);
     window._perfRows = rows;        // 다운로드용
     window._perfMeta = {ym: ym, lbl: ym.slice(0,4)+'년 '+_perfMonths()[parseInt(ym.slice(5))-1]};
+
+    // ─── Phase 2.4 마이그레이션: dataLayer.getMonth 비교 모니터 (사용자 영향 0) ───
+    if(rows.length && typeof window!=='undefined' && window.DL && typeof window.DL.getMonth==='function'){
+      try{
+        var _dlPM = window.DL.getMonth(ym);  // 'YYYY-MM' 문자열
+        var _dlPMS = _dlPM && _dlPM.monthSummary;
+        if(_dlPMS){
+          // performance.js의 rows에서 합계 계산 (testRow 제외)
+          var _legSum = {rmKg:0, ppKg:0, ckKg:0, shKg:0, pkEa:0};
+          rows.forEach(function(r){
+            if(r.isTest) return;
+            _legSum.rmKg += parseFloat(r.rmKg)||0;
+            _legSum.ppKg += parseFloat(r.ppKg)||0;
+            _legSum.ckKg += parseFloat(r.ckKg)||0;
+            _legSum.shKg += parseFloat(r.shKg)||0;
+            _legSum.pkEa += parseInt(r.innerEa||r.pkEa)||0;
+          });
+          var _checkP = function(label, legacy, dl, tol){
+            tol = tol || 1;
+            var diff = Math.abs((legacy||0) - (dl||0));
+            if(diff > tol) console.warn('[Phase2.4 비교 차이] '+ym+' '+label+': legacy='+legacy.toFixed(2)+', DL='+dl+', Δ='+diff.toFixed(2));
+          };
+          _checkP('rmKgTotal', _legSum.rmKg, _dlPMS.rmKgTotal);
+          _checkP('ppKgTotal', _legSum.ppKg, _dlPMS._ppKgTotal);
+          _checkP('ckKgTotal', _legSum.ckKg, _dlPMS._ckKgTotal);
+          _checkP('shKgTotal', _legSum.shKg, _dlPMS._shKgTotal);
+        }
+      }catch(_e){
+        console.error('[Phase2.4 DL 비교 오류]', _e.message);
+      }
+    }
+
     _perfRenderTable(rows);
   } catch(e){
     console.error(e);

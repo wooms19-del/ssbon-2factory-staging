@@ -780,6 +780,30 @@
     var cmp=document.getElementById('mpCmp');
 
     var rows0 = (_mpData && _mpData.rows) || [];
+
+    // ─── Phase 2.3 마이그레이션: dataLayer.getMonth 비교 모니터 (사용자 영향 0) ───
+    if(rows0.length && typeof window!=='undefined' && window.DL && typeof window.DL.getMonth==='function'){
+      try{
+        var _dlM = window.DL.getMonth(_mpYm);  // 'YYYY-MM' 문자열
+        var _dlMS = _dlM && _dlM.monthSummary;
+        if(_dlMS){
+          var _legAgg = _mpAggregate(rows0);
+          var _check = function(label, legacy, dl, tol){
+            tol = tol || 1;
+            var diff = Math.abs((legacy||0) - (dl||0));
+            if(diff > tol) console.warn('[Phase2.3 비교 차이] '+_mpYm+' '+label+': legacy='+legacy+', DL='+dl+', Δ='+diff.toFixed(2));
+          };
+          _check('rmKgTotal', _legAgg.rmKg, _dlMS.rmKgTotal);
+          _check('ppKgTotal', _legAgg.ppKg, _dlMS._ppKgTotal);
+          _check('ckKgTotal', _legAgg.ckKg, _dlMS._ckKgTotal);
+          _check('shKgTotal', _legAgg.shKg, _dlMS._shKgTotal);
+          _check('pkEaTotal', _legAgg.pkEa, _dlMS.pkEaTotalDisp || 0);
+        }
+      }catch(_e){
+        console.error('[Phase2.3 DL 비교 오류]', _e.message);
+      }
+    }
+
     if(!rows0.length){
       if(st){ st.style.display=''; st.textContent='이 달의 데이터가 없습니다.'; st.style.color='#c0392b'; }
       if(tw) tw.style.display='none';
