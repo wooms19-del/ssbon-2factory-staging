@@ -368,6 +368,33 @@ async function completeOuterPacking(i, date, product, innerEa) {
   const docId = 'op_'+date+'_'+product.replace(/[\s\W]/g,'_').slice(0,20);
   const ok = await fbSave('outerpacking', rec, docId);
   if(ok){
+    // ─ testRun 자동 전파: 외포장 testRun=true → 같은 날짜+제품의 packing record도 testRun=true ─
+    // 입력자가 외포장에만 마킹하고 packing은 누락한 케이스 자동 보호
+    // (ex. 04-02/04-15/04-24처럼 분석 화면이 testRun을 인식 못 하는 문제 차단)
+    if(isTest){
+      try{
+        const pkSnap = await db.collection('packing')
+          .where('date','==',date)
+          .where('product','==',product)
+          .get();
+        let propagated = 0;
+        for(const doc of pkSnap.docs){
+          const d = doc.data();
+          if(!(d.testRun || d.isTest)){
+            await doc.ref.update({ testRun: true, _testRunReason: 'op_auto_propagation', _testRunPropagatedAt: new Date().toISOString() });
+            propagated++;
+          }
+        }
+        fbClearCache('packing');
+        if(propagated > 0){
+          toast(`내포장 ${propagated}건도 자동 테스트 처리됨`, 'd');
+          console.log(`[testRun 자동 전파] ${date} ${product} packing ${propagated}건 → testRun=true`);
+        }
+      }catch(err){
+        console.error('[testRun 전파 실패]', err);
+        toast('내포장 testRun 자동 전파 실패 — 콘솔 확인 필요', 'w');
+      }
+    }
     toast(product+' 외포장 완료 ✓');
     loadOuterPacking();
   }
