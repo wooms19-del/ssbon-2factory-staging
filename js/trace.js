@@ -389,7 +389,7 @@ function showTraceDetail(key){
           <td style="text-align:center">${String(r.date||'').slice(0,10)}</td>
           <td style="text-align:center">${r.machine||'-'}</td>
           <td>${r.product||'-'}</td>
-          <td style="text-align:center">${r.cart||'-'}</td>
+          <td style="text-align:center">${r.wagon||r.cart||'-'}</td>
           <td style="text-align:center">${r.start||'-'}</td>
           <td style="text-align:center">${r.end||'-'}</td>
           <td style="text-align:center" style="font-weight:600;color:var(--p)">${(parseFloat(r.ea)||0).toLocaleString()}</td>
