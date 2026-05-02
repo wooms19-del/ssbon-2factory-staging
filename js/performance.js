@@ -214,7 +214,7 @@ window._perfReload = _perfReload;
 // ── B방식 역추적 + 일자별 행 빌드 ──────────────────────────
 function _perfBuildRows(th, pp, ck, sh, pk, op, sc){
   var d = function(r){return String(r.date||'').slice(0,10);};
-  var idOf = function(r){return r.fbId||r.id||'';};
+  var idOf = function(r){return r.fbId||r.id||r._id||'';};
 
   // 0) sauce 날짜별 FP/FC 집계
   var scFP={}, scFC={};
@@ -375,6 +375,96 @@ function _perfBuildRows(th, pp, ck, sh, pk, op, sc){
     return {bx:partType, kg:partKgM};
   }
 
+  // 9-2) 제품별 와곤 풀 추적 → 부위/박스/KG (같은 날 우선)
+  // 룰: packing.wagon/cart → sh.wagonOut/cartOut → sh.wagonIn → ck.wagonOut → ck.cage → pp.cage → pp.wagons → th.cart
+  // 각 단계 같은 날 매칭 우선, 매칭 0건일 때만 전날 확장. 데이터 누락 시 빈 결과 + console.warn.
+  function _pickSameOrPrev(coll, date, prevD, predicate){
+    var same = coll.filter(function(r){ return d(r)===date && predicate(r); });
+    if(same.length) return {recs:same, used:'SAME'};
+    var prev = coll.filter(function(r){ return d(r)===prevD && predicate(r); });
+    if(prev.length) return {recs:prev, used:'PREV'};
+    return {recs:[], used:'NONE'};
+  }
+  function getProductPartBoxes(date, product){
+    var pInfo = (typeof L!=='undefined' && L && L.products) ? L.products.find(function(x){return x.name===product;}) : null;
+    var isNoMeat = !!(pInfo && pInfo.noMeat);
+    if(isNoMeat){
+      return {bx:{}, kg:{}, poolKey:'NOMEAT-'+product, status:'NOMEAT'};
+    }
+    var pkD = pkClean.filter(function(r){ return d(r)===date && r.product===product; });
+    if(!pkD.length) return {bx:{}, kg:{}, poolKey:'NODATA-'+date+'-'+product, status:'NODATA'};
+    var pkW = new Set(); var pkC = new Set();
+    pkD.forEach(function(r){
+      _perfSplit(r.wagon).forEach(function(w){pkW.add(w);});
+      _perfSplit(r.cart).forEach(function(c){pkC.add(c);});
+    });
+    if(!pkW.size && !pkC.size){
+      try{ console.warn('[부위추적 PK_EMPTY]', date, product, '- packing wagon/cart 둘 다 빈값. 부위 빈칸 표시.'); }catch(_){}
+      return {bx:{}, kg:{}, poolKey:'PK_EMPTY-'+date+'-'+product, status:'PK_EMPTY'};
+    }
+    var prevD = _perfPrevD(date);
+    // sh
+    var shRes = _pickSameOrPrev(sh, date, prevD, function(r){
+      return _perfSplit(r.wagonOut).some(function(w){return pkW.has(w);}) ||
+             _perfSplit(r.cartOut).some(function(c){return pkC.has(c);});
+    });
+    if(shRes.used==='PREV'){ try{ console.warn('[부위추적 SH_PREV]', date, product, '- 같은 날 sh 0건, 전날 매칭 사용.'); }catch(_){} }
+    if(shRes.used==='NONE'){
+      try{ console.warn('[부위추적 SH_NONE]', date, product, '- sh 매칭 0건. 부위 빈칸.'); }catch(_){}
+      return {bx:{}, kg:{}, poolKey:'SH_NONE-'+date+'-'+product, status:'SH_NONE'};
+    }
+    var shWi = new Set();
+    shRes.recs.forEach(function(r){_perfSplit(r.wagonIn).forEach(function(w){shWi.add(w);});});
+    // ck
+    var ckRes = _pickSameOrPrev(ck, date, prevD, function(r){
+      return _perfSplit(r.wagonOut).some(function(w){return shWi.has(w);});
+    });
+    if(ckRes.used==='PREV'){ try{ console.warn('[부위추적 CK_PREV]', date, product, '- 같은 날 ck 0건, 전날 매칭 사용.'); }catch(_){} }
+    if(ckRes.used==='NONE'){
+      try{ console.warn('[부위추적 CK_NONE]', date, product, '- ck 매칭 0건. 부위 빈칸.'); }catch(_){}
+      return {bx:{}, kg:{}, poolKey:'CK_NONE-'+date+'-'+product, status:'CK_NONE'};
+    }
+    var ckCg = new Set();
+    ckRes.recs.forEach(function(r){_perfSplit(r.cage).forEach(function(c){ckCg.add(c);});});
+    // pp
+    var ppRes = _pickSameOrPrev(pp, date, prevD, function(r){
+      return _perfSplit(r.cage).some(function(c){return ckCg.has(c);});
+    });
+    if(ppRes.used==='PREV'){ try{ console.warn('[부위추적 PP_PREV]', date, product, '- 같은 날 pp 0건, 전날 매칭 사용.'); }catch(_){} }
+    if(ppRes.used==='NONE'){
+      try{ console.warn('[부위추적 PP_NONE]', date, product, '- pp 매칭 0건. 부위 빈칸.'); }catch(_){}
+      return {bx:{}, kg:{}, poolKey:'PP_NONE-'+date+'-'+product, status:'PP_NONE'};
+    }
+    var ppWg = new Set();
+    ppRes.recs.forEach(function(r){_perfSplit(r.wagons).forEach(function(w){ppWg.add(w);});});
+    if(!ppWg.size){
+      try{ console.warn('[부위추적 PP_WAGONS_EMPTY]', date, product, '- pp 매칭됐으나 wagons 빈값. 부위 빈칸.'); }catch(_){}
+      return {bx:{}, kg:{}, poolKey:'PP_EMPTY-'+date+'-'+product, status:'PP_WAGONS_EMPTY'};
+    }
+    // th: 같은 날 우선, 없으면 전날
+    var thM = thClean.filter(function(r){ return d(r)===date && ppWg.has(String(r.cart||'').trim()); });
+    var thUsed = 'SAME';
+    if(!thM.length){ thM = thClean.filter(function(r){ return d(r)===prevD && ppWg.has(String(r.cart||'').trim()); }); thUsed='PREV'; }
+    if(!thM.length){
+      try{ console.warn('[부위추적 TH_NONE]', date, product, '- thawing 매칭 0건. 부위 빈칸.'); }catch(_){}
+      return {bx:{}, kg:{}, poolKey:'TH_NONE-'+date+'-'+product, status:'TH_NONE'};
+    }
+    if(thUsed==='PREV'){ try{ console.warn('[부위추적 TH_PREV]', date, product, '- 같은 날 thawing 0건, 전날 매칭 사용.'); }catch(_){} }
+    var seen = new Set(); var ded = [];
+    thM.forEach(function(r){
+      var k = (r.cart||'')+'|'+d(r)+'|'+(r.type||'');
+      if(seen.has(k)) return; seen.add(k); ded.push(r);
+    });
+    var bx={}, kg={};
+    ded.forEach(function(r){
+      var p = r.part||r.type||'';
+      bx[p] = (bx[p]||0) + (parseInt(r.boxes)||0);
+      kg[p] = (kg[p]||0) + (parseFloat(r.totalKg)||0);
+    });
+    var poolKey = ded.map(function(r){ return d(r)+'|'+r.cart+'|'+(r.part||r.type); }).sort().join(';');
+    return {bx:bx, kg:kg, poolKey:poolKey, status:'OK'};
+  }
+
   // 10) 일자별 행 빌드 (제품별)
   var unique = Object.keys(byDP).map(function(k){return k.split('|')[0];});
   var dates = [];
@@ -402,105 +492,132 @@ function _perfBuildRows(th, pp, ck, sh, pk, op, sc){
       if(!(__info && __info.noMeat)){ firstMeatPi = __k; break; }
     }
 
-    prods.forEach(function(prod, pi){
-      var pkr=byDP[date+'|'+prod];
-      var opR=opMap[date+'|'+prod]||{ea:0,boxes:0,tray:0,trayDef:0,unitCnt:0,boxDef:0};
-      var innerEa = opR.ea>0 ? opR.ea : Math.round(pkr.ea);
-      var defPouch = Math.max(0, Math.round(pkr.pouch) - innerEa);
-      var boxUse = opR.boxes + opR.boxDef;
-      var qaiKg = (pkr.subKg>0) ? _perfR2(pkr.subKg) : 0;
-      // 무육 제품 여부 (메추리알 등) — 부위 그룹과 분리
-      var __pInfo = (typeof L!=='undefined' && L && L.products) ? L.products.find(function(x){return x.name===prod;}) : null;
-      var isNoMeatProd = !!(__pInfo && __pInfo.noMeat);
-      // 소비기한 (당일 포함 일수): 3KG/3kg → 60일(=+59일), 그 외 → 12개월(=+12개월 -1일)
-      var dt=new Date(date+'T00:00:00');
-      var is3kg = (prod.indexOf('3KG')>=0)||(prod.indexOf('3kg')>=0);
-      if(is3kg){ dt.setDate(dt.getDate()+59); }
-      else { dt.setMonth(dt.getMonth()+12); dt.setDate(dt.getDate()-1); }
-      var expDate = dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0');
+    // === [신규] 제품별 부위 추적 + 같은 풀 그룹화 ===
+    // 1) 제품별 trace
+    var traced = prods.map(function(p){
+      var t = getProductPartBoxes(date, p);
+      t.product = p;
+      t.pi = prods.indexOf(p);
+      return t;
+    });
+    // 2) poolKey로 그룹화 (같은 풀 = 같은 와곤 풀 공유)
+    var groupOrder = [];
+    var groupMembers = {};
+    traced.forEach(function(t){
+      if(!groupMembers[t.poolKey]){
+        groupMembers[t.poolKey] = [];
+        groupOrder.push(t.poolKey);
+      }
+      groupMembers[t.poolKey].push(t);
+    });
 
-      // 첫 비-무육 제품 + 부위 2개 이상 → 부위별 행 분리
-      if(pi===firstMeatPi && partList.length>1 && !isNoMeatProd){
+    // 3) 그룹별 행 빌드
+    groupOrder.forEach(function(poolKey, groupIdx){
+      var members = groupMembers[poolKey];
+      members.forEach(function(t, mIdx){
+        var prod = t.product;
+        var pi = t.pi;
+        var pkr = byDP[date+'|'+prod];
+        var opR = opMap[date+'|'+prod] || {ea:0,boxes:0,tray:0,trayDef:0,unitCnt:0,boxDef:0};
+        var innerEa = opR.ea>0 ? opR.ea : Math.round(pkr.ea);
+        var defPouch = Math.max(0, Math.round(pkr.pouch) - innerEa);
+        var boxUse = opR.boxes + opR.boxDef;
+        var qaiKg = (pkr.subKg>0) ? _perfR2(pkr.subKg) : 0;
+        var isNoMeatProd = (t.status === 'NOMEAT');
+        // 소비기한
+        var dt0 = new Date(date+'T00:00:00');
+        var is3kg = (prod.indexOf('3KG')>=0)||(prod.indexOf('3kg')>=0);
+        if(is3kg){ dt0.setDate(dt0.getDate()+59); }
+        else { dt0.setMonth(dt0.getMonth()+12); dt0.setDate(dt0.getDate()-1); }
+        var expDate = dt0.getFullYear()+'-'+String(dt0.getMonth()+1).padStart(2,'0')+'-'+String(dt0.getDate()).padStart(2,'0');
+
         var isPending = (opR.boxes||0)===0 && (opR.boxDef||0)===0;
         var isKostco = prod.indexOf('코스트코')>=0||prod.indexOf('코코')>=0;
         var outBoxVal = isKostco ? (opR.tray||0) : opR.boxes;
-        partList.forEach(function(pn, ppi){
-          var isFR = ppi===0;  // 첫 분리 행
+
+        var isGroupFirst = (mIdx === 0);
+        var isDayFirst = (groupIdx === 0 && mIdx === 0);  // 그날 전체 첫 행
+        var groupSize = members.length;
+        var partList = Object.keys(t.bx||{}).filter(function(k){return k && t.bx[k]>0;}).sort(function(a,b){return t.bx[b]-t.bx[a];});
+
+        // 그룹의 첫 제품 + 부위 2개 이상 → 부위별 sub-row 분리
+        if(isGroupFirst && partList.length>1 && !isNoMeatProd){
+          partList.forEach(function(pn, ppi){
+            var isFR = ppi===0;  // 첫 sub-row
+            var isDF = isDayFirst && isFR;
+            rows.push({
+              date: date, dayNo: dayNo, product: prod,
+              productIndex: pi, subRowIdx: ppi, totalSub: partList.length,
+              groupIdx: groupIdx, groupRowIdx: mIdx, groupSize: groupSize, isGroupFirst: isGroupFirst,
+              isNoMeat: false,
+              expDate: isFR ? expDate : '',
+              workers: isDF ? Math.round(pkr.workers||0) : 0,
+              rmType: pn,
+              rmKg: _perfR2(t.kg[pn]||0),
+              boxSeoldo: pn==='설도' ? t.bx[pn] : 0,
+              boxHongdu: (pn==='홍두깨'||pn==='홍두께') ? t.bx[pn] : 0,
+              boxUdun:   pn==='우둔' ? t.bx[pn] : 0,
+              ppKg: isDF ? ppD : 0,
+              ckKg: isDF ? ckD : 0,
+              shKg: isDF ? shD : 0,
+              sauceKg: isFR ? _perfR2(pkr.sauceKg) : 0,
+              innerEa: isFR ? innerEa : 0,
+              defPouch: isFR ? defPouch : 0,
+              outerBoxes: isFR ? opR.boxes : 0,
+              boxDef: isFR ? opR.boxDef : 0,
+              tray: isFR ? opR.tray : 0,
+              trayDef: isFR ? opR.trayDef : 0,
+              unitCnt: isFR ? opR.unitCnt : 0,
+              outBoxes: isFR ? outBoxVal : 0,
+              sauceFP: isDF ? (scFP[date]||0) : 0,
+              sauceFC: isDF ? (scFC[date]||0) : 0,
+              qaiKg: isFR ? qaiKg : 0,
+              pouch: isFR ? Math.round(pkr.pouch) : 0,
+              boxUse: isFR ? boxUse : 0,
+              isTest: false,
+              isPending: isPending
+            });
+          });
+        } else {
+          // 그룹의 첫 제품 (단일 부위 or NOMEAT/누락 빈칸) 또는 그룹의 멤버(병합 대상)
+          var rmTypeStr = '', rmKgVal = 0;
+          var sd=0, hd=0, ud=0;
+          if(isGroupFirst && !isNoMeatProd && partList.length===1){
+            rmTypeStr = partList[0];
+            rmKgVal = _perfR2(t.kg[partList[0]]||0);
+            sd = t.bx['설도']||0;
+            hd = t.bx['홍두깨']||t.bx['홍두께']||0;
+            ud = t.bx['우둔']||0;
+          }
+          // isGroupFirst이지만 partList.length===0 (NOMEAT 또는 누락) → 부위 빈칸
+          // !isGroupFirst → 같은 풀 멤버, 부위 빈칸 (rowspan으로 받음)
           rows.push({
             date: date, dayNo: dayNo, product: prod,
-            productIndex: pi, subRowIdx: ppi, totalSub: partList.length,
-            expDate: isFR ? expDate : '',
-            workers: isFR ? Math.round(pkr.workers||0) : 0,
-            rmType: pn,
-            rmKg: _perfR2(partKg[pn]||0),
-            boxSeoldo: pn==='설도' ? partBx[pn] : 0,
-            boxHongdu: (pn==='홍두깨'||pn==='홍두께') ? partBx[pn] : 0,
-            boxUdun:   pn==='우둔' ? partBx[pn] : 0,
-            ppKg: isFR ? ppD : 0,
-            ckKg: isFR ? ckD : 0,
-            shKg: isFR ? shD : 0,
-            sauceKg: isFR ? _perfR2(pkr.sauceKg) : 0,
-            innerEa: isFR ? innerEa : 0,
-            defPouch: isFR ? defPouch : 0,
-            outerBoxes: isFR ? opR.boxes : 0,
-            boxDef: isFR ? opR.boxDef : 0,
-            tray: isFR ? opR.tray : 0,
-            trayDef: isFR ? opR.trayDef : 0,
-            unitCnt: isFR ? opR.unitCnt : 0,
-            outBoxes: isFR ? outBoxVal : 0,
-            sauceFP: isFR ? (scFP[date]||0) : 0,
-            sauceFC: isFR ? (scFC[date]||0) : 0,
-            qaiKg: isFR ? qaiKg : 0,
-            pouch: isFR ? Math.round(pkr.pouch) : 0,
-            boxUse: isFR ? boxUse : 0,
+            productIndex: pi, subRowIdx: 0, totalSub: 1,
+            groupIdx: groupIdx, groupRowIdx: mIdx, groupSize: groupSize, isGroupFirst: isGroupFirst,
+            isNoMeat: isNoMeatProd,
+            expDate: expDate,
+            workers: isDayFirst ? Math.round(pkr.workers||0) : 0,
+            rmType: rmTypeStr,
+            rmKg: rmKgVal,
+            boxSeoldo: sd, boxHongdu: hd, boxUdun: ud,
+            ppKg: isDayFirst ? ppD : 0,
+            ckKg: isDayFirst ? ckD : 0,
+            shKg: isDayFirst ? shD : 0,
+            sauceKg: _perfR2(pkr.sauceKg),
+            innerEa: innerEa, defPouch: defPouch,
+            outerBoxes: opR.boxes, boxDef: opR.boxDef,
+            tray: opR.tray, trayDef: opR.trayDef,
+            unitCnt: opR.unitCnt, outBoxes: outBoxVal,
+            sauceFP: isDayFirst ? (scFP[date]||0) : 0,
+            sauceFC: isDayFirst ? (scFC[date]||0) : 0,
+            qaiKg: qaiKg,
+            pouch: Math.round(pkr.pouch), boxUse: boxUse,
             isTest: false,
             isPending: isPending
           });
-        });
-      } else {
-        // 단일 부위 또는 같은 날 2번째 이후 제품
-        var rmTypeStr, rmKgVal;
-        if(isNoMeatProd){
-          // 무육 제품: 부위/원육 빈칸
-          rmTypeStr = '';
-          rmKgVal = 0;
-        } else if(pi===firstMeatPi && partList.length===1){
-          rmTypeStr = partList[0];
-          rmKgVal = _perfR2(partKg[partList[0]]||0);
-        } else {
-          rmTypeStr = '';
-          rmKgVal = pi===firstMeatPi ? rmKg : 0;
         }
-        var isPending = (opR.boxes||0)===0 && (opR.boxDef||0)===0;
-        var isKostco2 = prod.indexOf('코스트코')>=0||prod.indexOf('코코')>=0;
-        var outBoxVal2 = isKostco2 ? (opR.tray||0) : opR.boxes;
-        rows.push({
-          date: date, dayNo: dayNo, product: prod,
-          productIndex: pi, subRowIdx: 0, totalSub: 1,
-          isNoMeat: isNoMeatProd,
-          expDate: expDate,
-          workers: pi===0 ? Math.round(pkr.workers||0) : 0,
-          rmType: rmTypeStr,
-          rmKg: rmKgVal,
-          boxSeoldo: !isNoMeatProd && pi===firstMeatPi ? (partBx['설도']||0) : 0,
-          boxHongdu: !isNoMeatProd && pi===firstMeatPi ? (partBx['홍두깨']||partBx['홍두께']||0) : 0,
-          boxUdun:   !isNoMeatProd && pi===firstMeatPi ? (partBx['우둔']||0) : 0,
-          ppKg: pi===0 ? ppD : 0,
-          ckKg: pi===0 ? ckD : 0,
-          shKg: pi===0 ? shD : 0,
-          sauceKg: _perfR2(pkr.sauceKg),
-          innerEa: innerEa, defPouch: defPouch,
-          outerBoxes: opR.boxes, boxDef: opR.boxDef,
-          tray: opR.tray, trayDef: opR.trayDef,
-          unitCnt: opR.unitCnt, outBoxes: pi===0 ? outBoxVal2 : 0,
-          sauceFP: pi===0 ? (scFP[date]||0) : 0,
-          sauceFC: pi===0 ? (scFC[date]||0) : 0,
-          qaiKg: qaiKg,
-          pouch: Math.round(pkr.pouch), boxUse: boxUse,
-          isTest: false,
-          isPending: isPending
-        });
-      }
+      });
     });
   });
 
@@ -576,6 +693,9 @@ function _perfBuildRows(th, pp, ck, sh, pk, op, sc){
       r.dayAllSingle=false;       // testRow는 dayAllSingle 룰 적용 X (자기 cells[4-8] 항상 표시)
       r.dayFirstMeatIdx=-1;       // 일반 행 first idx와 매칭 안 됨
       r.dayMeatSpan=0;            // dayMeatSpan>0 조건 안 통과
+      r.isGroupFirst = r.isGroupFirst === true;  // testRow는 자기 행에 부위 표시
+      r.groupSize = r.groupSize || 1;
+      r.groupAllSingle = false;
       return;
     }
     if(_dayIdx[r.date]===undefined) _dayIdx[r.date]=0;
@@ -586,7 +706,7 @@ function _perfBuildRows(th, pp, ck, sh, pk, op, sc){
     if(r.isTest) return;
     r.dayTotalSpan = _dayCnt[r.date]||1;
   });
-  // 날짜 내 모든 행이 단일 부위(totalSub=1)인지 → 원육 컬럼 병합 가능 여부
+  // 날짜 내 모든 행이 단일 부위(totalSub=1)인지 → DAY_MCOLS 병합 가능 여부 (날짜 단위)
   var _dayAllSingle={};
   combined.forEach(function(r){
     if(r.isTest) return;
@@ -594,10 +714,10 @@ function _perfBuildRows(th, pp, ck, sh, pk, op, sc){
     else if(_dayAllSingle[r.date]===undefined) _dayAllSingle[r.date]=true;
   });
   combined.forEach(function(r){
-    if(r.isTest) return;  // testRow는 위에서 이미 dayAllSingle=false 설정됨 (덮어쓰기 방지)
+    if(r.isTest) return;
     r.dayAllSingle=(_dayAllSingle[r.date]!==false);
   });
-  // 무육 제외 — 첫 비-무육 행 idx + 그날 비-무육 행 수
+  // 무육 제외 — 첫 비-무육 행 idx + 그날 비-무육 행 수 (legacy 호환용, 부위 컬럼 rowspan은 group 단위로 별도 결정)
   var _dayFirstMeatIdx = {};
   var _dayMeatCnt = {};
   combined.forEach(function(r){
@@ -606,9 +726,26 @@ function _perfBuildRows(th, pp, ck, sh, pk, op, sc){
     _dayMeatCnt[r.date] = (_dayMeatCnt[r.date]||0)+1;
   });
   combined.forEach(function(r){
-    if(r.isTest) return;  // testRow는 위에서 이미 dayFirstMeatIdx=-1, dayMeatSpan=0 설정됨
+    if(r.isTest) return;
     r.dayFirstMeatIdx = _dayFirstMeatIdx[r.date];
     r.dayMeatSpan = _dayMeatCnt[r.date] || 0;
+  });
+
+  // === [신규] 그룹 단위 메타 (부위 컬럼 rowspan 결정용) ===
+  // groupKey = date + '|' + groupIdx  (빌드 시 부여된 groupIdx는 그날 안에서 0,1,2...)
+  // groupAllSingle: 그룹 내 모든 행이 단일 부위(totalSub<=1) → 부위 컬럼 rowspan 가능
+  //                 그룹 내에 sub-row 분리(totalSub>1) 있으면 rowspan 처리 X (각 sub-row 자기 부위 표시)
+  var _groupAllSingle = {};
+  combined.forEach(function(r){
+    if(r.isTest) return;
+    var gk = r.date + '|' + (r.groupIdx||0);
+    if((r.totalSub||1)>1) _groupAllSingle[gk] = false;
+    else if(_groupAllSingle[gk] === undefined) _groupAllSingle[gk] = true;
+  });
+  combined.forEach(function(r){
+    if(r.isTest) return;
+    var gk = r.date + '|' + (r.groupIdx||0);
+    r.groupAllSingle = (_groupAllSingle[gk] !== false);
   });
   return combined;
 }
@@ -658,9 +795,9 @@ function _perfRenderTable(rows){
            : n.toLocaleString('ko-KR',{minimumFractionDigits:1,maximumFractionDigits:4});
     };
     var cells=[
-      (r.dayNo>0 && r.productIndex===0 && !isSubRow) ? r.dayNo : '',
-      (r.productIndex===0 && !isSubRow) ? r.date.slice(5) : '',
-      (r.productIndex===0 && !isSubRow && r.expDate) ? r.expDate.slice(2).replace(/-/g,'.') : '',
+      (r.dayNo>0 && r.dayRowIdx===0 && !isSubRow) ? r.dayNo : '',
+      (r.dayRowIdx===0 && !isSubRow) ? r.date.slice(5) : '',
+      (r.dayRowIdx===0 && !isSubRow && r.expDate) ? r.expDate.slice(2).replace(/-/g,'.') : '',
       !isSubRow ? r.product : '',
       r.rmType||'',
       fmt(r.rmKg), r.boxSeoldo||'', r.boxHongdu||'', r.boxUdun||'',
@@ -683,15 +820,18 @@ function _perfRenderTable(rows){
         html+='<td style="text-align:center"></td>';
         return;
       }
-      // 원육 컬럼: 첫 비-무육 행이 아니면 skip (rowspan 받음)
-      if(isRMcol && r.dayAllSingle && r.dayMeatSpan>0 && r.dayRowIdx !== r.dayFirstMeatIdx && !isSubRow) return;
+      // 원육 컬럼 그룹 단위 rowspan 룰 (testRow 제외):
+      // - 그룹 멤버 행 (isGroupFirst=false) + 그룹이 모두 단일 부위: skip (rowspan으로 받음)
+      // - 그룹 첫 행 + 그룹이 모두 단일 부위 + groupSize>1: rowspan=groupSize
+      // - 그 외 (그룹 첫 행 + 단일 + groupSize=1, 또는 sub-row 분리): 자기 행에 표시 (rowspan 없음)
+      if(isRMcol && !r.isTest && r.groupAllSingle && r.groupSize>1 && !r.isGroupFirst && !isSubRow) return;
       var rs='';
       var dts = r.dayTotalSpan||1;
-      var dms = r.dayMeatSpan||1;
+      var gSize = r.groupSize||1;
       if(DAY_MCOLS.has(i) && dts>1 && r.dayRowIdx===0 && !isSubRow){
         rs=' rowspan="'+dts+'"';
-      } else if(isRMcol && r.dayAllSingle && dms>1 && r.dayRowIdx === r.dayFirstMeatIdx && !isSubRow){
-        rs=' rowspan="'+dms+'"';
+      } else if(isRMcol && !r.isTest && r.groupAllSingle && gSize>1 && r.isGroupFirst && !isSubRow){
+        rs=' rowspan="'+gSize+'"';
       } else if(MCOLS.has(i) && span>1 && !isSubRow && !DAY_MCOLS.has(i)){
         rs=' rowspan="'+span+'"';
       }
@@ -729,9 +869,9 @@ function perfDownloadXlsx(){
     var isSubRow=r.subRowIdx>0;
     var span=(r.totalSub||1);
     aoa.push([
-      (!isSubRow && r.dayNo>0 && r.productIndex===0) ? r.dayNo : '',
-      (!isSubRow && r.productIndex===0) ? r.date : '',
-      (!isSubRow && r.productIndex===0) ? r.expDate : '',
+      (!isSubRow && r.dayNo>0 && r.dayRowIdx===0) ? r.dayNo : '',
+      (!isSubRow && r.dayRowIdx===0) ? r.date : '',
+      (!isSubRow && r.dayRowIdx===0) ? r.expDate : '',
       !isSubRow ? r.product : '',
       r.rmType||'',
       r.rmKg||'', r.boxSeoldo||'', r.boxHongdu||'', r.boxUdun||'',
@@ -761,9 +901,16 @@ function perfDownloadXlsx(){
           merges.push({s:{r:rowIdx,c:c},e:{r:rowIdx+dts2-1,c:c}});
         });
       }
-      // 부위 분리 기반 병합 (DAY_MCOLS 제외 나머지 MCOLS)
+      // 그룹 단위 부위 컬럼(4~8) 병합: 그룹 첫 행 + 그룹 모두 단일 부위 + groupSize>1
+      var gSize = r.groupSize||1;
+      if(!r.isTest && r.isGroupFirst && r.groupAllSingle && gSize>1 && !r.isNoMeat){
+        [4,5,6,7,8].forEach(function(c){
+          merges.push({s:{r:rowIdx,c:c},e:{r:rowIdx+gSize-1,c:c}});
+        });
+      }
+      // 부위 sub-row 분리 기반 병합 (DAY_MCOLS, 부위 컬럼 제외 나머지)
       if(span>1){
-        MCOLS_ARR.filter(function(c){return ![0,1,2,9,10,11].includes(c);}).forEach(function(c){
+        MCOLS_ARR.filter(function(c){return ![0,1,2,4,5,6,7,8,9,10,11].includes(c);}).forEach(function(c){
           merges.push({s:{r:rowIdx,c:c},e:{r:rowIdx+span-1,c:c}});
         });
       }
