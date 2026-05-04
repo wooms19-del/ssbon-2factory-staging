@@ -49,7 +49,8 @@ function parseImp(bc){
     if(a3==='310'&&i+10<=c.length){const d=+c[i+3],raw=c.slice(i+4,i+10);r.weightKg=r2(+raw/Math.pow(10,d));i+=10;continue;}
     if(a3==='320'&&i+10<=c.length){const d=+c[i+3],raw=c.slice(i+4,i+10);r.weightKg=r2(+raw/Math.pow(10,d)*0.45359237);i+=10;continue;}
     if((a2==='11'||a2==='13')&&i+8<=c.length){r.packDate=fmtD(c.slice(i+2,i+8));if(!r.expiryDate)r.expiryDate=add24m(r.packDate);i+=8;continue;}
-    if((a2==='15'||a2==='17')&&i+8<=c.length){r.expiryDate=fmtD(c.slice(i+2,i+8));i+=8;continue;}
+    if((a2==='15'||a2==='17')&&i+8<=c.length){const nd=fmtD(c.slice(i+2,i+8));if(nd)r.expiryDate=nd;i+=8;continue;}
+    if(a2==='21'&&i+14<=c.length){i+=14;continue;}  // AI 21 시리얼 12자 skip (시리얼 안의 '15'/'17' 우연 매칭 방지)
     i++;
   }
   if(L.gtinMap[r.gtin]) r.part=L.gtinMap[r.gtin];
