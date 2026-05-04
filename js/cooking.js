@@ -149,7 +149,7 @@ function showCkStartCard(){
   document.getElementById('ck_startCard').scrollIntoView({behavior:'smooth', block:'start'});
 }
 
-function onCkStartBtn(){
+async function onCkStartBtn(){
   const rows = document.querySelectorAll('#ck_tankRows > div');
   if(!rows.length){ toast('탱크를 먼저 추가하세요','d'); return; }
   if(!L.cooking_pending) L.cooking_pending = [];
@@ -168,6 +168,21 @@ function onCkStartBtn(){
 
   if(!added) return;
   saveL();
+
+  // ★ Firebase 동기화 (packing_pending 패턴 — 다른 디바이스 가시성 확보)
+  // 5/4 사고와 같은 종류의 위험 차단: cooking_pending이 localStorage 전용이던 결함 해결
+  const pendingToSave = L.cooking_pending.filter(r => !r.fbId && String(r.date||'').slice(0,10) === tod() && (!r.end || r.end === ''));
+  for(const rec of pendingToSave) {
+    try {
+      const fbId = await fbSave('cooking_pending', rec);
+      if(fbId) { rec.fbId = fbId; }
+    } catch(e) {
+      console.error('[cooking] cooking_pending Firebase 저장 실패:', e);
+      toast('자숙 시작 동기화 실패: 다른 기기에서 안 보일 수 있음','w');
+    }
+  }
+  saveL();
+
   document.getElementById('ck_tankRows').innerHTML='';
   document.getElementById('ck_startTime').value='';
   _ckRowIdx=0;
@@ -289,8 +304,9 @@ async function deleteCkPending(id){
   if(!L.cooking_pending) L.cooking_pending=[];
   const rec = L.cooking_pending.find(r=>r.id===id);
   if(rec && rec.fbId){
-    try { await db.collection('cooking').doc(rec.fbId).delete(); }
-    catch(e){ console.error('Firebase 삭제 오류',e); }
+    // ★ 'cooking' → 'cooking_pending' 정정 (이전 코드는 잘못된 컬렉션 참조 = dead code)
+    try { await fbDelete('cooking_pending', rec.fbId); }
+    catch(e){ console.error('Firebase cooking_pending 삭제 오류',e); }
   }
   L.cooking_pending = L.cooking_pending.filter(r=>r.id!==id);
   saveL();
@@ -342,6 +358,12 @@ async function saveCkEnd(id){
   L.cooking_pending = L.cooking_pending.filter(r=>r.id!==id);
   L.cooking.push(completed);
   saveL();
+
+  // ★ cooking_pending Firebase에서 삭제 (packing 패턴 동일)
+  if(rec.fbId) {
+    try { await fbDelete('cooking_pending', rec.fbId); }
+    catch(e) { console.error('[cooking] cooking_pending 삭제 실패:', e); }
+  }
 
   const fbId = await fbSave('cooking', completed);
   if(fbId){ completed.fbId=fbId; saveL(); gasRecord('saveCooking', completed); toast(`${completed.tank} 종료 저장됨 ✓`); }

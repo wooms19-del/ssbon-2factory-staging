@@ -463,6 +463,18 @@ async function fbGetOpenPacking() {
   }
 }
 
+// 미종료 자숙 진행중 조회 (종료시간 없는 것 전체)
+// packing_pending과 동일 패턴 — 다른 디바이스 동시 작업 가시성 확보
+async function fbGetOpenCooking() {
+  try {
+    const snap = await db.collection('cooking_pending').where('end', '==', '').get();
+    return snap.docs.map(d => ({fbId: d.id, ...d.data()}));
+  } catch(e) {
+    console.error('Firebase 미종료 자숙 조회 오류:', e);
+    return [];
+  }
+}
+
 // 날짜 범위 조회 (분석용)
 async function fbGetRange(colName, startDate, endDate) {
   const key = colName + '__range__' + startDate + '__' + endDate;
@@ -550,6 +562,36 @@ async function loadOpenPacking() {
     saveL();
   } catch(e) {
     console.error('미종료 포장 로드 오류:', e);
+  }
+}
+
+// 미종료 자숙 pending 로드 (loadOpenPacking 패턴 동일)
+// 5/4 사고와 같은 종류의 위험 차단:
+//  - 기존: cooking_pending이 localStorage 전용 → 다른 디바이스에서 진행중 자숙 안 보임
+//  - 변경: Firebase 동기화 → 어느 디바이스에서든 진행중 자숙 가시
+async function loadOpenCooking() {
+  try {
+    // 로컬에 fbId 없는 pending → Firebase에 올리기 (마이그레이션 + 신규 저장)
+    const localOnly = (L.cooking_pending||[]).filter(r => !r.fbId && (!r.end || r.end === ''));
+    for(const rec of localOnly) {
+      const fbId = await fbSave('cooking_pending', rec);
+      if(fbId) { rec.fbId = fbId; }
+    }
+    if(localOnly.length) saveL();
+
+    // Firebase에서 전체 미종료 로드
+    const recs = await fbGetOpenCooking();
+    const completed = (L.cooking_pending||[]).filter(r => r.end && r.end !== '');
+    L.cooking_pending = [...completed, ...recs];
+    const seen = new Set();
+    L.cooking_pending = L.cooking_pending.filter(r => {
+      const k = r.fbId || r.id;
+      if(seen.has(k)) return false;
+      seen.add(k); return true;
+    });
+    saveL();
+  } catch(e) {
+    console.error('미종료 자숙 로드 오류:', e);
   }
 }
 

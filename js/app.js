@@ -60,7 +60,8 @@ function showTab(mode,tab){
       .then(()=>{ updateThawInfo(); updPpWagon(); renderPL('preprocess'); });
   } else if(tab==='cooking'){
     if(!L.cooking_pending) L.cooking_pending=[];
-    loadFromServer(today).then(()=>{
+    // ★ loadOpenCooking 추가 (다른 디바이스 진행중 자숙 가시성)
+    Promise.all([loadFromServer(today), loadOpenCooking()]).then(()=>{
       renderCkCageList(); renderPL('cooking'); renderCkPending();
       const hasPending = L.cooking_pending.some(r=>String(r.date||'').slice(0,10)===tod());
       document.getElementById('ck_startCard').style.display = hasPending ? 'none' : '';
