@@ -227,14 +227,29 @@ function renderBcSummaryCard(){
   el.innerHTML = html;
 }
 
-function renderBC(){
-  const items=L.barcodes.filter(b=>String(b.date||'').slice(0,10)===tod());
+async function renderBC(){
+  const today=tod();
+  // Firebase fresh fetch — DB가 진실. 다른 디바이스 변경 즉시 반영
+  try {
+    const fbItems = await fbGetByDate('barcode', today);
+    // 로컬에 fbId 없는 = 방금 스캔된 pending. 보존 (Firebase 저장 응답 대기중)
+    const pending = L.barcodes.filter(b => !b.fbId && String(b.date||'').slice(0,10)===today);
+    L.barcodes = [
+      ...L.barcodes.filter(b => String(b.date||'').slice(0,10) !== today),
+      ...fbItems,
+      ...pending
+    ];
+    saveL();
+  } catch(e) {
+    console.warn('Firebase fetch 실패 — 로컬 캐시로 표시:', e);
+  }
+  const items=L.barcodes.filter(b=>String(b.date||'').slice(0,10)===today);
   document.getElementById('bcCnt').textContent=items.length+'건';
   document.getElementById('bcTot').textContent=items.length;
   document.getElementById('bcGd').textContent=items.filter(b=>b.status==='적합').length;
   document.getElementById('bcBd').textContent=items.filter(b=>b.status==='부적합').length;
   const el=document.getElementById('bcList');
-  if(!items.length){el.innerHTML='<div class="emp">스캔 데이터 없음</div>';return;}
+  if(!items.length){el.innerHTML='<div class="emp">스캔 데이터 없음</div>';renderBcSummaryCard();return;}
   el.innerHTML=[...items].reverse().map(b=>`
     <div class="bcitem ${b.status==='적합'?'gd':'bd'}">
       <span class="bcst ${b.status==='적합'?'sg':'sb'}">${b.status}</span>
