@@ -228,10 +228,10 @@ async function renderThawList(){
   }
 
   const items=L.thawing.filter(r=>{
-    if(r.end&&r.end!=='') return false;  // 진행중인 방혈만
     const d=String(r.date||'').slice(0,10);
     // thawing.date = 종료일 기준이므로:
-    //   오늘 종료(어제 시작) 또는 내일 종료(오늘 시작) 표시
+    //   오늘 종료(어제 시작) 또는 내일 종료(오늘 시작) 모두 표시
+    //   ★ 종료된 record도 포함 (사용자: "오늘 방혈 현황"엔 완료된 것도 보여야)
     return d===today||d===tomorrow;
   });
   const el=document.getElementById('list-thawing');
