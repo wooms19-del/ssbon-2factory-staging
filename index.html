@@ -133,7 +133,7 @@
     <div class="fg">
       <div class="fgrp cs2">
         <label class="fl">해동대차 번호 <span class="req">*</span></label>
-        <input class="fc" type="text" id="tw_wagon" placeholder="예: 1번대차">
+        <input class="fc" type="text" id="tw_cart" placeholder="예: 1번대차">
       </div>
       <div class="fgrp">
         <label class="fl">시작시간</label>
@@ -458,6 +458,9 @@
       <div id="calGrid" style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;text-align:center"></div>
     </div>
   </div>
+
+  <!-- 알람 카드 (자숙/파쇄/포장 수율 이상 시 표시) -->
+  <div id="alertCard" style="display:none;margin-bottom:10px"></div>
 
   <div class="kg4">
     <div class="kc inf"><div class="klb">총 생산(EA)</div><div class="kv" id="d_ea">-</div><div class="ksb" id="d_easb"></div></div>
@@ -814,6 +817,75 @@
     </div>
     <div class="dvd"></div>
 
+    <!-- 카카오톡 알림 아코디언 -->
+    <div class="acc-hd" onclick="toggleAcc('acc-kakao')">
+      <span class="ct" style="margin-bottom:0">📱 카카오톡 알림 <span id="acc-kakao-status" style="font-size:11px;color:var(--g5);font-weight:400"></span></span>
+      <span class="acc-arrow">▼</span>
+    </div>
+    <div class="acc-body closed" id="acc-kakao">
+      <div style="padding-top:1rem">
+        <div id="kakao_status_box"></div>
+      </div>
+    </div>
+    <div class="dvd"></div>
+
+    <!-- 알람 임계값 아코디언 -->
+    <div class="acc-hd" onclick="toggleAcc('acc-alarm')">
+      <span class="ct" style="margin-bottom:0">🔔 알람 임계값 <span style="font-size:11px;color:var(--g5);font-weight:400">(원육수율 기준)</span></span>
+      <span class="acc-arrow">▼</span>
+    </div>
+    <div class="acc-body closed" id="acc-alarm">
+      <div style="padding-top:1rem">
+        <div style="font-size:11.5px;color:var(--g5);margin-bottom:12px;line-height:1.5">
+          공정별 원육수율이 평소 평균에서 ±N표준편차(σ) 만큼 벗어나면 알람이 울립니다.<br>
+          기본값은 <b>4월 데이터 30일치</b>로 자동 산출됨. 운영하면서 조정 가능.
+        </div>
+        <table style="width:100%;border-collapse:collapse;font-size:12px">
+          <thead><tr style="background:var(--g1)">
+            <th style="text-align:left;padding:6px 8px;width:80px">공정</th>
+            <th style="text-align:right;padding:6px 8px">평균(%)</th>
+            <th style="text-align:right;padding:6px 8px">편차σ(%)</th>
+            <th style="text-align:right;padding:6px 8px">노란 임계</th>
+            <th style="text-align:right;padding:6px 8px">빨간 임계</th>
+            <th style="text-align:center;padding:6px 8px;width:50px">사용</th>
+          </tr></thead>
+          <tbody>
+            <tr>
+              <td style="padding:6px 8px;font-weight:600;color:#0D9488">자숙</td>
+              <td style="padding:6px 8px"><input class="fc" type="number" step="0.01" id="al_ck_mean" style="width:100%;text-align:right" value="54.50"></td>
+              <td style="padding:6px 8px"><input class="fc" type="number" step="0.01" id="al_ck_std" style="width:100%;text-align:right" value="1.27"></td>
+              <td style="padding:6px 8px;text-align:right;color:#92400E;font-family:monospace" id="al_ck_y">51.97%↓</td>
+              <td style="padding:6px 8px;text-align:right;color:#991B1B;font-family:monospace" id="al_ck_r">50.71%↓</td>
+              <td style="padding:6px 8px;text-align:center"><input type="checkbox" id="al_ck_on" checked style="width:16px;height:16px"></td>
+            </tr>
+            <tr>
+              <td style="padding:6px 8px;font-weight:600;color:#B45309">파쇄</td>
+              <td style="padding:6px 8px"><input class="fc" type="number" step="0.01" id="al_sh_mean" style="width:100%;text-align:right" value="50.83"></td>
+              <td style="padding:6px 8px"><input class="fc" type="number" step="0.01" id="al_sh_std" style="width:100%;text-align:right" value="2.77"></td>
+              <td style="padding:6px 8px;text-align:right;color:#92400E;font-family:monospace" id="al_sh_y">45.29%↓</td>
+              <td style="padding:6px 8px;text-align:right;color:#991B1B;font-family:monospace" id="al_sh_r">42.53%↓</td>
+              <td style="padding:6px 8px;text-align:center"><input type="checkbox" id="al_sh_on" checked style="width:16px;height:16px"></td>
+            </tr>
+            <tr>
+              <td style="padding:6px 8px;font-weight:600;color:#B45309">포장</td>
+              <td style="padding:6px 8px"><input class="fc" type="number" step="0.01" id="al_pk_mean" style="width:100%;text-align:right" value="50.67"></td>
+              <td style="padding:6px 8px"><input class="fc" type="number" step="0.01" id="al_pk_std" style="width:100%;text-align:right" value="7.23"></td>
+              <td style="padding:6px 8px;text-align:right;color:#92400E;font-family:monospace" id="al_pk_y">36.20%↓</td>
+              <td style="padding:6px 8px;text-align:right;color:#991B1B;font-family:monospace" id="al_pk_r">28.97%↓</td>
+              <td style="padding:6px 8px;text-align:center"><input type="checkbox" id="al_pk_on" checked style="width:16px;height:16px"></td>
+            </tr>
+          </tbody>
+        </table>
+        <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn bs bsm" onclick="saveAlarmThresholds()">💾 저장</button>
+          <button class="btn bo bsm" onclick="resetAlarmThresholds()">⟲ 4월 기본값으로</button>
+          <button class="btn bo bsm" onclick="recalcAlarmFromData()">🔄 최근 30일로 자동계산</button>
+        </div>
+        <div id="al_save_msg" style="margin-top:8px;font-size:11px;color:var(--s)"></div>
+      </div>
+    </div>
+    <div class="dvd"></div>
+
   </div><!-- /settings card -->
   <!-- 데이터 -->
   <div class="card">
@@ -891,10 +963,12 @@
   </div>
 </div>
 
-<script src="js/common.js?v=12"></script>
-<script src="js/dataLayer.js?v=1"></script>
+<!-- Kakao JavaScript SDK -->
+<script src="https://t1.kakaocdn.net/kakao_js_sdk/2.7.4/kakao.min.js" integrity="sha384-DKYJZ8NLiK8MN4/C5P2dtSmLQ4KwPaoqAfyA/DfmEc1VDxu4yyC7wy6K1Hs90nka" crossorigin="anonymous"></script>
+<script>if(window.Kakao){Kakao.init('3c36e1a3bb9ea2d4445a5cd30dd906c1');}</script>
+<script src="js/common.js?v=13"></script>
 <script src="js/barcode.js?v=3"></script>
-<script src="js/thawing.js?v=9"></script>
+<script src="js/thawing.js?v=10"></script>
 <script src="js/preprocess.js?v=15"></script>
 <script src="js/process_save.js?v=18"></script>
 <script src="js/cooking.js?v=6"></script>
@@ -902,12 +976,13 @@
 <script src="js/packing.js?v=25"></script>
 <script src="js/csv_upload.js?v=2"></script>
 <script src="js/daily_report.js?v=21"></script>
-<script src="js/analysis.js?v=54"></script>
-<script src="js/dashboard.js?v=2"></script>
+<script src="js/analysis.js?v=57"></script>
+<script src="js/dashboard.js?v=4"></script>
 <script src="js/trace.js?v=4"></script>
 <script src="js/outerpacking.js?v=3"></script>
-<script src="js/settings.js?v=2"></script>
-<script src="js/app.js?v=5"></script>
+<script src="js/settings.js?v=4"></script>
+<script src="js/kakao.js?v=3"></script>
+<script src="js/app.js?v=7"></script>
 <script src="js/schedule.js?v=3"></script>
 <script src="js/attendance.js?v=22"></script>
 <script src="js/timepicker.js?v=2"></script>

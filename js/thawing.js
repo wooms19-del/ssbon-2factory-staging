@@ -135,7 +135,7 @@ function updateTwSummary(){
 }
 
 async function startThawing(){
-  const cartNo=document.getElementById('tw_wagon').value.trim();
+  const cartNo=document.getElementById('tw_cart').value.trim();
   if(!cartNo){toast('해동대차 번호 입력하세요','d');return;}
   const startTime=document.getElementById('tw_start').value||nowHM();
 
@@ -167,7 +167,7 @@ async function startThawing(){
   if(hasError||!totalBoxes){toast('박스수를 입력하세요','d');return;}
   const type=typeArr.join(',');
 
-  document.getElementById('tw_wagon').value='';
+  document.getElementById('tw_cart').value='';
   document.getElementById('tw_start').value='';
   document.getElementById('twPartChecks').innerHTML='';
   document.getElementById('tw_summary').innerHTML='';
