@@ -24,35 +24,14 @@ async function saveP(type){
     // 지금시작 시 저장한 대차 목록 우선, 없으면 현재 체크박스에서 읽기
     const curWagons = getSelectedWagons ? getSelectedWagons().map(t=>t.cart||'').filter(Boolean) : [];
     d.wagons = (_ppSelectedWagons.length ? _ppSelectedWagons : curWagons).join(',');
-    // 대차 번호 없으면 1~10 랜덤 자동 배정 + 방혈 기록에도 동일 번호 부여
+    // 대차 번호 없으면 저장 거부 (사용자가 명시적으로 선택해야 함)
+    // ⚠ 옛날 자동 배정 로직 제거 (2026-05-04):
+    //    랜덤 번호 배정 + 기존 thawing.cart 덮어쓰기 → 사용자 입력값(10/8/3) 잃음
+    //    대신 명시적 오류로 사용자에게 알리고 저장 중단
     if(!d.wagons) {
-      const ppDate = d.date;
-      const prevDate = addDays(ppDate, -1);
-      const relatedThaw = L.thawing.filter(t => {
-        const td = String(t.date||'').slice(0,10);
-        return td === ppDate || td === prevDate;
-      });
-      const usedNums = new Set(relatedThaw.map(t=>parseInt(t.cart||0)).filter(n=>n>0));
-      const available = [1,2,3,4,5,6,7,8,9,10].filter(n=>!usedNums.has(n));
-      const rnd = String(available.length ? available[Math.floor(Math.random()*available.length)] : (Math.floor(Math.random()*10)+1));
-      d.wagons = rnd;
-      toast('대차 번호 미선택 → '+rnd+'번 자동 배정','w');
-      const ppType = (d.type||'').split(',')[0].trim();
-      relatedThaw
-        .filter(t => !t.cart || t.cart==='' || t.cart==='0')
-        .filter(t => !ppType || !t.type || (t.type||'').includes(ppType))
-        .forEach(async rec => {
-          rec.cart = rnd;
-          if(d.start && (!rec.end || rec.end === '')) rec.end = d.start; // 전처리 시작 = 방혈 종료
-          saveL();
-          let fbId = rec.fbId;
-          if(!fbId) {
-            const rows = await fbGetByDate('thawing', String(rec.date||'').slice(0,10));
-            const match = rows.find(r=>r.id===rec.id);
-            if(match) { fbId=match.fbId; rec.fbId=fbId; saveL(); }
-          }
-          if(fbId) { const upd2={cart:rnd}; if(d.start&&(!rec.end||rec.end==='')) upd2.end=d.start; fbUpdate('thawing', fbId, upd2); }
-        });
+      console.error('[preprocess] 대차 번호 미선택 — 저장 거부');
+      toast('대차 번호를 선택해주세요','d');
+      return;
     }
     const wagons = _ppSelectedWagons.length
       ? _ppSelectedWagons.map(w => L.thawing.find(t=>t.cart===w)).filter(Boolean)
