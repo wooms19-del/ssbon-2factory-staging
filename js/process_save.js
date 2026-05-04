@@ -21,6 +21,15 @@ async function saveP(type){
 
   // 전처리: 선택 대차 목록 저장 + 잔여중량 차감
   if(type==='preprocess'){
+    // ★ Firebase fresh fetch: L.thawing 최신화 (시작~저장 갭 동안 변경 반영, 5/4 사고 재발 방지)
+    try {
+      if(typeof loadOpenThawing === 'function') {
+        await loadOpenThawing();
+      }
+    } catch(e) {
+      console.warn('[preprocess save] thawing fresh fetch 실패, 캐시 사용:', e && e.message);
+    }
+
     // 지금시작 시 저장한 대차 목록 우선, 없으면 현재 체크박스에서 읽기
     const curWagons = getSelectedWagons ? getSelectedWagons().map(t=>t.cart||'').filter(Boolean) : [];
     d.wagons = (_ppSelectedWagons.length ? _ppSelectedWagons : curWagons).join(',');
@@ -57,11 +66,13 @@ async function saveP(type){
     // 잔여중량 차감 (매트릭스 사용 시 매트릭스 합계 기준, 아니면 기존 방식)
     // 방혈 종료(end 있음)된 cart도 차감해야 함 - 잔여중량 추적 위해
     const skipped = []; // 차감 SKIP된 cart (저장 직전 검증)
+    const updateFailedCarts = []; // ★ Firebase 갱신 실패한 cart (사용자 알림용)
     // 전처리 record가 어느 thawing record를 건드렸는지 추적 (삭제 시 정확한 복원 위해)
     // 형식: [{thFbId, thId, cart, deductKg, prevEnd}]
     const thawingTouches = [];
-    wagons.forEach(async rec=>{
-      if(!rec) return;
+    // ★ for...of로 변경 (forEach(async)는 await 안 먹음 → silent fail 원인)
+    for(const rec of wagons){
+      if(!rec) continue;
       let deductKg = mxDeduct[rec.id] || 0;
       if(!deductKg){
         const kgInp=document.querySelector('.pp-wagon-kg[data-id="'+rec.id+'"]');
@@ -69,7 +80,7 @@ async function saveP(type){
       }
       if(!deductKg){
         skipped.push(rec.cart);
-        return;
+        continue;
       }
       const cur=rec.remainKg!==undefined?rec.remainKg:rec.totalKg;
       const remain=r2(cur-deductKg);
@@ -84,9 +95,15 @@ async function saveP(type){
         const match = rows.find(r=>r.cart===rec.cart);
         if(match) { fbId=match.fbId; rec.fbId=fbId; saveL(); }
       }
+      // ★ fbUpdate await + try/catch + 실패 시 사용자 알림 (5/4 사고 silent fail 차단)
       if(fbId){
         const upd={remainKg:rec.remainKg, end:rec.end};
-        fbUpdate('thawing', fbId, upd);
+        try {
+          await fbUpdate('thawing', fbId, upd);
+        } catch(e) {
+          console.error('[preprocess save] thawing 갱신 실패 fbId='+fbId+' cart='+rec.cart+':', e);
+          updateFailedCarts.push(rec.cart || '?');
+        }
       }
       // touch 기록 (전처리 record에 함께 저장 → 삭제 시 정확한 복원)
       thawingTouches.push({
@@ -96,12 +113,17 @@ async function saveP(type){
         deductKg: deductKg,
         prevEnd: prevEnd
       });
-    });
+    }
     // 전처리 record에 touch 정보 첨부 (삭제 시 사용)
     if(thawingTouches.length) d.thawingTouches = thawingTouches;
     if(skipped.length){
       toast(`⚠️ ${skipped.join(', ')}번 cart 차감 누락 (kg 입력 확인)`,'w');
       console.warn('[preprocess] 차감 SKIP된 cart:', skipped);
+    }
+    // ★ Firebase 갱신 실패 시 사용자에게 즉시 알림 (5/4 사고처럼 모르고 지나가는 거 방지)
+    if(updateFailedCarts.length){
+      toast(`⚠️ 방혈 갱신 실패: cart ${updateFailedCarts.join(', ')} — 새로고침 후 확인 필요`,'d');
+      console.error('[preprocess save] thawing 갱신 실패 cart 목록:', updateFailedCarts);
     }
   }
 
