@@ -505,9 +505,14 @@ async function loadFromServer(date) {
     await Promise.all(cols.map(async lKey => {
       const fbCol = colMap[lKey] || lKey;
       const recs = await fbGetByDate(fbCol, date);
-      if(recs.length > 0) {
-        L[lKey] = [...(L[lKey]||[]).filter(x => String(x.date||'').slice(0,10) !== date), ...recs];
-      }
+      // ★ DB 결과가 0건이어도 로컬 동기화 (다른 디바이스 삭제 반영)
+      // pending(fbId 없는 새 record)은 보존 (Firebase 저장 응답 대기중)
+      const pending = (L[lKey]||[]).filter(r => !r.fbId && String(r.date||'').slice(0,10) === date);
+      L[lKey] = [
+        ...(L[lKey]||[]).filter(x => String(x.date||'').slice(0,10) !== date),
+        ...recs,
+        ...pending
+      ];
     }));
     saveL();
     return true;
