@@ -248,15 +248,17 @@ function gid(){ return Date.now().toString(36)+Math.random().toString(36).slice(
 function r2(v){ return Math.round(parseFloat(v)*100)/100; }
 function dedupeRec(arr, keyFn){ const seen=new Set(); return arr.filter(r=>{ const k=keyFn(r); if(seen.has(k)) return false; seen.add(k); return true; }); }
 function addDays(dateStr,n){var p=String(dateStr||'').split('-').map(Number);var dt=new Date(p[0],p[1]-1,p[2]+n);return dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0');}
+// HH:MM 추출 (datetime "YYYY-MM-DD HH:MM" 또는 HH:MM 둘 다 처리)
+function _hm(s){ return s ? (String(s).length > 5 ? String(s).slice(-5) : String(s).slice(0,5)) : ''; }
 function dur(s,e){
   if(!s||!e) return 0;
-  const tm=t=>{const p=t.split(':');return+p[0]*60+(+p[1]||0);};
+  const tm=t=>{const hm=_hm(t);const p=hm.split(':');return+p[0]*60+(+p[1]||0);};
   let d=tm(e)-tm(s); if(d<0)d+=1440; return r2(d/60);
 }
 
 // 여러 레코드의 중복 제거한 실제 가동 시간 (병렬 작업 고려)
 function calcActualHours(recs){
-  const tm=t=>{const p=(t+'').split(':');return+p[0]*60+(+p[1]||0);};
+  const tm=t=>{const hm=_hm(t);const p=hm.split(':');return+p[0]*60+(+p[1]||0);};
   const intervals=[];
   recs.forEach(r=>{
     if(!r.start||!r.end) return;

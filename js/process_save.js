@@ -87,7 +87,7 @@ async function saveP(type){
       const prevEnd = rec.end || ''; // 차감 전 end 값 보존 (복원 시 사용)
       rec.remainKg=remain<0?0:remain;
       // end는 이미 채워져 있으면 유지, 없으면 현재 시각 (방혈 진행중→종료)
-      if(!rec.end || rec.end==='') rec.end = d.start || nowHM();
+      if(!rec.end || rec.end==='') rec.end = tod()+' '+(d.start || nowHM());
       saveL();
       let fbId = rec.fbId;
       if(!fbId) {
