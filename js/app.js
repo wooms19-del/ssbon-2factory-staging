@@ -68,7 +68,8 @@ function showTab(mode,tab){
       document.getElementById('ck_pendingCard').style.display = hasPending ? '' : 'none';
     });
   } else if(tab==='shredding'){
-    loadFromServer(today).then(()=>{ renderShWagonList(); renderPL('shredding'); });
+    // ★ loadOpenPacking 추가 — shredding은 packing/packing_pending도 표시 (사용된 wagon 추적)
+    Promise.all([loadFromServer(today), loadOpenPacking()]).then(()=>{ renderShWagonList(); renderPL('shredding'); });
   } else if(tab==='packing'){
     if(!L.packing_pending) L.packing_pending = [];
     Promise.all([loadFromServer(today), loadOpenPacking()]).then(()=>{

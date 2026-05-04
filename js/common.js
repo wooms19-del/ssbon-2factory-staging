@@ -647,6 +647,7 @@ async function fetchTodayFromServer() {
   try {
     await loadFromServer(tod());
     await loadOpenPacking();
+    await loadOpenCooking();  // ★ Phase 2-A: cooking_pending도 매 30초 fresh
     refreshCurrentTab_();
   } catch(e) {
     console.warn('자동갱신 오류:', e);
