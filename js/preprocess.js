@@ -363,7 +363,17 @@ function onPpWagonChange(){
   onPpDistChange();
 }
 
-function onPpStartBtn(){
+async function onPpStartBtn(){
+  // ★ Firebase fresh fetch: L.thawing 최신화 (다른 디바이스/마이그레이션 fbId 반영)
+  // 5/4 사고 재발 방지: stale fbId로 fbUpdate 실패하던 패턴 차단
+  try {
+    if(typeof loadOpenThawing === 'function') {
+      await loadOpenThawing();
+    }
+  } catch(e) {
+    console.warn('[preprocess] thawing fresh fetch 실패, 캐시 사용:', e && e.message);
+  }
+
   const existing=document.getElementById('pp_start').value;
   const t=existing||nowHM();
   document.getElementById('pp_start').value=t;
@@ -377,25 +387,33 @@ function onPpStartBtn(){
   // 즉시 잔여중량 차감
   const selectedWagons=getSelectedWagons();
   let deducted=false;
-  selectedWagons.forEach(rec=>{
-    if(!rec||(rec.end&&rec.end!=='')) return;
+  let updateFailed=false;
+  // ★ for...of 로 변경 (await 사용)
+  for(const rec of selectedWagons){
+    if(!rec||(rec.end&&rec.end!=='')) continue;
     const kgInp=document.querySelector('.pp-wagon-kg[data-id="'+rec.id+'"]');
     const deductKg=parseFloat(kgInp&&kgInp.value)||0;
-    if(!deductKg){toast('해동대차 '+(rec.cart||'')+' 투입 중량을 입력하세요','d');return;}
+    if(!deductKg){toast('해동대차 '+(rec.cart||'')+' 투입 중량을 입력하세요','d'); continue;}
     deducted=true;
     const cur=rec.remainKg!==undefined?rec.remainKg:rec.totalKg;
     const remain=r2(cur-deductKg);
     rec.remainKg=remain<0?0:remain;
     if(remain<=0) rec.end=t;
     saveL();
-    // Firebase 업데이트 + 구글시트 백업
+    // ★ Firebase 업데이트 await + 실패 시 사용자 알림 (silent fail 방지)
     if(rec.fbId){
       const updateData={remainKg:rec.remainKg};
       if(remain<=0) updateData.end=t;
-      fbUpdate('thawing', rec.fbId, updateData);
+      try {
+        await fbUpdate('thawing', rec.fbId, updateData);
+      } catch(e) {
+        console.error('[preprocess] thawing 갱신 실패 fbId='+rec.fbId+':', e);
+        updateFailed=true;
+        toast('방혈 갱신 실패: 새로고침 후 재시도 (cart='+(rec.cart||'?')+')','d');
+      }
     }
     if(remain<=0) gasRecord('updateThawEnd', {wagon:rec.cart, end:t});
-  });
+  }
   if(deducted) updPpWagon();
   updateThawInfo();
 }
