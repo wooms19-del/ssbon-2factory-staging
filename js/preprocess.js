@@ -2,9 +2,10 @@
 // 전처리 연동
 // ============================================================
 async function loadOpenThawingAndRender(){
-  const _yd=getYesterday_();
-  // 미종료 방혈 + 어제 방혈 기록 동시 로드 (어제 종료된 방혈도 전처리 탭에 표시)
-  await Promise.all([loadOpenThawing(), loadFromServer(_yd)]);
+  const _td=tod(), _yd=getYesterday_();
+  // 미종료 방혈 + 어제 방혈 + 오늘 종료된 방혈 동시 로드
+  // (오늘 종료된 방혈 = date가 오늘이고 end가 채워진 record. 전처리 대상)
+  await Promise.all([loadOpenThawing(), loadFromServer(_yd), loadFromServer(_td)]);
   updateThawInfo();
   updPpWagon();
 }
