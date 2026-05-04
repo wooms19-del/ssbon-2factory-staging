@@ -9,13 +9,16 @@ async function renderThawWaiting(){
   // 방혈 대기: 오늘(시간조건있음) + 어제(시간조건없음 - 이미 해동완료)
   const yesterday=getYesterday_();
 
-  // ★ Firebase fresh fetch: 오늘+어제 thawing 모두 (다른 디바이스/마이그레이션 반영)
-  // 실패 시 L.thawing 기존 캐시로 fallback (오프라인 동작 유지)
+  // ★ Firebase fresh fetch: thawing + barcode (오늘+어제) 모두 (다른 디바이스/마이그레이션 반영)
+  // 실패 시 L.thawing/L.barcodes 기존 캐시로 fallback (오프라인 동작 유지)
   let todayThArr = [], ystThArr = [];
+  let todayBcArr = [], ystBcArr = [];
   try {
-    [todayThArr, ystThArr] = await Promise.all([
+    [todayThArr, ystThArr, todayBcArr, ystBcArr] = await Promise.all([
       fbGetByDate('thawing', today),
-      fbGetByDate('thawing', yesterday)
+      fbGetByDate('thawing', yesterday),
+      fbGetByDate('barcode', today),
+      fbGetByDate('barcode', yesterday)
     ]);
     // L.thawing의 today/yesterday 데이터 fresh로 교체 (다른 날짜는 그대로)
     L.thawing = [
@@ -26,9 +29,23 @@ async function renderThawWaiting(){
       ...todayThArr,
       ...ystThArr
     ];
+    // L.barcodes도 today/yesterday fresh 교체 (pending — fbId 없는 record는 보존)
+    const pendingBc = L.barcodes.filter(b => {
+      const d = String(b.date||'').slice(0,10);
+      return !b.fbId && (d === today || d === yesterday);
+    });
+    L.barcodes = [
+      ...L.barcodes.filter(b => {
+        const d = String(b.date||'').slice(0,10);
+        return d !== today && d !== yesterday;
+      }),
+      ...todayBcArr,
+      ...ystBcArr,
+      ...pendingBc
+    ];
     saveL();
   } catch(e) {
-    console.warn('[thawing] fresh fetch 실패, L.thawing 캐시 사용:', e && e.message);
+    console.warn('[thawing] fresh fetch 실패, L.thawing/L.barcodes 캐시 사용:', e && e.message);
   }
 
   const scanned=L.barcodes.filter(b=>{
