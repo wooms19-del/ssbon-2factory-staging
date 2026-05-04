@@ -8,6 +8,29 @@ async function renderThawWaiting(){
 
   // 방혈 대기: 오늘(시간조건있음) + 어제(시간조건없음 - 이미 해동완료)
   const yesterday=getYesterday_();
+
+  // ★ Firebase fresh fetch: 오늘+어제 thawing 모두 (다른 디바이스/마이그레이션 반영)
+  // 실패 시 L.thawing 기존 캐시로 fallback (오프라인 동작 유지)
+  let todayThArr = [], ystThArr = [];
+  try {
+    [todayThArr, ystThArr] = await Promise.all([
+      fbGetByDate('thawing', today),
+      fbGetByDate('thawing', yesterday)
+    ]);
+    // L.thawing의 today/yesterday 데이터 fresh로 교체 (다른 날짜는 그대로)
+    L.thawing = [
+      ...L.thawing.filter(t => {
+        const d = String(t.date||'').slice(0,10);
+        return d !== today && d !== yesterday;
+      }),
+      ...todayThArr,
+      ...ystThArr
+    ];
+    saveL();
+  } catch(e) {
+    console.warn('[thawing] fresh fetch 실패, L.thawing 캐시 사용:', e && e.message);
+  }
+
   const scanned=L.barcodes.filter(b=>{
     const d=String(b.date||'').slice(0,10);
     if(d===yesterday&&b.status==='적합') return true;
@@ -18,16 +41,11 @@ async function renderThawWaiting(){
     return false;
   });
 
-  // startedCodes: L.thawing + Firebase 어제 방혈 importCodes 직접 로드
-  let ystThArr = [];
+  // startedCodes: L.thawing (이미 fresh로 갱신됨) 기준으로 통합
   const startedCodes=new Set(L.thawing.flatMap(t=>t.importCodes||[]));
-  try {
-    ystThArr = await fbGetByDate('thawing', yesterday);
-    ystThArr.forEach(t=>(t.importCodes||[]).forEach(c=>startedCodes.add(c)));
-  } catch(e) {}
 
-  // importCodes 없는 방혈 레코드: L.thawing + Firebase 어제 방혈 모두 포함, 중복 제거
-  const _noCodeSrc = dedupeRec([...L.thawing, ...ystThArr], r=>(r.fbId||r.id));
+  // importCodes 없는 방혈 레코드: L.thawing(fresh) 사용, 중복 제거
+  const _noCodeSrc = dedupeRec([...L.thawing], r=>(r.fbId||r.id));
   const noCodeTh = _noCodeSrc.filter(t=>{
     if(t.importCodes&&t.importCodes.length>0) return false;
     const d=String(t.date||'').slice(0,10);
@@ -185,17 +203,30 @@ async function startThawing(){
     rec.fbId = fbId;
     L.thawing.push(rec); saveL();
     gasRecord('saveThawing', {cart:cartNo, type, start:startTime, end:'', boxes:totalBoxes, totalKg, importCodes});
-    renderThawWaiting();
-    renderThawList();
+    // ★ 저장 후 fresh fetch — async 화면들 await로 호출 (다른 디바이스 동시 작업 record 병합)
+    await renderThawWaiting();
+    await renderThawList();
     toast(`방혈 시작 — 해동대차 ${cartNo} · ${totalKg.toFixed(2)}kg ✓`);
   } else {
     toast('방혈 저장 실패','d');
   }
 }
 
-function renderThawList(){
+async function renderThawList(){
   const today=tod();
   const tomorrow=addDays(today, 1);
+
+  // ★ Firebase fresh fetch: 미종료 thawing 전체를 L.thawing에 갱신
+  // (loadOpenThawing은 common.js에 있는 헬퍼 — 미종료 thawing fetch + L 갱신 + saveL)
+  // 실패 시 L.thawing 기존 캐시로 fallback
+  try {
+    if(typeof loadOpenThawing === 'function') {
+      await loadOpenThawing();
+    }
+  } catch(e) {
+    console.warn('[thawing] renderThawList fresh fetch 실패, 캐시 사용:', e && e.message);
+  }
+
   const items=L.thawing.filter(r=>{
     if(r.end&&r.end!=='') return false;  // 진행중인 방혈만
     const d=String(r.date||'').slice(0,10);
