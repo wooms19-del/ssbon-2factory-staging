@@ -186,7 +186,10 @@ async function renderMonthly() {
   let totProdKg=0;
   if(tbody) tbody.innerHTML=rows.map(([prod,v])=>{
     const op_=opByProd[prod]||{outerEa:0,boxes:0};
-    const pkgKg=r2(op_.outerEa*_prodKgUnit(prod));
+    // 무게: 외포장 EA 우선, 외포장 안 끝났거나 없으면 내포장 EA로 환산
+    // (외포장 ≤ 내포장 가정. 추후 외포장 100% 완료되면 자연스럽게 같은 값)
+    const _eaForKg=op_.outerEa>0?op_.outerEa:(v.pkEa||0);
+    const pkgKg=r2(_eaForKg*_prodKgUnit(prod));
     totEA+=v.ea; totDef+=v.defect; totOuter+=op_.outerEa; totBx+=op_.boxes; totPkEa+=(v.pkEa||0); totProdKg=r2(totProdKg+pkgKg);
     const _pouch=(v.pkEa||0)+v.defect;
     const dr=_pouch>0?(v.defect/_pouch*100).toFixed(2)+'%':'—';
