@@ -320,25 +320,21 @@ async function fbSave(colName, data, customDocId) {
     // thawing 저장 시 무결성 검증·보정
     if(colName === 'thawing') {
       const today = tod();
-      const tomorrow = addDays(today, 1);
-      // (1) date: 무조건 종료일(내일) 강제 - 옛 클라이언트가 시작일 보내도 차단
-      data = {...data, date: tomorrow};
+      // (1) date: 항상 내일(종료일) 이상 - 잘못된 캐시/pending 방어
+      if(data.date && data.date <= today) {
+        data = {...data, date: addDays(today, 1)};
+      }
       // (2) cart 누락 시 wagon에서 폴백
       if(!data.cart && data.wagon) {
         data = {...data, cart: data.wagon};
       }
-      // (3) 문서ID 무조건 종료일로 재생성 - customDocId가 있어도 시작일이면 강제 변경
-      const expectedPrefix = 'th_' + tomorrow.replace(/-/g,'') + '_';
-      if(!docId.startsWith(expectedPrefix)) {
-        const parts = docId.split('_');
-        const tail = parts[parts.length-1] || (
-          String(new Date().getHours()).padStart(2,'0') +
-          String(new Date().getMinutes()).padStart(2,'0') +
-          String(new Date().getSeconds()).padStart(2,'0') +
-          String(new Date().getMilliseconds()).padStart(3,'0')
-        );
-        docId = expectedPrefix + tail;
-        console.warn('[fbSave] thawing docId 강제 보정:', docId);
+      // (3) 문서ID 날짜 = data.date 일치 보장 (시작일 기반 ID 자동 보정)
+      if(data.date) {
+        const expectedPrefix = 'th_' + data.date.replace(/-/g,'') + '_';
+        if(!docId.startsWith(expectedPrefix)) {
+          const tail = docId.split('_').slice(-1)[0]; // HHMMSS
+          docId = expectedPrefix + tail;
+        }
       }
       // (4) 중복 저장 방지: 같은 importCodes[0] + 진행중인 레코드 있으면 차단
       if(data.importCodes && data.importCodes.length > 0) {
