@@ -49,6 +49,7 @@
     <button class="mb on" id="modeI" onclick="setMode('i')">입력</button>
     <button class="mb" id="modeD" onclick="setMode('d')">분석</button>
     <button class="mb" id="modeP" onclick="showPerf()">실적관리</button>
+    <button class="mb" id="modeAI" onclick="setMode('ai')" style="background:#6366f1;color:#fff">🤖 AI 분석</button>
   </div>
 </div>
 <!-- 입력 탭 -->
@@ -92,6 +93,7 @@
 <div class="pg" id="p-schedule" style="padding:0"></div>
 <div class="pg" id="p-performance" style="padding:0"></div>
 <div class="pg" id="p-monthly-prod" style="padding:0"></div>
+<div class="pg" id="p-ai" style="padding:16px;max-width:900px;margin:0 auto"></div>
   <div class="pg on" id="p-barcode">
   <div class="card">
     <div class="ct">해동기 투입 <span class="bdg" id="bcCnt">0건</span></div>
@@ -977,6 +979,7 @@
 <script src="js/csv_upload.js?v=2"></script>
 <script src="js/daily_report.js?v=21"></script>
 <script src="js/analysis.js?v=58"></script>
+<script src="js/ai_analysis.js?v=1"></script>
 <script src="js/dashboard.js?v=4"></script>
 <script src="js/trace.js?v=4"></script>
 <script src="js/outerpacking.js?v=3"></script>

@@ -31,12 +31,53 @@ function toast(msg,t='s'){
 // ============================================================
 function setMode(m){
   MODE=m;
-  document.getElementById('modeI').classList.toggle('on',m==='i'); document.getElementById('modeD').classList.toggle('on',m==='d'); document.getElementById('attHdBtn').classList.remove('on');
+  document.getElementById('modeI').classList.toggle('on',m==='i'); 
+  document.getElementById('modeD').classList.toggle('on',m==='d'); 
+  document.getElementById('attHdBtn').classList.remove('on');
   var _mp=document.getElementById('modeP'); if(_mp) _mp.classList.remove('on');
+  var _mai=document.getElementById('modeAI'); if(_mai) _mai.classList.toggle('on',m==='ai');
   document.getElementById('inav').classList.toggle('hid',m!=='i');
   document.getElementById('dnav').classList.toggle('hid',m!=='d');
   document.getElementById('mscroll').scrollTop=0;
+  if(m==='ai'){
+    document.querySelectorAll('.pg').forEach(p=>p.classList.remove('on'));
+    var pgAi = document.getElementById('p-ai');
+    if(pgAi){
+      pgAi.classList.add('on');
+      _renderAIPage(pgAi);
+    }
+    return;
+  }
   if(m==='i') showTab('i',ITAB); else showTab('d',DTAB);
+}
+
+// AI 분석 페이지 렌더 (탭 진입 시 1회)
+function _renderAIPage(el){
+  if(el.dataset.rendered === '1') return;
+  el.dataset.rendered = '1';
+  var today = (typeof tod === 'function') ? tod() : new Date().toISOString().slice(0,10);
+  var monthAgo = (typeof addDays === 'function') ? addDays(today, -7) : today;
+  el.innerHTML = `
+    <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:20px;margin-bottom:16px">
+      <h2 style="margin:0 0 4px;color:#0f172a;font-size:20px">🤖 AI 분석</h2>
+      <div style="color:#64748b;font-size:13px;margin-bottom:16px">기간을 선택하면 AI가 모든 공정 데이터를 종합 분석합니다.</div>
+      
+      <div style="display:flex;gap:12px;align-items:end;flex-wrap:wrap">
+        <div>
+          <label style="display:block;font-size:12px;color:#475569;margin-bottom:4px">시작일</label>
+          <input type="date" id="ai_from" value="${monthAgo}" style="padding:8px;border:1px solid #cbd5e1;border-radius:6px;font-size:14px">
+        </div>
+        <div>
+          <label style="display:block;font-size:12px;color:#475569;margin-bottom:4px">종료일</label>
+          <input type="date" id="ai_to" value="${today}" style="padding:8px;border:1px solid #cbd5e1;border-radius:6px;font-size:14px">
+        </div>
+        <button id="ai_run_btn" onclick="runAIAnalysis()" style="padding:10px 20px;background:#6366f1;color:#fff;border:none;border-radius:6px;font-size:14px;font-weight:600;cursor:pointer">🤖 AI 분석 시작</button>
+      </div>
+      <div style="font-size:11px;color:#94a3b8;margin-top:8px">최대 35일까지 가능. 기간이 길수록 분석 시간 증가 (10~30초).</div>
+    </div>
+    
+    <div id="ai_result"></div>
+  `;
 }
 
 function showTab(mode,tab){
