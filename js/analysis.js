@@ -582,14 +582,8 @@ function _moRenderRows(selProds) {
   const html=[];
 
   dayEntries.forEach(([date, allRows])=>{
-    const dayRows0 = selProds&&selProds.size>0 ? allRows.filter(r=>selProds.has(r.product)) : allRows;
-    if(!dayRows0.length) return;
-    // noMeat(메추리알 등) 행은 원육종류/원육사용량 셀에서 분리. meat 먼저, noMeat 나중에 정렬.
-    const isNoMeatRow = r => /메추리알/.test(r.product||'');
-    const meatRows0   = dayRows0.filter(r => !isNoMeatRow(r));
-    const noMeatRows0 = dayRows0.filter(r =>  isNoMeatRow(r));
-    const dayRows = [...meatRows0, ...noMeatRows0];
-    const meatCnt = meatRows0.length;
+    const dayRows = selProds&&selProds.size>0 ? allRows.filter(r=>selProds.has(r.product)) : allRows;
+    if(!dayRows.length) return;
     const cnt    = dayRows.length;
     const dayRm  = r2(rmByDate[date]||0);
     // 외포장 EA 기준으로 완제품 원육 중량 재계산 (필터 포함 전체 행 대상)
@@ -634,9 +628,6 @@ function _moRenderRows(selProds) {
 
     dayRows.forEach((row,ri)=>{
       const isFirst=ri===0, isLast=ri===cnt-1;
-      const _isNoMeat = isNoMeatRow(row);
-      const _isFirstMeat = !_isNoMeat && ri===0;     // 부위/원육 셀의 첫 행 (meat 그룹)
-      const _isFirstNoMeat = _isNoMeat && ri===meatCnt;  // noMeat 그룹의 첫 행
       const rowBorder=isLast?'border-bottom:2px solid #cbd5e1;':'border-bottom:1px solid #e2e8f0;';
       const pkDisp=fmtKg(effPkMap[row.product]||r2(row.pkKg));
       let cells='';
@@ -644,24 +635,11 @@ function _moRenderRows(selProds) {
         cells+=`<td rowspan="${cnt}" style="${vm}${PC}${bg}text-align:center;font-weight:700;font-size:15px;color:#1e293b;border-right:1px solid #e2e8f0;border-bottom:2px solid #cbd5e1;">${dayNo}</td>`;
         cells+=`<td rowspan="${cnt}" style="${vm}${PC}${bg}text-align:center;border-right:1px solid #e2e8f0;border-bottom:2px solid #cbd5e1;line-height:1.5"><span style="font-weight:600;font-size:13px;color:#334155">${date.slice(5).replace('-','/')}</span><br><span style="font-size:10px;color:#94a3b8">(${dow})</span></td>`;
         cells+=`<td rowspan="${cnt}" style="${vm}${PC}${bg}text-align:center;color:#475569;border-right:1px solid #e2e8f0;border-bottom:2px solid #cbd5e1">${editW}</td>`;
-      }
-      // 원육종류(부위) — meat 그룹만 rowspan, noMeat 그룹은 빈 셀
-      if(_isFirstMeat && meatCnt>0){
-        cells+=`<td rowspan="${meatCnt}" style="${vm}${PC}${bg}text-align:center;border-right:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0">${meatStr}</td>`;
-      } else if(_isFirstNoMeat){
-        cells+=`<td rowspan="${cnt-meatCnt}" style="${vm}${PC}${bg}text-align:center;color:#cbd5e1;border-right:1px solid #e2e8f0;border-bottom:2px solid #cbd5e1">—</td>`;
-      } else if(meatCnt===0 && isFirst){
-        // 그날 전체가 noMeat (예: 메추리알만 있는 날)
-        cells+=`<td rowspan="${cnt}" style="${vm}${PC}${bg}text-align:center;color:#cbd5e1;border-right:1px solid #e2e8f0;border-bottom:2px solid #cbd5e1">—</td>`;
+        cells+=`<td rowspan="${cnt}" style="${vm}${PC}${bg}text-align:center;border-right:1px solid #e2e8f0;border-bottom:2px solid #cbd5e1">${meatStr}</td>`;
       }
       cells+=`<td style="${vm}${PC}${bg}text-align:center;font-weight:500;color:#1e293b;border-right:1px solid #e2e8f0;${rowBorder}">${row.product}</td>`;
-      // 원육 사용량 — meat 그룹만 rowspan, noMeat 그룹은 빈 셀
-      if(_isFirstMeat && meatCnt>0){
-        cells+=`<td rowspan="${meatCnt}" style="${vm}${PC}${bg}text-align:center;font-variant-numeric:tabular-nums;color:#374151;border-right:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0">${fmtKg(propRm)}</td>`;
-      } else if(_isFirstNoMeat){
-        cells+=`<td rowspan="${cnt-meatCnt}" style="${vm}${PC}${bg}text-align:center;color:#cbd5e1;border-right:1px solid #e2e8f0;border-bottom:2px solid #cbd5e1">—</td>`;
-      } else if(meatCnt===0 && isFirst){
-        cells+=`<td rowspan="${cnt}" style="${vm}${PC}${bg}text-align:center;color:#cbd5e1;border-right:1px solid #e2e8f0;border-bottom:2px solid #cbd5e1">—</td>`;
+      if(isFirst){
+        cells+=`<td rowspan="${cnt}" style="${vm}${PC}${bg}text-align:center;font-variant-numeric:tabular-nums;color:#374151;border-right:1px solid #e2e8f0;border-bottom:2px solid #cbd5e1">${fmtKg(propRm)}</td>`;
       }
       const _opEa=opMap[date+'|'+row.product]||0;
       const _dispEa=_opEa>0?_opEa:(row.ea>0?Math.round(row.ea):0);
