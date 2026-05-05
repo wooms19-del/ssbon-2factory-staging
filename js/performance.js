@@ -749,6 +749,23 @@ function _perfBuildRows(th, pp, ck, sh, pk, op, sc){
     r.dayFirstMeatIdx = _dayFirstMeatIdx[r.date];
     r.dayMeatSpan = _dayMeatCnt[r.date] || 0;
   });
+  // ★ 메추리알(noMeat)이 dayRowIdx=0이면 ppKg/ckKg/shKg가 거기 박혀있음 → meat 첫 행으로 옮김
+  // (화면에서 meat 행만 rowspan으로 표시하기 위함. 화면에선 _ppMeatFirst 등을 우선 사용)
+  var _dayProcKg = {}; // date → {ppKg, ckKg, shKg}
+  combined.forEach(function(r){
+    if(r.isTest) return;
+    if(r.dayRowIdx===0 && r.ppKg|0) _dayProcKg[r.date] = _dayProcKg[r.date] || {ppKg:r.ppKg, ckKg:r.ckKg, shKg:r.shKg};
+    if(r.dayRowIdx===0 && r.ckKg|0) _dayProcKg[r.date] = _dayProcKg[r.date] || {ppKg:r.ppKg, ckKg:r.ckKg, shKg:r.shKg};
+  });
+  combined.forEach(function(r){
+    if(r.isTest) return;
+    var v = _dayProcKg[r.date];
+    if(v && r.dayRowIdx === r.dayFirstMeatIdx){
+      r._ppMeatFirst = v.ppKg;
+      r._ckMeatFirst = v.ckKg;
+      r._shMeatFirst = v.shKg;
+    }
+  });
 
   // === [신규] 그룹 단위 메타 (부위 컬럼 rowspan 결정용) ===
   // groupKey = date + '|' + groupIdx  (빌드 시 부여된 groupIdx는 그날 안에서 0,1,2...)
@@ -815,6 +832,9 @@ function _perfRenderTable(rows){
       return n%1===0 ? n.toLocaleString('ko-KR')
            : n.toLocaleString('ko-KR',{minimumFractionDigits:1,maximumFractionDigits:4});
     };
+    var _ppDisp = (r.dayRowIdx===r.dayFirstMeatIdx && r._ppMeatFirst!=null) ? r._ppMeatFirst : r.ppKg;
+    var _ckDisp = (r.dayRowIdx===r.dayFirstMeatIdx && r._ckMeatFirst!=null) ? r._ckMeatFirst : r.ckKg;
+    var _shDisp = (r.dayRowIdx===r.dayFirstMeatIdx && r._shMeatFirst!=null) ? r._shMeatFirst : r.shKg;
     var cells=[
       (r.dayNo>0 && r.dayRowIdx===0 && !isSubRow) ? r.dayNo : '',
       (r.dayRowIdx===0 && !isSubRow) ? r.date.slice(5) : '',
@@ -822,7 +842,7 @@ function _perfRenderTable(rows){
       !isSubRow ? r.product : '',
       r.rmType||'',
       fmt(r.rmKg), r.boxSeoldo||'', r.boxHongdu||'', r.boxUdun||'',
-      fmt(r.ppKg), fmt(r.ckKg), fmt(r.shKg), fmt(r.sauceKg,1),
+      fmt(_ppDisp), fmt(_ckDisp), fmt(_shDisp), fmt(r.sauceKg,1),
       r.innerEa ? r.innerEa.toLocaleString('ko-KR') : '', fmt(r.defPouch,1),
       fmt(r.outerBoxes,1), r.boxDef||'',
       fmt(r.tray,1), r.trayDef||'', fmt(r.outBoxes,1),
@@ -901,6 +921,9 @@ function perfDownloadXlsx(){
     var rowIdx=aoa.length;
     var isSubRow=r.subRowIdx>0;
     var span=(r.totalSub||1);
+    var _ppX = (r.dayRowIdx===r.dayFirstMeatIdx && r._ppMeatFirst!=null) ? r._ppMeatFirst : r.ppKg;
+    var _ckX = (r.dayRowIdx===r.dayFirstMeatIdx && r._ckMeatFirst!=null) ? r._ckMeatFirst : r.ckKg;
+    var _shX = (r.dayRowIdx===r.dayFirstMeatIdx && r._shMeatFirst!=null) ? r._shMeatFirst : r.shKg;
     aoa.push([
       (!isSubRow && r.dayNo>0 && r.dayRowIdx===0) ? r.dayNo : '',
       (!isSubRow && r.dayRowIdx===0) ? r.date : '',
@@ -908,9 +931,9 @@ function perfDownloadXlsx(){
       !isSubRow ? r.product : '',
       r.rmType||'',
       r.rmKg||'', r.boxSeoldo||'', r.boxHongdu||'', r.boxUdun||'',
-      (!isSubRow && !r.isNoMeat) ? (r.ppKg||'') : '',
-      (!isSubRow && !r.isNoMeat) ? (r.ckKg||'') : '',
-      (!isSubRow && !r.isNoMeat) ? (r.shKg||'') : '',
+      (!isSubRow && !r.isNoMeat) ? (_ppX||'') : '',
+      (!isSubRow && !r.isNoMeat) ? (_ckX||'') : '',
+      (!isSubRow && !r.isNoMeat) ? (_shX||'') : '',
       (!isSubRow) ? (r.sauceKg||'') : '',
       (!isSubRow) ? (r.innerEa||'') : '',
       (!isSubRow) ? (r.defPouch||'') : '',
