@@ -784,8 +784,10 @@ function _perfRenderTable(rows){
   // 0~3: 일수·날짜·소비기한·제품명  4~8: 원육  9~11: 공정kg  12: 소스kg(비병합)
   // 13~20: 내포장~출고박스  21~22: FP·FC소스  23: 메추리알  24~25: 파우치·박스합계
   var MCOLS=new Set([0,1,2,3,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24]);
-  // 날짜별 공유 병합 대상 (일수·날짜·소비기한·전처리·자숙·파쇄)
-  var DAY_MCOLS=new Set([0,1,2,9,10,11]);
+  // 날짜별 공유 병합 대상 (일수·날짜·소비기한)
+  var DAY_MCOLS=new Set([0,1,2]);
+  // 무육 제외 병합 대상 (전처리·자숙·파쇄 — meat 행만 묶고 noMeat는 빈셀)
+  var DAY_MEAT_COLS=new Set([9,10,11]);
 
   var headers=[
     '일수','날짜','소비기한','제품명',
@@ -833,6 +835,15 @@ function _perfRenderTable(rows){
       if(isSubRow && MCOLS.has(i)) return;
       // 날짜 2번째+ 행: DAY_MCOLS 컬럼 skip
       if(r.dayRowIdx>0 && DAY_MCOLS.has(i)) return;
+      // 전처리/자숙/파쇄(9,10,11) — noMeat 행은 자기 행에 빈셀, meat 첫 행에서만 rowspan
+      if(DAY_MEAT_COLS.has(i)){
+        if(r.isNoMeat){
+          html+='<td style="text-align:center"></td>';
+          return;
+        }
+        // meat 첫 행이 아니면 rowspan으로 받음 → skip
+        if(r.dayRowIdx !== r.dayFirstMeatIdx) return;
+      }
       // 원육 컬럼(4~8): 무육 행은 자기 행에 빈칸 출력 (rowspan 받지 않음)
       var isRMcol=(i>=4&&i<=8);
       if(isRMcol && r.isNoMeat){
@@ -847,11 +858,14 @@ function _perfRenderTable(rows){
       var rs='';
       var dts = r.dayTotalSpan||1;
       var gSize = r.groupSize||1;
+      var dms = r.dayMeatSpan||0;
       if(DAY_MCOLS.has(i) && dts>1 && r.dayRowIdx===0 && !isSubRow){
         rs=' rowspan="'+dts+'"';
+      } else if(DAY_MEAT_COLS.has(i) && dms>1 && r.dayRowIdx===r.dayFirstMeatIdx && !isSubRow){
+        rs=' rowspan="'+dms+'"';
       } else if(isRMcol && !r.isTest && r.groupAllSingle && gSize>1 && r.isGroupFirst && !isSubRow){
         rs=' rowspan="'+gSize+'"';
-      } else if(MCOLS.has(i) && span>1 && !isSubRow && !DAY_MCOLS.has(i)){
+      } else if(MCOLS.has(i) && span>1 && !isSubRow && !DAY_MCOLS.has(i) && !DAY_MEAT_COLS.has(i)){
         rs=' rowspan="'+span+'"';
       }
       var vstyle = rs ? 'vertical-align:middle;' : '';
@@ -894,9 +908,9 @@ function perfDownloadXlsx(){
       !isSubRow ? r.product : '',
       r.rmType||'',
       r.rmKg||'', r.boxSeoldo||'', r.boxHongdu||'', r.boxUdun||'',
-      (!isSubRow) ? (r.ppKg||'') : '',
-      (!isSubRow) ? (r.ckKg||'') : '',
-      (!isSubRow) ? (r.shKg||'') : '',
+      (!isSubRow && !r.isNoMeat) ? (r.ppKg||'') : '',
+      (!isSubRow && !r.isNoMeat) ? (r.ckKg||'') : '',
+      (!isSubRow && !r.isNoMeat) ? (r.shKg||'') : '',
       (!isSubRow) ? (r.sauceKg||'') : '',
       (!isSubRow) ? (r.innerEa||'') : '',
       (!isSubRow) ? (r.defPouch||'') : '',
@@ -914,10 +928,17 @@ function perfDownloadXlsx(){
     // 병합 추가
     if(!isSubRow){
       var dts2=r.dayTotalSpan||1;
-      // 날짜 기반 병합 (DAY_MCOLS: 일수·날짜·소비기한·전처리·자숙·파쇄)
+      var dms2=r.dayMeatSpan||0;
+      // 날짜 기반 병합 (0,1,2: 일수·날짜·소비기한)
       if(r.dayRowIdx===0 && dts2>1){
-        [0,1,2,9,10,11].forEach(function(c){
+        [0,1,2].forEach(function(c){
           merges.push({s:{r:rowIdx,c:c},e:{r:rowIdx+dts2-1,c:c}});
+        });
+      }
+      // 무육 제외 병합 (9,10,11: 전처리·자숙·파쇄 — meat 행만)
+      if(r.dayRowIdx===r.dayFirstMeatIdx && dms2>1 && !r.isNoMeat){
+        [9,10,11].forEach(function(c){
+          merges.push({s:{r:rowIdx,c:c},e:{r:rowIdx+dms2-1,c:c}});
         });
       }
       // 그룹 단위 부위 컬럼(4~8) 병합: 그룹 첫 행 + 그룹 모두 단일 부위 + groupSize>1
@@ -927,7 +948,7 @@ function perfDownloadXlsx(){
           merges.push({s:{r:rowIdx,c:c},e:{r:rowIdx+gSize-1,c:c}});
         });
       }
-      // 부위 sub-row 분리 기반 병합 (DAY_MCOLS, 부위 컬럼 제외 나머지)
+      // 부위 sub-row 분리 기반 병합 (DAY_MCOLS, 부위 컬럼, DAY_MEAT_COLS 제외 나머지)
       if(span>1){
         MCOLS_ARR.filter(function(c){return ![0,1,2,4,5,6,7,8,9,10,11].includes(c);}).forEach(function(c){
           merges.push({s:{r:rowIdx,c:c},e:{r:rowIdx+span-1,c:c}});
