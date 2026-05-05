@@ -4,7 +4,7 @@
 // v1.0 — 2026-05-05
 // 의존: fbGetByDate, addDays, tod, toast
 
-const _AI_GEMINI_KEY = 'AIzaSyCev-P5w23ReNebkA6pRTXJR8z3ehDWOSY';
+const _AI_GEMINI_KEY = 'AIzaSyCA1KDDSrRddu_jqIEBsURRUVs8z_TC8eo';
 const _AI_GEMINI_MODEL = 'gemini-2.0-flash'; // 무료 티어 + 빠름
 
 // 도메인 룰 — AI에 컨텍스트로 보냄 (사용자분 명시 룰 + 도메인 지식)
