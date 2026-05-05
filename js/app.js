@@ -73,7 +73,7 @@ function _renderAIPage(el){
         </div>
         <button id="ai_run_btn" onclick="runAIAnalysis()" style="padding:10px 20px;background:#6366f1;color:#fff;border:none;border-radius:6px;font-size:14px;font-weight:600;cursor:pointer">🤖 AI 분석 시작</button>
       </div>
-      <div style="font-size:11px;color:#94a3b8;margin-top:8px">최대 35일까지 가능. 기간이 길수록 분석 시간 증가 (10~30초).</div>
+      <div style="font-size:11px;color:#94a3b8;margin-top:8px">최대 35일까지 가능. 기간이 길수록 분석 시간 증가 (10~30초). · API 키는 분석 → 설정 → 🤖 AI 설정에서 변경</div>
     </div>
     
     <div id="ai_result"></div>
@@ -132,6 +132,8 @@ function showTab(mode,tab){
     renderTrTbl();
   } else if(tab==='settings'){
     loadSettings_().then(()=>renderSettings()).catch(()=>renderSettings());
+    // AI key 상태도 함께 표시 (acc-ai 펼치지 않아도 미리 로드)
+    if(typeof aiKeyRefresh === 'function') setTimeout(aiKeyRefresh, 100);
   } else if(tab==='schedule'){
     if(typeof initSchedule==='function') initSchedule();
   } else if(tab==='outerpacking'){

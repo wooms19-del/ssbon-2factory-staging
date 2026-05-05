@@ -1,9 +1,96 @@
 // ============================================================
-// AI 분석 v2 — 임원 보고서 형식 (KPI 카드 + 차트 + 진단 + 액션)
+// AI 분석 v3 — Firestore 기반 API 키 (회사 전체 1곳 관리)
 // ============================================================
 
-const _AI_GEMINI_KEY = 'AIzaSyCA1KDDSrRddu_jqIEBsURRUVs8z_TC8eo';
 const _AI_GEMINI_MODEL = 'gemini-flash-latest';
+let _aiKeyCache = null;  // 메모리 캐시 (한 세션 내 재사용)
+
+// Firestore에서 API 키 조회
+async function _aiGetKey() {
+  if(_aiKeyCache !== null) return _aiKeyCache;
+  try {
+    const doc = await firebase.firestore().collection('_config').doc('ai_settings').get();
+    if(doc.exists) {
+      const k = doc.data().geminiKey || '';
+      _aiKeyCache = k;
+      return k;
+    }
+  } catch(e) {
+    console.error('[AI] key fetch 실패:', e);
+  }
+  return '';
+}
+
+// Firestore에 API 키 저장
+async function _aiSetKey(k) {
+  try {
+    await firebase.firestore().collection('_config').doc('ai_settings').set({
+      geminiKey: k || '',
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+    _aiKeyCache = k || '';
+    return true;
+  } catch(e) {
+    console.error('[AI] key 저장 실패:', e);
+    return false;
+  }
+}
+
+// API 키 변경 (설정 화면 버튼)
+async function aiKeyChange() {
+  const cur = await _aiGetKey();
+  const k = prompt(
+    'Gemini API 키를 입력하세요\n(https://aistudio.google.com/apikey)\n\n⚠️ Firestore에 저장됩니다. 회사 모든 디바이스가 이 키를 사용합니다.',
+    cur
+  );
+  if(k === null) return;
+  const trimmed = String(k).trim();
+  if(!trimmed) {
+    if(typeof toast === 'function') toast('빈 키는 저장 안 됨','d');
+    return;
+  }
+  if(!trimmed.startsWith('AIza')) {
+    if(typeof toast === 'function') toast('Gemini API 키 형식이 아닙니다 (AIza... 시작)','d');
+    return;
+  }
+  const ok = await _aiSetKey(trimmed);
+  if(ok) {
+    if(typeof toast === 'function') toast('API 키 저장 완료','s');
+    aiKeyRefresh();
+  } else {
+    if(typeof toast === 'function') toast('저장 실패','d');
+  }
+}
+
+// API 키 삭제
+async function aiKeyClear() {
+  if(!confirm('API 키를 삭제하시겠습니까?\n삭제 후엔 AI 분석 사용 불가합니다.')) return;
+  const ok = await _aiSetKey('');
+  if(ok) {
+    if(typeof toast === 'function') toast('API 키 삭제 완료','s');
+    aiKeyRefresh();
+  }
+}
+
+// API 키 상태 새로고침
+async function aiKeyRefresh() {
+  const el = document.getElementById('ai_key_status');
+  if(!el) return;
+  _aiKeyCache = null;  // 캐시 무효화 후 fresh fetch
+  el.textContent = '확인 중...';
+  const k = await _aiGetKey();
+  if(k) {
+    const masked = k.slice(0, 8) + '...' + k.slice(-4);
+    el.innerHTML = `<span style="color:#059669;font-weight:600">✓ 설정됨</span> <span style="color:#94a3b8;margin-left:8px">${masked}</span>`;
+  } else {
+    el.innerHTML = `<span style="color:#dc2626;font-weight:600">✗ 미설정</span> <span style="color:#94a3b8;margin-left:8px">"API 키 변경" 버튼으로 설정</span>`;
+  }
+}
+
+// 설정 탭 진입 시 자동 호출 (acc-ai 펼칠 때)
+function _aiAutoRefreshOnTab() {
+  if(document.getElementById('ai_key_status')) aiKeyRefresh();
+}
 
 const _AI_PROMPT_TEMPLATE = `
 당신은 순수본 2공장 스마트팩토리의 데이터 분석 AI입니다. 임원(대표) 보고용 분석 결과를 JSON 형식으로만 응답하세요.
@@ -68,6 +155,17 @@ async function runAIAnalysis() {
     return;
   }
   
+  // Firestore에서 API key 조회
+  const apiKey = await _aiGetKey();
+  if(!apiKey) {
+    resultEl.innerHTML = `<div style="padding:20px;background:#fef3c7;border-radius:8px;color:#92400e">
+      ⚠️ API 키가 설정되지 않았습니다.<br><br>
+      <b>분석 → 설정 탭 → 🤖 AI 설정</b> 아코디언에서 API 키를 입력해주세요.<br>
+      <span style="font-size:12px;color:#a16207">발급: https://aistudio.google.com/apikey</span>
+    </div>`;
+    return;
+  }
+  
   const from = fromEl.value;
   const to = toEl.value;
   
@@ -113,21 +211,20 @@ async function runAIAnalysis() {
     const aiInput = {
       기간: { from, to, days },
       검증된_KPI: computedKpis,
-      방혈_요약: allData.thawing.map(r => ({
-        date: r.date, type: r.type, cart: r.cart || '', totalKg: r.totalKg
-      })),
-      포장_요약: allData.packing.map(r => ({
-        date: r.date, product: r.product, ea: r.ea, kg: r.kg, defect: r.defect
-      })),
+      // 부위별 그날 작업량만 (raw 큰 array 제거)
+      방혈_일별_부위별: _aiGroupByDateAndType(allData.thawing),
+      포장_일별_제품별: _aiGroupByDateAndProduct(allData.packing),
+      // 부적합만 raw (보통 적은 건수)
       부적합_바코드: allData.barcode
         .filter(r => r.status === '부적합')
         .map(r => ({ date: r.date, part: r.part, reason: r.reason, packDate: r.packDate }))
+        .slice(0, 50)  // 최대 50건
     };
     
     const prompt = _AI_PROMPT_TEMPLATE + '\n\n[데이터]\n' + JSON.stringify(aiInput, null, 2);
     
-    const apiUrl = 'https://generativelanguage.googleapis.com/v1beta/models/' + _AI_GEMINI_MODEL + ':generateContent?key=' + _AI_GEMINI_KEY;
-    const apiRes = await fetch(apiUrl, {
+    const apiUrl = 'https://generativelanguage.googleapis.com/v1beta/models/' + _AI_GEMINI_MODEL + ':generateContent?key=' + apiKey;
+    const apiRes = await _aiFetchWithRetry(apiUrl, {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
       body: JSON.stringify({
@@ -138,7 +235,7 @@ async function runAIAnalysis() {
           responseMimeType: 'application/json'
         }
       })
-    });
+    }, 3);
     
     if(!apiRes.ok) {
       const err = await apiRes.text();
@@ -152,11 +249,29 @@ async function runAIAnalysis() {
     
     let report;
     try {
-      const cleaned = aiText.replace(/```json\s*/g,'').replace(/```\s*$/g,'').trim();
-      report = JSON.parse(cleaned);
+      // aiText가 이미 객체일 수도, 문자열일 수도 있음
+      if(typeof aiText === 'object' && aiText !== null) {
+        report = aiText;
+      } else {
+        // 문자열 — 코드블록/공백 정리 후 파싱
+        let cleaned = String(aiText).trim();
+        // ```json ... ``` 또는 ``` ... ``` 제거
+        cleaned = cleaned.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
+        // 첫 { 부터 마지막 } 까지만 추출 (앞뒤 잡문 제거)
+        const firstBrace = cleaned.indexOf('{');
+        const lastBrace = cleaned.lastIndexOf('}');
+        if(firstBrace >= 0 && lastBrace > firstBrace) {
+          cleaned = cleaned.slice(firstBrace, lastBrace + 1);
+        }
+        report = JSON.parse(cleaned);
+      }
     } catch(e) {
-      console.error('[AI] JSON 파싱 실패:', aiText);
-      throw new Error('AI 응답이 JSON 형식이 아닙니다');
+      console.error('[AI] JSON 파싱 실패:', e.message, '\n원본:', aiText);
+      throw new Error('AI 응답이 JSON 형식이 아닙니다 (' + e.message + ')');
+    }
+    
+    if(!report || typeof report !== 'object') {
+      throw new Error('AI 응답이 객체가 아닙니다');
     }
     
     _renderAIReport(resultEl, report, from, to, days, _aiCountRecords(allData));
@@ -238,6 +353,55 @@ function _aiCountRecords(allData) {
   let total = 0;
   for(const k in allData) total += allData[k].length;
   return total;
+}
+
+// 일별×부위별 집계 (방혈)
+function _aiGroupByDateAndType(thawingArr) {
+  const r2 = v => Math.round(v*100)/100;
+  const m = {};
+  thawingArr.forEach(r => {
+    const d = String(r.date||'').slice(0,10);
+    const types = (r.type||'').split(',').map(t=>t.trim()).filter(Boolean);
+    const perType = (parseFloat(r.totalKg)||0) / (types.length || 1);
+    types.forEach(t => {
+      const k = d + '|' + t;
+      if(!m[k]) m[k] = {date: d.slice(5).replace('-','/'), type: t, kg: 0, count: 0};
+      m[k].kg += perType;
+      m[k].count++;
+    });
+  });
+  return Object.values(m).map(v => ({...v, kg: r2(v.kg)})).sort((a,b)=>a.date.localeCompare(b.date));
+}
+
+// 일별×제품별 집계 (포장)
+function _aiGroupByDateAndProduct(packingArr) {
+  const r2 = v => Math.round(v*100)/100;
+  const m = {};
+  packingArr.forEach(r => {
+    const d = String(r.date||'').slice(0,10);
+    const k = d + '|' + (r.product||'?');
+    if(!m[k]) m[k] = {date: d.slice(5).replace('-','/'), product: r.product||'?', ea: 0, kg: 0, defect: 0};
+    m[k].ea += parseInt(r.ea)||0;
+    m[k].kg += parseFloat(r.kg)||0;
+    m[k].defect += parseInt(r.defect)||0;
+  });
+  return Object.values(m).map(v => ({...v, kg: r2(v.kg)})).sort((a,b)=>a.date.localeCompare(b.date));
+}
+
+// 503 자동 재시도 (3회, 점진 backoff)
+async function _aiFetchWithRetry(url, options, maxRetry) {
+  for(let i = 0; i < maxRetry; i++) {
+    const res = await fetch(url, options);
+    if(res.ok) return res;
+    if(res.status !== 503 && res.status !== 429) return res;  // 다른 오류는 재시도 X
+    if(i < maxRetry - 1) {
+      const wait = (i+1) * 2000;  // 2초, 4초, 6초
+      console.log(`[AI] ${res.status} 재시도 ${i+2}/${maxRetry} (${wait}ms 대기)`);
+      await new Promise(r => setTimeout(r, wait));
+    } else {
+      return res;  // 마지막 시도는 결과 그대로 반환
+    }
+  }
 }
 
 function _renderAIReport(el, r, from, to, days, recCount) {
