@@ -345,6 +345,11 @@ async function renderMonthlyReport(pk, from, effectiveTo, ppMonth, thMonth, opDa
   window._moGD = { dayEntries, rmByDate, opMap, metaMap, thMonth: thMonth||[], ppMonth: ppMonth||[], metaKey };
   _moRenderRows(null);
   renderPackingChart(dayEntries, opMap, _moYm || tod().slice(0,7));
+  // 일별 원육 사용량 차트
+  window._moRmByDate = rmByDate;
+  if(typeof _moRenderRmChart === 'function'){
+    _moRenderRmChart(rmByDate, _moYm || tod().slice(0,7));
+  }
 
   // ── 수율 KPI 계산 ─────────────────────────────────────────
   {
@@ -1012,9 +1017,12 @@ async function _moLoadAndRenderPrevCmp(curYld, curRm, curPkKg, curDays) {
     const _avgYld = _pYldByIdx.length ? (_pYldByIdx.reduce((s,r)=>s+(r.yld||0),0)/_pYldByIdx.length) : null;
     // 4월 일평균 KG (내포장) — pPk(완제품 kg 합) / pDays
     const _avgPkKg = pDays>0 ? pPk/pDays : null;
+    // 4월 일평균 원육 사용량 — pRm(원육 합) / pDays
+    const _avgRmKg = pDays>0 ? pRm/pDays : null;
     window._moPrevAvgDef = _avgDef;
     window._moPrevAvgYld = _avgYld;
     window._moPrevAvgPkKg = _avgPkKg;
+    window._moPrevAvgRmKg = _avgRmKg;
     // 차트 다시 그림 (전월 평균선 추가)
     if(window._moCurYldDays && typeof _moRenderYieldChart === 'function'){
       _moRenderYieldChart(window._moCurYldDays);
@@ -1025,6 +1033,10 @@ async function _moLoadAndRenderPrevCmp(curYld, curRm, curPkKg, curDays) {
     // 내포장 막대 차트도 재그림 (전월 평균선 반영 위해)
     if(typeof renderPackingChart === 'function' && window._moPackingArgs){
       renderPackingChart(window._moPackingArgs.dayEntries, window._moPackingArgs.opMap, window._moPackingArgs.ym);
+    }
+    // 일별 원육 차트도 재그림
+    if(typeof _moRenderRmChart === 'function' && window._moRmByDate){
+      _moRenderRmChart(window._moRmByDate, window._moPackingArgs ? window._moPackingArgs.ym : (window._moYm||tod().slice(0,7)));
     }
   } catch(e) {
     // KPI 일평균 원육 사용량 갱신
@@ -2492,6 +2504,106 @@ function renderPackingChart(dayEntries, opMap, ym) {
       }
     }
   });
+}
+
+// 일별 원육 사용량 차트
+var _moRmChart = null;
+function _moRenderRmChart(rmByDate, ym){
+  const canvas = document.getElementById('mo_rm_chart');
+  if(!canvas) return;
+  if(_moRmChart){_moRmChart.destroy();_moRmChart=null;}
+  if(!rmByDate || !Object.keys(rmByDate).length) return;
+
+  // 생산한 날만
+  const producedDates = Object.keys(rmByDate).filter(d => rmByDate[d] > 0).sort();
+  if(!producedDates.length) return;
+
+  // X축 = 생산한 날 + 오늘 이후 평일
+  const producedSet = new Set(producedDates);
+  const weekdays = (typeof _moChartWeekdays === 'function')
+    ? _moChartWeekdays(ym, producedSet) : producedDates;
+
+  const labels = weekdays.map((d,i) => [(i+1)+'일차', d.slice(5)]);
+  const rmVals = weekdays.map(d => rmByDate[d] && rmByDate[d] > 0 ? Math.round(rmByDate[d]) : null);
+  const xLen = weekdays.length;
+
+  // 이번달 일평균 (생산한 날만)
+  const _curVals = rmVals.filter(v => v != null && v > 0);
+  const _curAvg = _curVals.length ? Math.round(_curVals.reduce((s,v)=>s+v,0) / _curVals.length) : null;
+
+  const datasets = [
+    { type:'bar', label:'원육 사용량', data: rmVals, backgroundColor: '#1D9E75dd', borderRadius: 3 }
+  ];
+  if(_curAvg != null){
+    datasets.push({
+      type: 'line', label: '이번달 일평균',
+      data: Array(xLen).fill(_curAvg),
+      borderColor: '#e24b4a', borderDash: [2,3], pointRadius: 0, borderWidth: 1.5, fill: false,
+      _endLabel: _curAvg.toLocaleString()+'kg'
+    });
+  }
+  const _avgRm = window._moPrevAvgRmKg;
+  if(_avgRm != null){
+    datasets.push({
+      type:'line', label:'전월 일평균',
+      data: Array(xLen).fill(Math.round(_avgRm)),
+      borderColor: '#94a3b8', borderDash: [5,4], pointRadius: 0, borderWidth: 1.5, fill: false,
+      _endLabel: Math.round(_avgRm).toLocaleString()+'kg'
+    });
+  }
+
+  _moRmChart = new Chart(canvas, {
+    type: 'bar',
+    plugins: [
+      {id:'topNum',afterDatasetsDraw(chart){
+        const {ctx} = chart; ctx.save();
+        const meta = chart.getDatasetMeta(0).data;
+        meta.forEach((bar, i) => {
+          const v = rmVals[i];
+          if(v == null || v <= 0) return;
+          ctx.fillStyle = '#1e293b'; ctx.font = 'bold 11px sans-serif';
+          ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+          ctx.fillText(v.toLocaleString()+'kg', bar.x, bar.y - 4);
+        });
+        ctx.restore();
+      }},
+      {id:'endLbl',afterDatasetsDraw(chart){
+        const {ctx} = chart; ctx.save();
+        chart.data.datasets.forEach((d,i) => {
+          if(!d._endLabel) return;
+          const meta = chart.getDatasetMeta(i).data;
+          if(!meta.length) return;
+          const lastPt = meta[meta.length-1];
+          ctx.fillStyle = d.borderColor || '#475569';
+          ctx.font = 'bold 11px sans-serif';
+          ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+          ctx.fillText(' '+d._endLabel, lastPt.x+4, lastPt.y);
+        });
+        ctx.restore();
+      }}
+    ],
+    data: { labels, datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      layout: { padding: { top: 25, right: 70 } },
+      plugins: {
+        legend: { display: true, position: 'top',
+          labels: { font: {size:10}, boxWidth: 12, usePointStyle: true,
+            filter: (item) => item.text === '이번달 일평균' || item.text === '전월 일평균' } },
+        tooltip: { callbacks: {
+          label: ctx => ctx.datasetIndex === 0 ? ' '+(ctx.raw||0).toLocaleString()+'kg' : ''
+        } }
+      },
+      scales: {
+        x: { ticks: { font: {size:9}, autoSkip: false, maxRotation: 0 }, grid: { display: false } },
+        y: { ticks: { font: {size:10}, callback: v => v.toLocaleString()+'kg' }, beginAtZero: true }
+      }
+    }
+  });
+}
+
+async function downloadRmChart(){
+  await _downloadGenericChart('mo_rm_chart', _moRmChart, '일별원육사용량');
 }
 
 // 일반 차트(불량률/수율) 고화질 다운로드

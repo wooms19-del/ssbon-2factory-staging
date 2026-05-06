@@ -564,6 +564,18 @@
   </div>
 
   <div style="display:grid;grid-template-columns:1fr;gap:12px">
+    <!-- 일별 원육 사용량 -->
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div>
+          <div style="font-size:10px;color:var(--g4);margin-bottom:1px">순수본 2공장</div>
+          <div class="ct" style="margin:0">일별 원육 사용량</div>
+          <div style="font-size:11px;color:var(--g5);margin-top:2px">막대 = 그날 사용된 원육(kg)</div>
+        </div>
+        <button class="btn bo bsm" onclick="downloadRmChart()" style="font-size:11px">📥 저장</button>
+      </div>
+      <div style="position:relative;height:240px"><canvas id="mo_rm_chart"></canvas></div>
+    </div>
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
         <div>
@@ -1012,7 +1024,7 @@
 <script src="js/packing.js?v=1778044749"></script>
 <script src="js/csv_upload.js?v=1777999449"></script>
 <script src="js/daily_report.js?v=1778039994"></script>
-<script src="js/analysis.js?v=1778065405"></script>
+<script src="js/analysis.js?v=1778065882"></script>
 <script src="js/ai_analysis.js?v=1777999449"></script>
 <script src="js/dashboard.js?v=1777999449"></script>
 <script src="js/trace.js?v=1777999449"></script>
