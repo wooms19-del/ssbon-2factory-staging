@@ -228,18 +228,41 @@ async function renderMonthly() {
     if(!byDate[d]) byDate[d]={ea:0,def:0};
     byDate[d].ea+=parseFloat(r.ea)||0; byDate[d].def+=parseFloat(r.defect)||0;
   });
-  // 생산한 날만 (데이터 있는 날만)
+  // 생산한 날만 (데이터 있는 날만) — X축은 "1일차, 2일차..." 생산일 인덱스
   const dates=Object.keys(byDate).sort();
   const eaVals=dates.map(d=>byDate[d].ea);
   const defVals=dates.map(d=>{
     const pouch = byDate[d].ea + byDate[d].def;
     return pouch>0 ? parseFloat((byDate[d].def/pouch*100).toFixed(2)) : null;
   });
-  const labels=dates.map(d=>d.slice(5)+'('+dayOfWeek(d)+')');
+  // X축 레이블: "1일차 (5/4 월)" 형식 — 인덱스 + 실제 날짜
+  const labels=dates.map((d,i)=>(i+1)+'일차 ('+d.slice(5)+')');
+  // 전역 저장 — 전월 데이터 도착 시 차트 다시 그릴 때 사용
+  window._moCurByDate = byDate;
+  window._moCurDates = dates;
 
   // mo_bar_chart → renderPackingChart로 위임 (renderMonthlyReport에서 호출)
   const ctx2=document.getElementById('mo_def_chart');
   if(ctx2){ if(_moDefChart){_moDefChart.destroy();_moDefChart=null;}
+    // 전월 불량률 (있으면)
+    const _prevByIdxArr = window._moPrevByIdx || null;
+    const _prevDef = _prevByIdxArr ? _prevByIdxArr.map(r=>r.defectPct) : null;
+    const xLen = Math.max(dates.length, (_prevByIdxArr||[]).length);
+    // 라벨 보강
+    const labelsExt = labels.slice();
+    while(labelsExt.length < xLen) labelsExt.push((labelsExt.length+1)+'일차');
+    // 데이터 패딩
+    const defValsExt = defVals.slice();
+    while(defValsExt.length < xLen) defValsExt.push(null);
+    const ds = [
+      {label:'이번달 불량률',data:defValsExt,borderColor:'#e24b4a',backgroundColor:'rgba(226,75,74,0.08)',fill:true,tension:0.3,pointRadius:4,borderWidth:2,spanGaps:false}
+    ];
+    if(_prevDef){
+      const prevPadded = _prevDef.slice();
+      while(prevPadded.length < xLen) prevPadded.push(null);
+      ds.push({label:'전월('+(window._moPrevYm||'')+') 불량률',data:prevPadded,borderColor:'#94a3b8',borderDash:[5,4],pointRadius:3,pointBackgroundColor:'#94a3b8',borderWidth:1.5,fill:false,spanGaps:false});
+    }
+    ds.push({label:'기준 2%',data:Array(xLen).fill(2),borderColor:'#f59e0b',borderDash:[5,4],pointRadius:0,borderWidth:1.5,fill:false});
     _moDefChart=new Chart(ctx2,{type:'line',plugins:[{id:'lineLbl',afterDatasetsDraw(chart){
       const {ctx}=chart; ctx.save();
       chart.data.datasets.forEach((ds,i)=>{
@@ -255,10 +278,7 @@ async function renderMonthly() {
         });
       });
       ctx.restore();
-    }}],data:{labels,datasets:[
-      {label:'불량률',data:defVals,borderColor:'#e24b4a',backgroundColor:'rgba(226,75,74,0.08)',fill:true,tension:0.3,pointRadius:4,borderWidth:2,spanGaps:false},
-      {label:'기준 2%',data:Array(dates.length).fill(2),borderColor:'#f59e0b',borderDash:[5,4],pointRadius:0,borderWidth:1.5,fill:false}
-    ]},options:{responsive:true,maintainAspectRatio:false,
+    }}],data:{labels:labelsExt,datasets:ds},options:{responsive:true,maintainAspectRatio:false,
       plugins:{legend:{display:true,position:'top',labels:{font:{size:11},boxWidth:12,usePointStyle:true}},
                tooltip:{callbacks:{label:v=>v.raw!=null?v.raw+'%':'—'}}},
       scales:{x:{ticks:{color:'#888',font:{size:10},maxRotation:45},grid:{display:false}},
@@ -773,16 +793,108 @@ function _moRenderYieldKPI(totRm, totPkKg, avgYld, workDays, goodDays, lossKg) {
 }
 
 // ── 수율 일별 추이 차트 ──────────────────────────────────────
+// 전월 데이터 도착 후 불량률 차트 재그림
+function _moRedrawDefChart(){
+  const ctx2 = document.getElementById('mo_def_chart');
+  if(!ctx2) return;
+  const byDate = window._moCurByDate || {};
+  const dates = window._moCurDates || Object.keys(byDate).sort();
+  if(!dates.length) return;
+  const defVals = dates.map(d=>{
+    const v = byDate[d];
+    if(!v) return null;
+    const pouch = v.ea + v.def;
+    return pouch>0 ? parseFloat((v.def/pouch*100).toFixed(2)) : null;
+  });
+  const labels = dates.map((d,i)=>(i+1)+'일차 ('+d.slice(5)+')');
+  const _prevByIdxArr = window._moPrevByIdx || null;
+  const _prevDef = _prevByIdxArr ? _prevByIdxArr.map(r=>r.defectPct) : null;
+  const xLen = Math.max(dates.length, (_prevByIdxArr||[]).length);
+  const labelsExt = labels.slice();
+  while(labelsExt.length < xLen) labelsExt.push((labelsExt.length+1)+'일차');
+  const defValsExt = defVals.slice();
+  while(defValsExt.length < xLen) defValsExt.push(null);
+  const ds = [
+    {label:'이번달 불량률',data:defValsExt,borderColor:'#e24b4a',backgroundColor:'rgba(226,75,74,0.08)',fill:true,tension:0.3,pointRadius:4,borderWidth:2,spanGaps:false}
+  ];
+  if(_prevDef){
+    const prevPadded = _prevDef.slice();
+    while(prevPadded.length < xLen) prevPadded.push(null);
+    ds.push({label:'전월('+(window._moPrevYm||'')+') 불량률',data:prevPadded,borderColor:'#94a3b8',borderDash:[5,4],pointRadius:3,pointBackgroundColor:'#94a3b8',borderWidth:1.5,fill:false,spanGaps:false});
+  }
+  ds.push({label:'기준 2%',data:Array(xLen).fill(2),borderColor:'#f59e0b',borderDash:[5,4],pointRadius:0,borderWidth:1.5,fill:false});
+  if(_moDefChart){_moDefChart.destroy();_moDefChart=null;}
+  _moDefChart = new Chart(ctx2,{type:'line',plugins:[{id:'lineLbl',afterDatasetsDraw(chart){
+    const {ctx}=chart; ctx.save();
+    chart.data.datasets.forEach((d,i)=>{
+      if(d.pointRadius===0) return;
+      chart.getDatasetMeta(i).data.forEach((pt,j)=>{
+        const v=d.data[j];
+        if(v==null) return;
+        const s=typeof v==='number'?v.toFixed(1)+'%':String(v);
+        ctx.fillStyle=d.borderColor||'#475569';
+        ctx.font='bold 9px sans-serif';
+        ctx.textAlign='center'; ctx.textBaseline='bottom';
+        ctx.fillText(s, pt.x, pt.y-5);
+      });
+    });
+    ctx.restore();
+  }}],data:{labels:labelsExt,datasets:ds},options:{responsive:true,maintainAspectRatio:false,
+    plugins:{legend:{display:true,position:'top',labels:{font:{size:11},boxWidth:12,usePointStyle:true}},
+             tooltip:{callbacks:{label:v=>v.raw!=null?v.raw+'%':'—'}}},
+    scales:{x:{ticks:{color:'#888',font:{size:10},maxRotation:45},grid:{display:false}},
+            y:{ticks:{color:'#888',font:{size:10},callback:v=>v+'%'},
+               grid:{color:'rgba(128,128,128,0.1)'},min:0}}}});
+}
+
 function _moRenderYieldChart(dailyYields) {
   const canvas=document.getElementById('mo_yield_chart');
   if(!canvas) return;
   if(_moYieldChart){_moYieldChart.destroy();_moYieldChart=null;}
   if(!dailyYields.length) return;
-  // 생산한 날만 (데이터 있는 날만)
+  // 생산한 날만 (데이터 있는 날만) — X축 = "1일차, 2일차..." 인덱스
   const n=dailyYields.length;
-  const labels=dailyYields.map(d=>d.date.slice(5)+'('+['일','월','화','수','목','금','토'][new Date(d.date).getDay()]+')');
+  const labels=dailyYields.map((d,i)=>(i+1)+'일차 ('+d.date.slice(5)+')');
   const ylds=dailyYields.map(d=>parseFloat(d.yld.toFixed(1)));
   const ptColors=ylds.map(v=>v>=55?'#047857':v>=52?'#3b82f6':v>=50?'#f59e0b':'#ef4444');
+  // 전역 저장 — 전월 데이터 도착 시 차트 다시 그리기
+  window._moCurYldDays = dailyYields;
+  // 전월 수율 (있으면) — 같은 인덱스로
+  const _prevYldArr = window._moPrevYldByIdx || null;
+  const _prevYlds = _prevYldArr ? _prevYldArr.map(r=>parseFloat(r.yld.toFixed(1))) : null;
+  // X축 길이는 max(현재, 전월) 만큼
+  const xLen = Math.max(n, (_prevYldArr||[]).length);
+  // 라벨 보강 — xLen만큼
+  while(labels.length < xLen){
+    labels.push((labels.length+1)+'일차');
+  }
+  // 데이터 패딩
+  while(ylds.length < xLen) ylds.push(null);
+  while(ptColors.length < xLen) ptColors.push('transparent');
+  const datasets = [
+    {label:'이번달 수율',data:ylds,borderColor:'#64748b',backgroundColor:'rgba(100,116,139,0.08)',fill:true,tension:0.3,pointRadius:5,pointBackgroundColor:ptColors,pointBorderColor:ptColors,borderWidth:2,spanGaps:false}
+  ];
+  if(_prevYlds){
+    // 전월 데이터도 xLen 맞추기
+    const prevPadded = [..._prevYlds];
+    while(prevPadded.length < xLen) prevPadded.push(null);
+    datasets.push({
+      label:'전월('+(window._moPrevYm||'')+') 수율',
+      data: prevPadded,
+      borderColor:'#94a3b8',
+      borderDash:[5,4],
+      pointRadius:3,
+      pointBackgroundColor:'#94a3b8',
+      borderWidth:1.5,
+      fill:false,
+      spanGaps:false
+    });
+  }
+  datasets.push(
+    {label:'목표 55%',data:Array(xLen).fill(55),borderColor:'#047857',borderDash:[6,3],pointRadius:0,borderWidth:1.5,fill:false},
+    {label:'적절 52%',data:Array(xLen).fill(52),borderColor:'#3b82f6',borderDash:[4,3],pointRadius:0,borderWidth:1.5,fill:false},
+    {label:'위험 50%',data:Array(xLen).fill(50),borderColor:'#ef4444',borderDash:[4,3],pointRadius:0,borderWidth:1.5,fill:false}
+  );
   _moYieldChart=new Chart(canvas,{plugins:[{id:'lineLbl',afterDatasetsDraw(chart){
       const {ctx}=chart; ctx.save();
       chart.data.datasets.forEach((ds,i)=>{
@@ -800,12 +912,7 @@ function _moRenderYieldChart(dailyYields) {
       ctx.restore();
     }}],
     type:'line',
-    data:{labels,datasets:[
-      {label:'일별 수율',data:ylds,borderColor:'#64748b',backgroundColor:'rgba(100,116,139,0.08)',fill:true,tension:0.3,pointRadius:5,pointBackgroundColor:ptColors,pointBorderColor:ptColors,borderWidth:2,spanGaps:false},
-      {label:'목표 55%',data:Array(n).fill(55),borderColor:'#047857',borderDash:[6,3],pointRadius:0,borderWidth:1.5,fill:false},
-      {label:'적절 52%',data:Array(n).fill(52),borderColor:'#3b82f6',borderDash:[4,3],pointRadius:0,borderWidth:1.5,fill:false},
-      {label:'위험 50%',data:Array(n).fill(50),borderColor:'#ef4444',borderDash:[4,3],pointRadius:0,borderWidth:1.5,fill:false}
-    ]},
+    data:{labels,datasets},
     options:{responsive:true,maintainAspectRatio:false,
       plugins:{legend:{display:true,position:'top',labels:{font:{size:10},boxWidth:12,usePointStyle:true}},
                tooltip:{callbacks:{label:v=>v.dataset.label+': '+v.raw+'%'}}},
@@ -859,6 +966,60 @@ async function _moLoadAndRenderPrevCmp(curYld, curRm, curPkKg, curDays) {
     });
     const pYld=pRm>0?pPk/pRm*100:0;
     _moRenderPrevCmp(el,{yld:curYld,rm:curRm,pkKg:curPkKg,days:curDays},{yld:pYld,rm:pRm,pkKg:pPk,days:pDays},prevYm);
+
+    // ★ 전월 차트 데이터 만들기 — 생산 일수 인덱스 비교용
+    // 전월 (생산한 날만) 일별 = 불량률 / 내포장 EA·KG / 수율
+    const _prevPkClean = (prevPk||[]).filter(r=>!r.testRun&&!r.isTest);
+    const _pByDate = {};
+    _prevPkClean.forEach(r => {
+      const d = String(r.date||'').slice(0,10);
+      if(!_pByDate[d]) _pByDate[d] = { ea:0, def:0, kg:0 };
+      _pByDate[d].ea += parseFloat(r.ea)||0;
+      _pByDate[d].def += parseFloat(r.defect)||0;
+      const p = L.products.find(x=>x.name===r.product);
+      _pByDate[d].kg += p ? (parseFloat(r.ea)||0)*p.kgea : 0;
+    });
+    const _pDates = Object.keys(_pByDate).sort();
+    // 생산일 인덱스(1,2,3...) 기준 데이터
+    const prevByIdx = _pDates.map((d, i) => {
+      const v = _pByDate[d];
+      const pouch = v.ea + v.def;
+      return {
+        idx: i+1,
+        date: d,
+        ea: v.ea,
+        kg: v.kg,
+        defectPct: pouch>0 ? parseFloat((v.def/pouch*100).toFixed(2)) : null
+      };
+    });
+    // 전월 일별 수율 (그날 원육 대비 그날 산출)
+    const _pYldByIdx = [];
+    Object.entries(prevGrouped).sort((a,b)=>a[0].localeCompare(b[0])).forEach(([date,allR]) => {
+      const ppDay = (prevPp||[]).filter(r=>String(r.date||'').slice(0,10)===date);
+      const dayRm = r2(getThKgByPP_(ppDay,prevTh||[],date));
+      if(!dayRm) return;
+      const effM = {};
+      allR.forEach(row=>{
+        const oe = prevOpMap[date+'|'+row.product]||0;
+        const p = L.products.find(x=>x.name===row.product);
+        effM[row.product] = oe>0&&p ? r2(oe*p.kgea) : row.pkKg;
+      });
+      const dayPk = r2(allR.reduce((s,r)=>s+(effM[r.product]||0),0));
+      _pYldByIdx.push({ date, yld: dayRm>0 ? dayPk/dayRm*100 : 0 });
+    });
+
+    window._moPrevByIdx = prevByIdx;
+    window._moPrevYldByIdx = _pYldByIdx;
+    window._moPrevYm = prevYm;
+    // 차트 다시 그림 (전월 점선 추가)
+    if(window._moCurYldDays && typeof _moRenderYieldChart === 'function'){
+      _moRenderYieldChart(window._moCurYldDays);
+    }
+    // 불량률 차트도 다시 그리려면 _moReload 통째로 재호출 필요 — 일단 수율만 재그림
+    // (불량률은 전역 저장된 byDate로 재그림 가능)
+    if(window._moCurByDate && typeof _moRedrawDefChart === 'function'){
+      _moRedrawDefChart();
+    }
   } catch(e) {
     // KPI 일평균 원육 사용량 갱신
     el.innerHTML=`<div class="ct">전월 비교</div><div style="text-align:center;color:#94a3b8;font-size:12px;padding:1.5rem">전월 데이터 없음</div>`;
@@ -2080,6 +2241,8 @@ function renderPackingChart(dayEntries, opMap, ym) {
   // 행 펼치기 (외포장 있으면 우선, 없으면 내포장 ea)
   // 생산한 날만 (데이터 있는 날만)
   const rows = [], groups = [];
+  // 생산일 인덱스 카운터
+  let _prodDayIdx = 0;
   dayEntries.forEach(([date, dayRows]) => {
     const items = dayRows.map(r => {
       const outerEa = opMap[date+'|'+r.product] || 0;
@@ -2089,9 +2252,10 @@ function renderPackingChart(dayEntries, opMap, ym) {
       return { prod: r.product, short: prodShort(r.product), ea, kg };
     }).filter(x => x.ea > 0).sort((a,b) => b.ea - a.ea);
     if (!items.length) return;
+    _prodDayIdx++;
     const si = rows.length;
     items.forEach(it => rows.push(it));
-    groups.push({ day: dLabel(date), barIndexes: items.map((_,i) => si+i) });
+    groups.push({ day: _prodDayIdx+'일차 ('+date.slice(5)+')', barIndexes: items.map((_,i) => si+i) });
   });
 
   if (!rows.length) return;
