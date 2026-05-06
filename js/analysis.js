@@ -17,18 +17,19 @@ function chMonth(dir) {
   renderMonthly();
 }
 
+// 메모리 캐시 — 입력 시 Firestore 재조회 안 하도록 (renderMonthly 시 갱신됨)
+let _moMetaCache = {};
+
 // ── 월간 메타(작업인원/Capa/메모) firestore 동기화 헬퍼 ─────────────────────
 //
 // 컬렉션: monthlyMeta, 문서ID: ym (예: '2026-04')
 // 데이터 형태: { "2026-04-01": { workers, capa, note }, ... }
 //
 // 동작:
-//  - 로드: firestore 우선, 없으면 localStorage fallback
+//  - 로드: firestore 우선, localStorage는 오프라인 fallback
 //  - 마이그레이션: localStorage에 있고 firestore에 없으면 자동 업로드 (1회)
-//  - 저장: localStorage 즉시 저장 + firestore 저장 (백그라운드)
-//
-// 이 헬퍼 도입 전에는 localStorage에만 저장되어 다른 PC/브라우저/시크릿모드에서
-// 메모가 안 보이고, 캐시 정리 시 사라지는 문제가 있었음.
+//  - 저장: firestore에 직접 (성공 후 localStorage 캐시 갱신)
+//  - 입력 시 _moMetaCache 메모리 사용 (localStorage 의존 끊음)
 async function _moLoadMeta(ym){
   const metaKey = 'moMeta_' + ym;
   let lsData = {};
@@ -58,24 +59,30 @@ async function _moLoadMeta(ym){
     return lsData;
   }
 
-  // firestore가 우선. localStorage 동기화
+  // firestore가 우선. localStorage + 메모리 캐시 갱신
   if(fbData !== null) {
     try { localStorage.setItem(metaKey, JSON.stringify(fbData)); } catch(e){}
+    _moMetaCache[ym] = fbData;
     return fbData;
   }
+  _moMetaCache[ym] = lsData;
   return lsData;
 }
 
 async function _moSaveMeta(ym, mm){
   const metaKey = 'moMeta_' + ym;
-  // localStorage 즉시 저장 (오프라인 캐시)
-  try { localStorage.setItem(metaKey, JSON.stringify(mm)); } catch(e){}
-  // firestore 저장 (백그라운드, fbSave는 staging에서 자동 차단됨)
-  if(typeof fbSave === 'function') {
-    try { await fbSave('monthlyMeta', mm, ym); }
-    catch(e) { console.warn('[월간메모 저장 실패]', e.message); }
+  // ★ Firestore 우선 저장 (실패 시에만 throw)
+  if(typeof fbSave !== 'function') {
+    throw new Error('fbSave 함수 없음 — Firebase 초기화 실패');
   }
+  await fbSave('monthlyMeta', mm, ym);  // 성공해야 다음으로
+  // 성공 후 localStorage 캐시 갱신 (오프라인 대비, 보조 역할)
+  try { localStorage.setItem(metaKey, JSON.stringify(mm)); } catch(e){}
+  // 메모리 캐시도 갱신
+  _moMetaCache[ym] = mm;
 }
+
+
 
 async function renderMonthly() {
   if(!_moYm) _moYm = tod().slice(0,7);
@@ -550,12 +557,13 @@ async function renderMonthlyReport(pk, from, effectiveTo, ppMonth, thMonth, opDa
       const field = this.dataset.field;
       const date  = this.dataset.field === 'note' ? this.dataset.date : this.dataset.date;
       const labels = {workers:'작업 인원 (명)', capa:'Full Capa (예: 10,000)', note:'비고'};
-      let cur = '';
-      try { cur = (JSON.parse(localStorage.getItem(metaKey)||'{}')[date]||{})[field]||''; } catch(e){}
+      // ★ 메모리 캐시(=Firestore 최신)에서 읽음. localStorage 의존 X
+      const cacheData = _moMetaCache[ym] || {};
+      let cur = (cacheData[date] || {})[field] || '';
       const val = prompt(labels[field]+' 입력 (비우면 자동값 사용):', cur);
       if(val===null) return;
-      let mm={};
-      try{mm=JSON.parse(localStorage.getItem(metaKey)||'{}');}catch(e){}
+      // ★ 캐시 deep copy해서 변경 (원본 변경 방지)
+      const mm = JSON.parse(JSON.stringify(cacheData));
       if(!mm[date]) mm[date]={};
       if(val.trim()==='') {
         delete mm[date][field];
@@ -563,8 +571,13 @@ async function renderMonthlyReport(pk, from, effectiveTo, ppMonth, thMonth, opDa
       } else {
         mm[date][field] = (field==='note') ? val : (parseFloat(val.replace(/,/g,''))||val);
       }
-      await _moSaveMeta(ym, mm);
-      renderMonthly();
+      try {
+        await _moSaveMeta(ym, mm);
+        renderMonthly();
+      } catch(e) {
+        if(typeof toast === 'function') toast('저장 실패: ' + e.message, 'd');
+        console.error('[월간메모 저장 실패]', e);
+      }
     });
   });
 }
@@ -675,12 +688,12 @@ function _moRenderRows(selProds) {
     el.addEventListener('click',async function(){
       const field=this.dataset.field, date=this.dataset.date;
       const labels={workers:'작업 인원 (명)',capa:'Full Capa (예: 10,000)',note:'비고'};
-      let cur='';
-      try{cur=(JSON.parse(localStorage.getItem(metaKey)||'{}')[date]||{})[field]||'';}catch(e){}
+      // ★ 메모리 캐시(=Firestore 최신)에서 읽음
+      const cacheData = _moMetaCache[ym] || {};
+      let cur = (cacheData[date]||{})[field] || '';
       const val=prompt(labels[field]+' 입력 (비우면 자동값 사용):',cur);
       if(val===null) return;
-      let mm={};
-      try{mm=JSON.parse(localStorage.getItem(metaKey)||'{}');}catch(e){}
+      const mm = JSON.parse(JSON.stringify(cacheData));
       if(!mm[date]) mm[date]={};
       if(val.trim()===''){
         delete mm[date][field];
@@ -688,8 +701,13 @@ function _moRenderRows(selProds) {
       } else {
         mm[date][field]=(field==='note')?val:(parseFloat(val.replace(/,/g,''))||val);
       }
-      await _moSaveMeta(ym, mm);
-      renderMonthly();
+      try {
+        await _moSaveMeta(ym, mm);
+        renderMonthly();
+      } catch(e) {
+        if(typeof toast === 'function') toast('저장 실패: ' + e.message, 'd');
+        console.error('[월간메모 저장 실패]', e);
+      }
     });
   });
 }
@@ -1432,6 +1450,23 @@ function renderDailyFromLocal_(d){
   if(defEl) defEl.style.color = defRate>2 ? 'var(--d)' : defRate>0 ? 'var(--s)' : '';
   const defLabel = document.getElementById('d_def_label');
   if(defLabel) defLabel.textContent = defRate>2 ? '% ▲기준초과' : defRate>0 ? '% ▼기준이하' : '%';
+
+  // ============================================================
+  // 일별 알람 체크 - 자숙/파쇄/포장 원육수율 이상 탐지
+  // 원육수율 = 해당 공정 산출 / 원육 투입(rmKg) * 100
+  // 임계값은 settings 페이지에서 조정 가능 (Firebase config/alarms)
+  // 데이터 부족 시 (생산 안 하고 있을 때) 알람 차단
+  // ============================================================
+  const _MIN_RM_KG = 100;       // 원육 100kg 미만이면 알람 전체 차단
+  const _MIN_CK_KG = 50;        // 자숙 50kg 미만이면 자숙 알람 차단
+  const _MIN_SH_KG = 50;        // 파쇄 50kg 미만이면 파쇄 알람 차단
+  const _hasProduction = rmKg >= _MIN_RM_KG;
+  const _ckOYld = (_hasProduction && ckKg >= _MIN_CK_KG) ? r2(ckKg/rmKg*100) : null;
+  const _shOYld = (_hasProduction && shKg >= _MIN_SH_KG) ? r2(shKg/rmKg*100) : null;
+  const _pkOYld = (_hasProduction && pk.length > 0) ? oYld : null;
+  if(typeof renderDailyAlerts === 'function'){
+    renderDailyAlerts({ cooking: _ckOYld, shredding: _shOYld, packing: _pkOYld }, d);
+  }
 
   // 공정별 현황 - 파쇄 원육타입: 연결된 자숙 레코드에서 type 가져오기
   function getShType(shRecs, ckRecs) {
@@ -2510,4 +2545,82 @@ async function _buildChartSheet(mainBuf, y, m) {
   zip.file('xl/charts/chart1.xml',chartXml);
 
   return await zip.generateAsync({type:'arraybuffer',compression:'DEFLATE'});
+}
+
+// ============================================================
+// 일별 알람 카드 렌더링 (자숙/파쇄/포장 원육수율 이상 탐지)
+// 임계값은 LocalStorage에서 로드 (settings 페이지에서 조정 가능)
+// 기본값: 4월 30일치 데이터 기반 평균 ± nσ
+// ============================================================
+const ALARM_DEFAULTS_FALLBACK = {
+  cooking:   { mean: 54.50, std: 1.27, enabled: true },
+  shredding: { mean: 50.83, std: 2.77, enabled: true },
+  packing:   { mean: 50.67, std: 7.23, enabled: true }
+};
+const ALARM_LABEL = {
+  cooking:   '자숙 원육수율',
+  shredding: '파쇄 원육수율',
+  packing:   '포장 원육수율'
+};
+
+function _getAlarmThresholds(){
+  // 우선순위: settings.js의 동기 헬퍼 → localStorage 캐시 → 기본값
+  if(typeof getAlarmThresholdsSync === 'function') return getAlarmThresholdsSync();
+  try{
+    const s = localStorage.getItem('ssbon_v6_alarm_thresholds_cache');
+    if(s) return JSON.parse(s);
+  }catch(e){}
+  return JSON.parse(JSON.stringify(ALARM_DEFAULTS_FALLBACK));
+}
+
+function renderDailyAlerts(metrics, dateStr){
+  const card = document.getElementById('alertCard');
+  if(!card) return;
+
+  const T = _getAlarmThresholds();
+  const alerts = [];
+  ['cooking','shredding','packing'].forEach(k => {
+    const t = T[k];
+    if(!t || !t.enabled) return;
+    const v = metrics[k];
+    if(v == null || isNaN(v)) return;
+
+    let level = 'green';
+    if(v <= t.mean - 3*t.std) level = 'red';
+    else if(v <= t.mean - 2*t.std) level = 'yellow';
+
+    if(level !== 'green'){
+      const dev = ((v - t.mean) / t.std).toFixed(1);
+      alerts.push({ key: k, label: ALARM_LABEL[k], value: v, mean: t.mean, level, dev });
+    }
+  });
+
+  if(alerts.length === 0){
+    card.style.display = 'none';
+    return;
+  }
+
+  const colorMap = {
+    red:    { bg:'#FEE2E2', bd:'#DC2626', tx:'#991B1B', icon:'●', word:'이상' },
+    yellow: { bg:'#FEF3C7', bd:'#F59E0B', tx:'#92400E', icon:'●', word:'경고' }
+  };
+
+  card.style.display = 'block';
+  card.innerHTML = alerts.map(a => {
+    const c = colorMap[a.level];
+    return `<div style="background:${c.bg};border:1px solid ${c.bd};border-radius:8px;padding:10px 14px;margin-bottom:6px;color:${c.tx};display:flex;align-items:center;gap:10px">
+      <span style="font-size:14px;color:${c.bd}">${c.icon}</span>
+      <div style="flex:1">
+        <div style="font-weight:600;font-size:13px">${a.label} ${c.word}</div>
+        <div style="font-size:11px;opacity:0.85">평소 ${a.mean.toFixed(2)}% · 오늘 <b>${a.value.toFixed(2)}%</b> (평소 대비 ${a.dev}σ)</div>
+      </div>
+    </div>`;
+  }).join('');
+
+  // 빨간 알람 → 자동 카톡 발송 (kakao.js의 autoSendKakaoAlerts 호출)
+  // 중복 방지: Firebase 이력 체크 후 안 보낸 것만 발송
+  const redAlerts = alerts.filter(a => a.level === 'red');
+  if(redAlerts.length > 0 && typeof autoSendKakaoAlerts === 'function'){
+    autoSendKakaoAlerts(redAlerts, dateStr || (new Date().toISOString().slice(0,10)));
+  }
 }
