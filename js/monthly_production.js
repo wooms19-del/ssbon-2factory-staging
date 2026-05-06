@@ -422,7 +422,7 @@
       var prod = r.product||'';
       if(!dt||!prod) return;
       var k = dt+'|'+prod;
-      if(!byDP[k]) byDP[k] = {date:dt, product:prod, ea:0, hours:0, personHours:0, workers:0, types:{}, pouch:0, sauceKg:0};
+      if(!byDP[k]) byDP[k] = {date:dt, product:prod, ea:0, hours:0, personHours:0, workers:0, types:{}, pouch:0, sauceKg:0, subKg:0, subName:''};
       byDP[k].ea += _num(r.ea);
       var h = _hoursFromSE(r.start, r.end);
       var w = _num(r.workers);
@@ -430,6 +430,8 @@
       byDP[k].personHours += h*w;
       byDP[k].pouch += _num(r.pouch);
       byDP[k].sauceKg += _num(r.sauceKg);
+      byDP[k].subKg += _num(r.subKg);
+      if(r.subName && !byDP[k].subName) byDP[k].subName = String(r.subName);
       // packing의 type 누적 (가장 많이 나온 type)
       var t = recType(r);
       if(t) byDP[k].types[t] = (byDP[k].types[t]||0) + _num(r.ea);
@@ -603,6 +605,7 @@
           noMeat: noMeat,
           pouchUsed: Math.round(p.pouch||0),
           sauceKgUsed: _r2(p.sauceKg||0),
+          subKgUsed: _r2(p.subKg||0),
           boxUsed: opBoxMap[dt+'|'+p.product] || 0
         });
         return;
@@ -660,9 +663,10 @@
           type: t,
           typeList: [t],
           noMeat: false,
-          // 사용량 — pouch/sauce는 EA 비율로, box는 첫 행(i==0)에만 (제품 단위)
+          // 사용량 — pouch/sauce/sub는 EA 비율로, box는 첫 행(i==0)에만 (제품 단위)
           pouchUsed: Math.round((p.pouch||0) * ratio),
           sauceKgUsed: _r2((p.sauceKg||0) * ratio),
+          subKgUsed: _r2((p.subKg||0) * ratio),
           boxUsed: i===0 ? (opBoxMap[dt+'|'+p.product] || 0) : 0
         });
       });
@@ -748,7 +752,7 @@
                shKg:0,shHours:0,shWorkers:0,shPersonHours:0,
                pkEa:0,pkHours:0,pkWorkers:0,pkPersonHours:0,
                meatKg:0, prodKg:0,
-               pouchUsed:0, sauceKgUsed:0, boxUsed:0};
+               pouchUsed:0, sauceKgUsed:0, subKgUsed:0, boxUsed:0};
     var ratioKeys = ['prodPp','prodCk','prodSh','prodPk','prodAll',
                      'yieldRmPp','yieldRmCk','yieldRmSh','yieldRmPk',
                      'yieldPp','yieldCk','yieldSh','yieldPk'];
@@ -770,6 +774,7 @@
       sum.prodKg += (r.pkEa||0) * (r.kgTot||0);
       sum.pouchUsed += r.pouchUsed||0;
       sum.sauceKgUsed += r.sauceKgUsed||0;
+      sum.subKgUsed += r.subKgUsed||0;
       sum.boxUsed += r.boxUsed||0;
       ratioKeys.forEach(function(k){
         if(r[k]>0 && isFinite(r[k])) ratioBucket[k].push(r[k]);
@@ -832,6 +837,7 @@
       ['prodKg',    'base',    '완제품 중량\n(KG)'],
       ['pouchUsed', 'usage',   '파우치\n사용량(EA)'],
       ['sauceKgUsed','usage',  '소스\n사용량(KG)'],
+      ['subKgUsed', 'usage',   '부재료\n사용량(KG)'],
       ['boxUsed',   'usage',   '박스\n사용량(EA)'],
       ['prodPp',    'prod',    '생산성\n전처리'],
       ['prodCk',    'prod',    '생산성\n자숙'],
