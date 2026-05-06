@@ -270,12 +270,11 @@ function _perfBuildRows(th, pp, ck, sh, pk, op, sc){
   var ppClean = pp.filter(function(r){return !testPpIds.has(idOf(r));});
   var thClean = th.filter(function(r){return !testThIds.has(idOf(r));});
 
-  // 5) 일자×제품×부위 packing 집계 (같은 제품도 type 다르면 별도 행)
+  // 5) 일자×제품 packing 집계
   var byDP={};
   pkClean.forEach(function(r){
-    var typ = String(r.type||'').trim();
-    var key=d(r)+'|'+(r.product||'기타')+'|'+typ;
-    if(!byDP[key]) byDP[key]={ea:0,pouch:0,defect:0,workers:0,subKg:0,subName:'',sauceKg:0,type:typ};
+    var key=d(r)+'|'+(r.product||'기타');
+    if(!byDP[key]) byDP[key]={ea:0,pouch:0,defect:0,workers:0,subKg:0,subName:'',sauceKg:0};
     byDP[key].ea += parseFloat(r.ea)||0;
     byDP[key].pouch += parseFloat(r.pouch)||0;
     byDP[key].defect += parseFloat(r.defect)||0;
@@ -495,18 +494,7 @@ function _perfBuildRows(th, pp, ck, sh, pk, op, sc){
   var dayNo=0;
   dates.forEach(function(date){
     dayNo++;
-    // 그날 (제품, 부위) 쌍 목록 — type 다르면 별도 행
-    var prodTypes = Object.keys(byDP)
-      .filter(function(k){return k.indexOf(date+'|')===0;})
-      .map(function(k){
-        var pp = k.split('|');
-        return {product: pp[1], type: pp[2]||''};
-      })
-      .sort(function(a,b){
-        if(a.product!==b.product) return a.product < b.product ? -1 : 1;
-        return a.type < b.type ? -1 : 1;
-      });
-    var prods = prodTypes.map(function(pt){return pt.product;});  // 호환성용 (중복 가능)
+    var prods=Object.keys(byDP).filter(function(k){return k.indexOf(date+'|')===0;}).map(function(k){return k.split('|')[1];}).sort();
     var rmKg = getThKg(date);
     var partInfo = getThPartBoxes(date);  // {bx, kg}
     var partBx = partInfo.bx, partKg = partInfo.kg;
@@ -516,27 +504,19 @@ function _perfBuildRows(th, pp, ck, sh, pk, op, sc){
     // 부위 목록 (박스 많은 순)
     var partList = Object.keys(partBx).filter(function(k){return k && partBx[k]>0;}).sort(function(a,b){return partBx[b]-partBx[a];});
 
-    // 첫 비-무육 제품 인덱스
+    // 첫 비-무육 제품 인덱스 (메추리알 등 무육이 앞에 있어도 다음 비-무육에 원육 정보 부여)
     var firstMeatPi = -1;
-    for(var __k=0; __k<prodTypes.length; __k++){
-      var __info = (typeof L!=='undefined' && L && L.products) ? L.products.find(function(x){return x.name===prodTypes[__k].product;}) : null;
+    for(var __k=0; __k<prods.length; __k++){
+      var __info = (typeof L!=='undefined' && L && L.products) ? L.products.find(function(x){return x.name===prods[__k];}) : null;
       if(!(__info && __info.noMeat)){ firstMeatPi = __k; break; }
     }
 
-    // === [신규] 제품×부위별 추적 + 같은 풀 그룹화 ===
-    // 1) (제품,부위) 쌍별 trace — 같은 product에서 객체 참조 공유 방지 위해 shallow copy
-    var traced = prodTypes.map(function(pt, idx){
-      var src = getProductPartBoxes(date, pt.product);
-      var t = {
-        bx: src.bx,           // bx/kg 객체는 read-only로 공유 OK (변경 안 함)
-        kg: src.kg,
-        poolKey: src.poolKey,
-        status: src.status,
-        fallback: src.fallback,
-        product: pt.product,
-        pkType: pt.type,      // ★ 멤버별 고유 — 객체별 분리 필수
-        pi: idx
-      };
+    // === [신규] 제품별 부위 추적 + 같은 풀 그룹화 ===
+    // 1) 제품별 trace
+    var traced = prods.map(function(p){
+      var t = getProductPartBoxes(date, p);
+      t.product = p;
+      t.pi = prods.indexOf(p);
       return t;
     });
     // 2) poolKey로 그룹화 (같은 풀 = 같은 와곤 풀 공유)
@@ -556,7 +536,7 @@ function _perfBuildRows(th, pp, ck, sh, pk, op, sc){
       members.forEach(function(t, mIdx){
         var prod = t.product;
         var pi = t.pi;
-        var pkr = byDP[date+'|'+prod+'|'+(t.pkType||'')];
+        var pkr = byDP[date+'|'+prod];
         var opR = opMap[date+'|'+prod] || {ea:0,boxes:0,tray:0,trayDef:0,unitCnt:0,boxDef:0};
         var innerEa = opR.ea>0 ? opR.ea : Math.round(pkr.ea);
         var defPouch = Math.max(0, Math.round(pkr.pouch) - innerEa);
@@ -578,20 +558,6 @@ function _perfBuildRows(th, pp, ck, sh, pk, op, sc){
         var isDayFirst = (groupIdx === 0 && mIdx === 0);  // 그날 전체 첫 행
         var groupSize = members.length;
         var partList = Object.keys(t.bx||{}).filter(function(k){return k && t.bx[k]>0;}).sort(function(a,b){return t.bx[b]-t.bx[a];});
-        // ★ packing.type 있으면 그 부위만 사용 (이미 byDP가 type별로 분리되어 sub-row 분리 불필요)
-        if(t.pkType){
-          var hongduMatch = (t.pkType==='홍두께' || t.pkType==='홍두깨');
-          var matched = partList.filter(function(pn){
-            if(hongduMatch) return pn==='홍두께' || pn==='홍두깨';
-            return pn === t.pkType;
-          });
-          if(matched.length){
-            partList = matched;
-          } else {
-            // bx에 없으면 type 자체를 가상 entry로 (kg은 byDP의 ea×kgEa로 추정)
-            partList = [t.pkType];
-          }
-        }
 
         // 그룹의 첫 제품 + 부위 2개 이상 → 부위별 sub-row 분리
         if(isGroupFirst && partList.length>1 && !isNoMeatProd){
@@ -641,20 +607,9 @@ function _perfBuildRows(th, pp, ck, sh, pk, op, sc){
             sd = t.bx['설도']||0;
             hd = t.bx['홍두깨']||t.bx['홍두께']||0;
             ud = t.bx['우둔']||0;
-          } else if(!isGroupFirst && t.pkType && !isNoMeatProd){
-            // ★ 같은 그룹 멤버라도 packing.type 다르면 그 부위 표시
-            var pn = t.pkType;
-            rmTypeStr = pn;
-            rmKgVal = _perfR2(t.kg[pn]||0);
-            sd = pn==='설도' ? (t.bx[pn]||0) : 0;
-            hd = (pn==='홍두깨'||pn==='홍두께') ? (t.bx['홍두깨']||t.bx['홍두께']||0) : 0;
-            ud = pn==='우둔' ? (t.bx[pn]||0) : 0;
           }
           // isGroupFirst이지만 partList.length===0 (NOMEAT 또는 누락) → 부위 빈칸
-          // !isGroupFirst && !pkType → 같은 풀 멤버, 부위 빈칸 (rowspan으로 받음)
-          // ★ pkr (byDP) = 이미 type별 분리됨 → innerEa/defPouch/sauceKg는 멤버별 그대로
-          // ★ opR (외포장) = product 단위 → 그룹 첫 행에만 (중복 합산 방지)
-          var showOuter = isGroupFirst;
+          // !isGroupFirst → 같은 풀 멤버, 부위 빈칸 (rowspan으로 받음)
           rows.push({
             date: date, dayNo: dayNo, product: prod,
             productIndex: pi, subRowIdx: 0, totalSub: 1,
@@ -670,16 +625,13 @@ function _perfBuildRows(th, pp, ck, sh, pk, op, sc){
             shKg: isDayFirst ? shD : 0,
             sauceKg: _perfR2(pkr.sauceKg),
             innerEa: innerEa, defPouch: defPouch,
-            outerBoxes: showOuter ? opR.boxes : 0,
-            boxDef: showOuter ? opR.boxDef : 0,
-            tray: showOuter ? opR.tray : 0,
-            trayDef: showOuter ? opR.trayDef : 0,
-            unitCnt: showOuter ? opR.unitCnt : 0,
-            outBoxes: showOuter ? outBoxVal : 0,
+            outerBoxes: opR.boxes, boxDef: opR.boxDef,
+            tray: opR.tray, trayDef: opR.trayDef,
+            unitCnt: opR.unitCnt, outBoxes: outBoxVal,
             sauceFP: isDayFirst ? (scFP[date]||0) : 0,
             sauceFC: isDayFirst ? (scFC[date]||0) : 0,
             qaiKg: qaiKg,
-            pouch: Math.round(pkr.pouch), boxUse: showOuter ? boxUse : 0,
+            pouch: Math.round(pkr.pouch), boxUse: boxUse,
             isTest: false,
             isPending: isPending
           });
