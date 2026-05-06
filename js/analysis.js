@@ -763,19 +763,10 @@ function _moRedrawDefChart(){
   const byDate = window._moCurByDate || {};
   if(!Object.keys(byDate).length) return;
 
-  // X축 = 그 달 평일 전체. 라벨 2줄: ["1일차", "MM-DD" 또는 ""]
+  // X축 = 그 달 평일 전체. 라벨 2줄: 모든 평일에 "N일차 / MM-DD" 표시 (빈 자리 포함)
   const ym = (window._moYm || tod().slice(0,7));
   const weekdays = _moWeekdaysOf(ym);
-  // 생산한 날짜만 인덱스 기록 (평일 중 데이터 있는 것에만 일차 표시)
-  let dayIdx = 0;
-  const labels = weekdays.map(d => {
-    if(byDate[d]){
-      dayIdx++;
-      return [dayIdx+'일차', d.slice(5)];
-    }
-    return ['', ''];
-  });
-  // 데이터: 생산한 날만 값, 안 한 날은 null
+  const labels = weekdays.map((d,i) => [(i+1)+'일차', d.slice(5)]);
   const defVals = weekdays.map(d => {
     const v = byDate[d];
     if(!v) return null;
@@ -786,7 +777,6 @@ function _moRedrawDefChart(){
   const ds = [
     {label:'이번달 불량률',data:defVals,borderColor:'#e24b4a',backgroundColor:'rgba(226,75,74,0.08)',fill:true,tension:0.3,pointRadius:4,borderWidth:2,spanGaps:false}
   ];
-  // 전월 평균 가로선 (있으면)
   const _avgDef = window._moPrevAvgDef;
   if(_avgDef!=null){
     ds.push({label:'전월('+(window._moPrevYm||'')+') 평균 '+_avgDef.toFixed(2)+'%',data:Array(xLen).fill(parseFloat(_avgDef.toFixed(2))),borderColor:'#94a3b8',borderDash:[5,4],pointRadius:0,borderWidth:1.5,fill:false});
@@ -823,21 +813,12 @@ function _moRenderYieldChart(dailyYields) {
   if(!dailyYields.length) return;
   // 전역 저장 — 전월 데이터 도착 시 차트 다시 그리기
   window._moCurYldDays = dailyYields;
-  // X축 = 그 달 평일 전체. 라벨 2줄.
+  // X축 = 그 달 평일 전체. 모든 평일에 "N일차 / MM-DD" 표시.
   const ym = (window._moYm || tod().slice(0,7));
   const weekdays = _moWeekdaysOf(ym);
-  // 일별 수율 map
   const yldMap = {};
   dailyYields.forEach(d => { yldMap[d.date] = d.yld; });
-  // 라벨 + 데이터
-  let dayIdx = 0;
-  const labels = weekdays.map(d => {
-    if(yldMap[d]!=null){
-      dayIdx++;
-      return [dayIdx+'일차', d.slice(5)];
-    }
-    return ['', ''];
-  });
+  const labels = weekdays.map((d,i) => [(i+1)+'일차', d.slice(5)]);
   const ylds = weekdays.map(d => yldMap[d]!=null ? parseFloat(yldMap[d].toFixed(1)) : null);
   const ptColors = ylds.map(v => v==null?'transparent':v>=55?'#047857':v>=52?'#3b82f6':v>=50?'#f59e0b':'#ef4444');
   const xLen = weekdays.length;
