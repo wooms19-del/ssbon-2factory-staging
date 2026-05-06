@@ -1455,15 +1455,76 @@ function renderDailyFromLocal_(d){
   // 일별 알람 체크 - 자숙/파쇄/포장 원육수율 이상 탐지
   // 원육수율 = 해당 공정 산출 / 원육 투입(rmKg) * 100
   // 임계값은 settings 페이지에서 조정 가능 (Firebase config/alarms)
-  // 데이터 부족 시 (생산 안 하고 있을 때) 알람 차단
+  //
+  // ★ 사용자분 룰 (2026-05-06): 공정이 다음 단계로 다 흘러갔을 때만 분석 표시
+  //    = 진행 중에는 미완성 데이터로 잘못된 경고 띄우지 않음
   // ============================================================
   const _MIN_RM_KG = 100;       // 원육 100kg 미만이면 알람 전체 차단
   const _MIN_CK_KG = 50;        // 자숙 50kg 미만이면 자숙 알람 차단
   const _MIN_SH_KG = 50;        // 파쇄 50kg 미만이면 파쇄 알람 차단
   const _hasProduction = rmKg >= _MIN_RM_KG;
-  const _ckOYld = (_hasProduction && ckKg >= _MIN_CK_KG) ? r2(ckKg/rmKg*100) : null;
-  const _shOYld = (_hasProduction && shKg >= _MIN_SH_KG) ? r2(shKg/rmKg*100) : null;
-  const _pkOYld = (_hasProduction && pk.length > 0) ? oYld : null;
+
+  // 공정 완료 검증
+  // 1) 자숙 완료: 자숙 record들의 wagonOut → 모두 파쇄 record의 wagonIn에 등록
+  function _isCookingFlowedToShredding() {
+    if(!ck.length) return false;  // 자숙 0건 = 미시작
+    const ckOuts = new Set();
+    ck.forEach(r => {
+      (r.wagonOut||'').split(',').map(w=>w.trim()).filter(Boolean).forEach(w => ckOuts.add(w));
+    });
+    if(ckOuts.size === 0) return false;  // wagonOut 비어있으면 = 진행 중
+    const shIns = new Set();
+    sh.forEach(r => {
+      (r.wagonIn||'').split(',').map(w=>w.trim()).filter(Boolean).forEach(w => shIns.add(w));
+    });
+    // ck의 모든 wagonOut이 sh의 wagonIn에 등록되어야 완료
+    for(const w of ckOuts) {
+      if(!shIns.has(w)) return false;
+    }
+    // 그리고 자숙 record 모두 종료 (end 박힘)
+    return ck.every(r => r.end && r.end !== '');
+  }
+
+  // 2) 파쇄 완료: 파쇄 record들의 wagonOut/cartOut → 모두 packing record의 cart/wagon에 사용 + 모두 종료
+  function _isShreddingFlowedToPacking() {
+    if(!sh.length) return false;
+    const shOuts = new Set();
+    sh.forEach(r => {
+      (r.wagonOut||'').split(',').map(w=>w.trim()).filter(Boolean).forEach(w => shOuts.add(w));
+      (r.cartOut||'').split(',').map(w=>w.trim()).filter(Boolean).forEach(w => shOuts.add(w));
+    });
+    if(shOuts.size === 0) return false;
+    const pkUsed = new Set();
+    pk.forEach(r => {
+      const w = String(r.wagon||'').trim(); if(w) pkUsed.add(w);
+      const c = String(r.cart||'').trim(); if(c) pkUsed.add(c);
+      // 다중 wagon (배열) 형식도
+      (r.wagons||[]).forEach(w2 => { const s=String(w2||'').trim(); if(s) pkUsed.add(s); });
+    });
+    for(const w of shOuts) {
+      if(!pkUsed.has(w)) return false;
+    }
+    return sh.every(r => r.end && r.end !== '');
+  }
+
+  // 3) 포장 완료: 모든 packing record 종료 + 진행중(packing_pending) 0건
+  function _isPackingDone() {
+    if(!pk.length) return false;
+    const allEnded = pk.every(r => r.end && r.end !== '');
+    const noPending = !L.packing_pending || L.packing_pending.filter(r => 
+      String(r.date||'').slice(0,10) === d
+    ).length === 0;
+    return allEnded && noPending;
+  }
+
+  const _ckDone = _isCookingFlowedToShredding();
+  const _shDone = _isShreddingFlowedToPacking();
+  const _pkDone = _isPackingDone();
+
+  // metric: 완료 + 최소량 모두 통과해야 분석 (= 알람) 표시
+  const _ckOYld = (_hasProduction && ckKg >= _MIN_CK_KG && _ckDone) ? r2(ckKg/rmKg*100) : null;
+  const _shOYld = (_hasProduction && shKg >= _MIN_SH_KG && _shDone) ? r2(shKg/rmKg*100) : null;
+  const _pkOYld = (_hasProduction && pk.length > 0 && _pkDone) ? oYld : null;
   if(typeof renderDailyAlerts === 'function'){
     renderDailyAlerts({ cooking: _ckOYld, shredding: _shOYld, packing: _pkOYld }, d);
   }
