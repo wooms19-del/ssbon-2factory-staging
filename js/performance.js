@@ -270,11 +270,12 @@ function _perfBuildRows(th, pp, ck, sh, pk, op, sc){
   var ppClean = pp.filter(function(r){return !testPpIds.has(idOf(r));});
   var thClean = th.filter(function(r){return !testThIds.has(idOf(r));});
 
-  // 5) 일자×제품 packing 집계
+  // 5) 일자×제품×부위 packing 집계 (같은 제품도 type 다르면 별도 행)
   var byDP={};
   pkClean.forEach(function(r){
-    var key=d(r)+'|'+(r.product||'기타');
-    if(!byDP[key]) byDP[key]={ea:0,pouch:0,defect:0,workers:0,subKg:0,subName:'',sauceKg:0};
+    var typ = String(r.type||'').trim();
+    var key=d(r)+'|'+(r.product||'기타')+'|'+typ;
+    if(!byDP[key]) byDP[key]={ea:0,pouch:0,defect:0,workers:0,subKg:0,subName:'',sauceKg:0,type:typ};
     byDP[key].ea += parseFloat(r.ea)||0;
     byDP[key].pouch += parseFloat(r.pouch)||0;
     byDP[key].defect += parseFloat(r.defect)||0;
@@ -494,7 +495,18 @@ function _perfBuildRows(th, pp, ck, sh, pk, op, sc){
   var dayNo=0;
   dates.forEach(function(date){
     dayNo++;
-    var prods=Object.keys(byDP).filter(function(k){return k.indexOf(date+'|')===0;}).map(function(k){return k.split('|')[1];}).sort();
+    // 그날 (제품, 부위) 쌍 목록 — type 다르면 별도 행
+    var prodTypes = Object.keys(byDP)
+      .filter(function(k){return k.indexOf(date+'|')===0;})
+      .map(function(k){
+        var pp = k.split('|');
+        return {product: pp[1], type: pp[2]||''};
+      })
+      .sort(function(a,b){
+        if(a.product!==b.product) return a.product < b.product ? -1 : 1;
+        return a.type < b.type ? -1 : 1;
+      });
+    var prods = prodTypes.map(function(pt){return pt.product;});  // 호환성용 (중복 가능)
     var rmKg = getThKg(date);
     var partInfo = getThPartBoxes(date);  // {bx, kg}
     var partBx = partInfo.bx, partKg = partInfo.kg;
@@ -504,19 +516,20 @@ function _perfBuildRows(th, pp, ck, sh, pk, op, sc){
     // 부위 목록 (박스 많은 순)
     var partList = Object.keys(partBx).filter(function(k){return k && partBx[k]>0;}).sort(function(a,b){return partBx[b]-partBx[a];});
 
-    // 첫 비-무육 제품 인덱스 (메추리알 등 무육이 앞에 있어도 다음 비-무육에 원육 정보 부여)
+    // 첫 비-무육 제품 인덱스
     var firstMeatPi = -1;
-    for(var __k=0; __k<prods.length; __k++){
-      var __info = (typeof L!=='undefined' && L && L.products) ? L.products.find(function(x){return x.name===prods[__k];}) : null;
+    for(var __k=0; __k<prodTypes.length; __k++){
+      var __info = (typeof L!=='undefined' && L && L.products) ? L.products.find(function(x){return x.name===prodTypes[__k].product;}) : null;
       if(!(__info && __info.noMeat)){ firstMeatPi = __k; break; }
     }
 
-    // === [신규] 제품별 부위 추적 + 같은 풀 그룹화 ===
-    // 1) 제품별 trace
-    var traced = prods.map(function(p){
-      var t = getProductPartBoxes(date, p);
-      t.product = p;
-      t.pi = prods.indexOf(p);
+    // === [신규] 제품×부위별 추적 + 같은 풀 그룹화 ===
+    // 1) (제품,부위) 쌍별 trace
+    var traced = prodTypes.map(function(pt, idx){
+      var t = getProductPartBoxes(date, pt.product);
+      t.product = pt.product;
+      t.pkType = pt.type;  // packing.type
+      t.pi = idx;
       return t;
     });
     // 2) poolKey로 그룹화 (같은 풀 = 같은 와곤 풀 공유)
@@ -536,7 +549,7 @@ function _perfBuildRows(th, pp, ck, sh, pk, op, sc){
       members.forEach(function(t, mIdx){
         var prod = t.product;
         var pi = t.pi;
-        var pkr = byDP[date+'|'+prod];
+        var pkr = byDP[date+'|'+prod+'|'+(t.pkType||'')];
         var opR = opMap[date+'|'+prod] || {ea:0,boxes:0,tray:0,trayDef:0,unitCnt:0,boxDef:0};
         var innerEa = opR.ea>0 ? opR.ea : Math.round(pkr.ea);
         var defPouch = Math.max(0, Math.round(pkr.pouch) - innerEa);
@@ -558,6 +571,20 @@ function _perfBuildRows(th, pp, ck, sh, pk, op, sc){
         var isDayFirst = (groupIdx === 0 && mIdx === 0);  // 그날 전체 첫 행
         var groupSize = members.length;
         var partList = Object.keys(t.bx||{}).filter(function(k){return k && t.bx[k]>0;}).sort(function(a,b){return t.bx[b]-t.bx[a];});
+        // ★ packing.type 있으면 그 부위만 사용 (이미 byDP가 type별로 분리되어 sub-row 분리 불필요)
+        if(t.pkType){
+          var hongduMatch = (t.pkType==='홍두께' || t.pkType==='홍두깨');
+          var matched = partList.filter(function(pn){
+            if(hongduMatch) return pn==='홍두께' || pn==='홍두깨';
+            return pn === t.pkType;
+          });
+          if(matched.length){
+            partList = matched;
+          } else {
+            // bx에 없으면 type 자체를 가상 entry로 (kg은 byDP의 ea×kgEa로 추정)
+            partList = [t.pkType];
+          }
+        }
 
         // 그룹의 첫 제품 + 부위 2개 이상 → 부위별 sub-row 분리
         if(isGroupFirst && partList.length>1 && !isNoMeatProd){
