@@ -170,14 +170,14 @@ async function saveP(type){
 // 공정 리스트 렌더링
 // ============================================================
 var PH={
-  preprocess:(r)=>`${r.type||'-'} · ${r.kg||0}kg`,
-  cooking:   (r)=>`${r.type||'-'} · ${r.kg||0}kg · 탱크 ${r.tank||'-'}`,
+  preprocess:(r)=>`${r.type||'-'} · ${r2(r.kg||0)}kg`,
+  cooking:   (r)=>`${r.type||'-'} · ${r2(r.kg||0)}kg · 탱크 ${r.tank||'-'}`,
   shredding: (r)=>{
     const out = [r.wagonOut||'', (r.cartOut?'카트:'+r.cartOut:'')].filter(Boolean).join(' / ') || '-';
-    return `${r.wagonIn||'-'} → ${out} · ${r.kg||0}kg`;
+    return `${r.wagonIn||'-'} → ${out} · ${r2(r.kg||0)}kg`;
   },
   packing:   (r)=>`${r.product||'-'} · ${r.ea||0}EA`,
-  sauce:     (r)=>`${r.name||'-'} · ${r.kg||0}kg`,
+  sauce:     (r)=>`${r.name||'-'} · ${r2(r.kg||0)}kg`,
 };
 var PS={
   preprocess:(r)=>`케이지 ${r.cage||'-'} · ${r.start||'-'}~${r.end||'-'} · ${r.workers||0}명`,
