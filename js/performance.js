@@ -524,12 +524,19 @@ function _perfBuildRows(th, pp, ck, sh, pk, op, sc){
     }
 
     // === [신규] 제품×부위별 추적 + 같은 풀 그룹화 ===
-    // 1) (제품,부위) 쌍별 trace
+    // 1) (제품,부위) 쌍별 trace — 같은 product에서 객체 참조 공유 방지 위해 shallow copy
     var traced = prodTypes.map(function(pt, idx){
-      var t = getProductPartBoxes(date, pt.product);
-      t.product = pt.product;
-      t.pkType = pt.type;  // packing.type
-      t.pi = idx;
+      var src = getProductPartBoxes(date, pt.product);
+      var t = {
+        bx: src.bx,           // bx/kg 객체는 read-only로 공유 OK (변경 안 함)
+        kg: src.kg,
+        poolKey: src.poolKey,
+        status: src.status,
+        fallback: src.fallback,
+        product: pt.product,
+        pkType: pt.type,      // ★ 멤버별 고유 — 객체별 분리 필수
+        pi: idx
+      };
       return t;
     });
     // 2) poolKey로 그룹화 (같은 풀 = 같은 와곤 풀 공유)
