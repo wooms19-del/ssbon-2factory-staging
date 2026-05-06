@@ -17,7 +17,7 @@
   var _mpPrevData = null;
   var _mpBusy = false;
   var _mpGrp = {
-    inout: true, workers: false, hours: false, prod: false, yield: false
+    inout: true, workers: false, hours: false, prod: false, yield: false, usage: false
   };
   try {
     var saved = localStorage.getItem('ssbon_v6_mpGrp');
@@ -182,6 +182,7 @@
       + _grpChip('hours','작업시간')
       + _grpChip('prod','생산성')
       + _grpChip('yield','수율')
+      + _grpChip('usage','사용량')
       + '</div>'
       + '<div id="mpStatus">데이터 불러오는 중…</div>'
       + '<div id="mpTblWrap" style="display:none"><table id="mpTbl"></table></div>'
@@ -335,11 +336,14 @@
       return true;
     });
 
-    // 외포장 EA 맵
+    // 외포장 EA + 박스 맵
     var opMap = {};
+    var opBoxMap = {};
     opReal.forEach(function(r){
       var k = String(r.date||'').slice(0,10)+'|'+(r.product||'');
       opMap[k] = (opMap[k]||0) + (parseInt(r.outerEa,10)||0);
+      // 박스 사용량 = outerBoxes (정상) + boxDefect (불량 박스도 사용한 거)
+      opBoxMap[k] = (opBoxMap[k]||0) + (parseInt(r.outerBoxes,10)||0) + (parseInt(r.boxDefect,10)||0);
     });
 
     // 부위(type) 추출 헬퍼
@@ -416,12 +420,14 @@
       var prod = r.product||'';
       if(!dt||!prod) return;
       var k = dt+'|'+prod;
-      if(!byDP[k]) byDP[k] = {date:dt, product:prod, ea:0, hours:0, personHours:0, workers:0, types:{}};
+      if(!byDP[k]) byDP[k] = {date:dt, product:prod, ea:0, hours:0, personHours:0, workers:0, types:{}, pouch:0, sauceKg:0};
       byDP[k].ea += _num(r.ea);
       var h = _hoursFromSE(r.start, r.end);
       var w = _num(r.workers);
       byDP[k].hours += h;
       byDP[k].personHours += h*w;
+      byDP[k].pouch += _num(r.pouch);
+      byDP[k].sauceKg += _num(r.sauceKg);
       // packing의 type 누적 (가장 많이 나온 type)
       var t = recType(r);
       if(t) byDP[k].types[t] = (byDP[k].types[t]||0) + _num(r.ea);
@@ -592,7 +598,10 @@
           kgea: kgea, kgTot: kgTot,
           type: p.type || (noMeat ? '무육' : ''),
           typeList: p.typeList || [],
-          noMeat: noMeat
+          noMeat: noMeat,
+          pouchUsed: Math.round(p.pouch||0),
+          sauceKgUsed: _r2(p.sauceKg||0),
+          boxUsed: opBoxMap[dt+'|'+p.product] || 0
         });
         return;
       }
@@ -648,7 +657,11 @@
           kgea: kgea, kgTot: kgTot,
           type: t,
           typeList: [t],
-          noMeat: false
+          noMeat: false,
+          // 사용량 — pouch/sauce는 EA 비율로, box는 첫 행(i==0)에만 (제품 단위)
+          pouchUsed: Math.round((p.pouch||0) * ratio),
+          sauceKgUsed: _r2((p.sauceKg||0) * ratio),
+          boxUsed: i===0 ? (opBoxMap[dt+'|'+p.product] || 0) : 0
         });
       });
     });
@@ -732,7 +745,8 @@
                ckKg:0,ckHours:0,ckWorkers:0,ckPersonHours:0,
                shKg:0,shHours:0,shWorkers:0,shPersonHours:0,
                pkEa:0,pkHours:0,pkWorkers:0,pkPersonHours:0,
-               meatKg:0, prodKg:0};
+               meatKg:0, prodKg:0,
+               pouchUsed:0, sauceKgUsed:0, boxUsed:0};
     var ratioKeys = ['prodPp','prodCk','prodSh','prodPk','prodAll',
                      'yieldRmPp','yieldRmCk','yieldRmSh','yieldRmPk',
                      'yieldPp','yieldCk','yieldSh','yieldPk'];
@@ -752,6 +766,9 @@
       sum.pkPersonHours += r.pkPersonHours||0;
       sum.meatKg += (r.pkEa||0) * (r.kgea||0);
       sum.prodKg += (r.pkEa||0) * (r.kgTot||0);
+      sum.pouchUsed += r.pouchUsed||0;
+      sum.sauceKgUsed += r.sauceKgUsed||0;
+      sum.boxUsed += r.boxUsed||0;
       ratioKeys.forEach(function(k){
         if(r[k]>0 && isFinite(r[k])) ratioBucket[k].push(r[k]);
       });
@@ -780,29 +797,6 @@
     var cmp=document.getElementById('mpCmp');
 
     var rows0 = (_mpData && _mpData.rows) || [];
-
-    // ─── Phase 2.3 마이그레이션: dataLayer.getMonth 비교 모니터 (사용자 영향 0) ───
-    if(rows0.length && typeof window!=='undefined' && window.DL && typeof window.DL.getMonth==='function'){
-      try{
-        var _dlM = window.DL.getMonth(_mpYm);  // 'YYYY-MM' 문자열
-        var _dlMS = _dlM && _dlM.monthSummary;
-        if(_dlMS){
-          var _legAgg = _mpAggregate(rows0);
-          var _check = function(label, legacy, dl, tol){
-            tol = tol || 1;
-            var diff = Math.abs((legacy||0) - (dl||0));
-            if(diff > tol) console.warn('[Phase2.3 비교 차이] '+_mpYm+' '+label+': legacy='+legacy+', DL='+dl+', Δ='+diff.toFixed(2));
-          };
-          _check('rmKgTotal', _legAgg.rmKg, _dlMS.rmKgTotal);
-          _check('ppKgTotal', _legAgg.ppKg, _dlMS._ppKgTotal);
-          _check('ckKgTotal', _legAgg.ckKg, _dlMS._ckKgTotal);
-          _check('shKgTotal', _legAgg.shKg, _dlMS._shKgTotal);
-          _check('pkEaTotal', _legAgg.pkEa, _dlMS.pkEaTotalDisp || 0);
-        }
-      }catch(_e){
-        console.error('[Phase2.3 DL 비교 오류]', _e.message);
-      }
-    }
 
     if(!rows0.length){
       if(st){ st.style.display=''; st.textContent='이 달의 데이터가 없습니다.'; st.style.color='#c0392b'; }
@@ -834,6 +828,9 @@
       ['pkPersonHours','hours','내포장\n총작업(인시)'],
       ['meatKg',    'base',    '완제품 고기\n중량(KG)'],
       ['prodKg',    'base',    '완제품 중량\n(KG)'],
+      ['pouchUsed', 'usage',   '파우치\n사용량(EA)'],
+      ['sauceKgUsed','usage',  '소스\n사용량(KG)'],
+      ['boxUsed',   'usage',   '박스\n사용량(EA)'],
       ['prodPp',    'prod',    '생산성\n전처리'],
       ['prodCk',    'prod',    '생산성\n자숙'],
       ['prodSh',    'prod',    '생산성\n파쇄'],
