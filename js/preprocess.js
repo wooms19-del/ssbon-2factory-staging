@@ -13,14 +13,19 @@ async function loadOpenThawingAndRender(){
 function updPpWagon(){
   const container=document.getElementById('pp_wagonChecks');
   if(!container) return;
-  const _today=tod(), _yst=getYesterday_();
-  // today/yesterday의 cart 모두 표시 (방혈 진행중이든 종료됐든)
-  // 단, 잔여중량 ≤ 0인 건 제외 (이미 다 쓴 것)
+  const _today=tod();
+  // 방혈 종료된 cart만 전처리 가능. end가 오늘 날짜로 종료된 것 (또는 옛 'HH:MM' 형식의 today)
+  // 잔여중량 ≤ 0인 건 제외 (이미 다 쓴 것)
   const wagons=L.thawing.filter(t=>{
     const remain = t.remainKg!==undefined ? t.remainKg : t.totalKg;
     if(remain <= 0.01) return false;
-    const d=String(t.date||'').slice(0,10);
-    return d===_today||d===_yst;
+    const e=String(t.end||'');
+    if(!e) return false;  // 진행중 → 전처리 불가
+    // end가 오늘 날짜로 종료
+    if(e.length>=10 && e.slice(0,10)===_today) return true;
+    // 'HH:MM' 옛 형식 → date가 오늘이어야
+    if(e.length<=5 && String(t.date||'').slice(0,10)===_today) return true;
+    return false;
   });
   if(!wagons.length){
     container.innerHTML='<div class="emp" style="font-size:13px;padding:8px 0">방혈 완료 대기중인 대차 없음</div>';
