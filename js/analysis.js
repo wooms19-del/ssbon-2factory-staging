@@ -446,7 +446,7 @@ async function renderMonthlyReport(pk, from, effectiveTo, ppMonth, thMonth, opDa
         ? `${_dispEa.toLocaleString()}<span style="font-size:10px;color:#6b7280;margin-left:2px">(외)</span>`
         : (_dispEa>0 ? `${_dispEa.toLocaleString()}<span style="font-size:10px;color:#9ca3af;margin-left:2px">(내)</span>` : '—');
       cells += `<td style="${vm}${PC}${bg}text-align:center;font-variant-numeric:tabular-nums;color:#374151;border-right:1px solid #e2e8f0;${rowBorder}">${_eaLabel}</td>`;
-      // 완제품 원육 중량(KG) (행마다)
+      // 완제품 중량(KG) (행마다)
       cells += `<td style="${vm}${PC}${bg}text-align:center;font-weight:600;font-variant-numeric:tabular-nums;color:#374151;border-right:1px solid #e2e8f0;${rowBorder}">${pkDisp}</td>`;
 
       if(isFirst) {
@@ -569,7 +569,7 @@ function _moRenderRows(selProds) {
     if(!dayRows.length) return;
     const cnt    = dayRows.length;
     const dayRm  = r2(rmByDate[date]||0);
-    // 외포장 EA 기준으로 완제품 원육 중량 재계산 (필터 포함 전체 행 대상)
+    // 외포장 EA 기준으로 완제품 중량 재계산 (필터 포함 전체 행 대상)
     const effPkMap = {};
     allRows.forEach(row=>{
       const _opEa2 = opMap[date+'|'+row.product]||0;
@@ -773,7 +773,7 @@ function _moRedrawDefChart(){
   const byDate = window._moCurByDate || {};
   if(!Object.keys(byDate).length) return;
 
-  // X축 = 생산한 날 + 오늘 이후 평일. 오늘 이전 + 생산 안 한 날 제외.
+  // X축 = 생산한 날 + 오늘 이후 평일.
   const ym = (window._moYm || tod().slice(0,7));
   const producedSet = new Set(Object.keys(byDate));
   const weekdays = _moChartWeekdays(ym, producedSet);
@@ -785,31 +785,54 @@ function _moRedrawDefChart(){
     return pouch>0 ? parseFloat((v.def/pouch*100).toFixed(2)) : null;
   });
   const xLen = weekdays.length;
+  // 이번달 평균 (생산한 날 기준)
+  const _curVals = defVals.filter(v => v!=null);
+  const _curAvg = _curVals.length ? (_curVals.reduce((s,v)=>s+v,0)/_curVals.length) : null;
   const ds = [
     {label:'이번달 불량률',data:defVals,borderColor:'#e24b4a',backgroundColor:'rgba(226,75,74,0.08)',fill:true,tension:0.3,pointRadius:4,borderWidth:2,spanGaps:false}
   ];
+  if(_curAvg!=null){
+    ds.push({label:'이번달 평균',data:Array(xLen).fill(parseFloat(_curAvg.toFixed(2))),borderColor:'#e24b4a',borderDash:[2,3],pointRadius:0,borderWidth:1.5,fill:false,_endLabel:_curAvg.toFixed(2)+'%'});
+  }
   const _avgDef = window._moPrevAvgDef;
   if(_avgDef!=null){
-    ds.push({label:'전월('+(window._moPrevYm||'')+') 평균 '+_avgDef.toFixed(2)+'%',data:Array(xLen).fill(parseFloat(_avgDef.toFixed(2))),borderColor:'#94a3b8',borderDash:[5,4],pointRadius:0,borderWidth:1.5,fill:false});
+    ds.push({label:'전월 일평균',data:Array(xLen).fill(parseFloat(_avgDef.toFixed(2))),borderColor:'#94a3b8',borderDash:[5,4],pointRadius:0,borderWidth:1.5,fill:false,_endLabel:_avgDef.toFixed(2)+'%'});
   }
-  ds.push({label:'기준 2%',data:Array(xLen).fill(2),borderColor:'#f59e0b',borderDash:[5,4],pointRadius:0,borderWidth:1.5,fill:false});
+  ds.push({label:'목표 2%',data:Array(xLen).fill(2),borderColor:'#f59e0b',borderDash:[5,4],pointRadius:0,borderWidth:1.5,fill:false,_endLabel:'2.00%'});
   if(_moDefChart){_moDefChart.destroy();_moDefChart=null;}
-  _moDefChart = new Chart(ctx2,{type:'line',plugins:[{id:'lineLbl',afterDatasetsDraw(chart){
-    const {ctx}=chart; ctx.save();
-    chart.data.datasets.forEach((d,i)=>{
-      if(d.pointRadius===0) return;
-      chart.getDatasetMeta(i).data.forEach((pt,j)=>{
-        const v=d.data[j];
-        if(v==null) return;
-        const s=typeof v==='number'?v.toFixed(1)+'%':String(v);
-        ctx.fillStyle=d.borderColor||'#475569';
-        ctx.font='bold 9px sans-serif';
-        ctx.textAlign='center'; ctx.textBaseline='bottom';
-        ctx.fillText(s, pt.x, pt.y-5);
+  _moDefChart = new Chart(ctx2,{type:'line',plugins:[
+    {id:'lineLbl',afterDatasetsDraw(chart){
+      const {ctx}=chart; ctx.save();
+      chart.data.datasets.forEach((d,i)=>{
+        if(d.pointRadius===0) return;
+        chart.getDatasetMeta(i).data.forEach((pt,j)=>{
+          const v=d.data[j];
+          if(v==null) return;
+          const s=typeof v==='number'?v.toFixed(1)+'%':String(v);
+          ctx.fillStyle=d.borderColor||'#475569';
+          ctx.font='bold 9px sans-serif';
+          ctx.textAlign='center'; ctx.textBaseline='bottom';
+          ctx.fillText(s, pt.x, pt.y-5);
+        });
       });
-    });
-    ctx.restore();
-  }}],data:{labels:labels,datasets:ds},options:{responsive:true,maintainAspectRatio:false,
+      ctx.restore();
+    }},
+    {id:'endLbl',afterDatasetsDraw(chart){
+      const {ctx, chartArea}=chart; ctx.save();
+      chart.data.datasets.forEach((d,i)=>{
+        if(!d._endLabel) return;
+        const meta = chart.getDatasetMeta(i).data;
+        if(!meta.length) return;
+        const lastPt = meta[meta.length-1];
+        ctx.fillStyle=d.borderColor||'#475569';
+        ctx.font='bold 11px sans-serif';
+        ctx.textAlign='left'; ctx.textBaseline='middle';
+        ctx.fillText(' '+d._endLabel, lastPt.x+4, lastPt.y);
+      });
+      ctx.restore();
+    }}
+  ],data:{labels:labels,datasets:ds},options:{responsive:true,maintainAspectRatio:false,
+    layout:{padding:{right:60}},
     plugins:{legend:{display:true,position:'top',labels:{font:{size:11},boxWidth:12,usePointStyle:true}},
              tooltip:{callbacks:{label:v=>v.raw!=null?v.raw+'%':'—'}}},
     scales:{x:{ticks:{color:'#888',font:{size:9},autoSkip:false,maxRotation:0},grid:{display:false}},
@@ -824,7 +847,7 @@ function _moRenderYieldChart(dailyYields) {
   if(!dailyYields.length) return;
   // 전역 저장 — 전월 데이터 도착 시 차트 다시 그리기
   window._moCurYldDays = dailyYields;
-  // X축 = 생산한 날 + 오늘 이후 평일. 오늘 이전 + 생산 안 한 날 제외.
+  // X축 = 생산한 날 + 오늘 이후 평일.
   const ym = (window._moYm || tod().slice(0,7));
   const yldMap = {};
   dailyYields.forEach(d => { yldMap[d.date] = d.yld; });
@@ -834,19 +857,25 @@ function _moRenderYieldChart(dailyYields) {
   const ylds = weekdays.map(d => yldMap[d]!=null ? parseFloat(yldMap[d].toFixed(1)) : null);
   const ptColors = ylds.map(v => v==null?'transparent':v>=55?'#047857':v>=52?'#3b82f6':v>=50?'#f59e0b':'#ef4444');
   const xLen = weekdays.length;
+  // 이번달 평균
+  const _curVals = ylds.filter(v => v!=null);
+  const _curAvg = _curVals.length ? (_curVals.reduce((s,v)=>s+v,0)/_curVals.length) : null;
   const datasets = [
     {label:'이번달 수율',data:ylds,borderColor:'#64748b',backgroundColor:'rgba(100,116,139,0.08)',fill:true,tension:0.3,pointRadius:5,pointBackgroundColor:ptColors,pointBorderColor:ptColors,borderWidth:2,spanGaps:false}
   ];
-  // 전월 평균 가로선 (있으면)
+  if(_curAvg!=null){
+    datasets.push({label:'이번달 평균',data:Array(xLen).fill(parseFloat(_curAvg.toFixed(1))),borderColor:'#e24b4a',borderDash:[2,3],pointRadius:0,borderWidth:1.5,fill:false,_endLabel:_curAvg.toFixed(1)+'%'});
+  }
   const _avgYld = window._moPrevAvgYld;
   if(_avgYld!=null){
-    datasets.push({label:'전월('+(window._moPrevYm||'')+') 평균 '+_avgYld.toFixed(1)+'%',data:Array(xLen).fill(parseFloat(_avgYld.toFixed(1))),borderColor:'#94a3b8',borderDash:[5,4],pointRadius:0,borderWidth:1.5,fill:false});
+    datasets.push({label:'전월 일평균',data:Array(xLen).fill(parseFloat(_avgYld.toFixed(1))),borderColor:'#94a3b8',borderDash:[5,4],pointRadius:0,borderWidth:1.5,fill:false,_endLabel:_avgYld.toFixed(1)+'%'});
   }
   datasets.push(
-    {label:'목표 55%',data:Array(xLen).fill(55),borderColor:'#047857',borderDash:[6,3],pointRadius:0,borderWidth:1.5,fill:false},
-    {label:'위험 50%',data:Array(xLen).fill(50),borderColor:'#ef4444',borderDash:[4,3],pointRadius:0,borderWidth:1.5,fill:false}
+    {label:'목표 55%',data:Array(xLen).fill(55),borderColor:'#047857',borderDash:[6,3],pointRadius:0,borderWidth:1.5,fill:false,_endLabel:'55%'},
+    {label:'위험 50%',data:Array(xLen).fill(50),borderColor:'#ef4444',borderDash:[4,3],pointRadius:0,borderWidth:1.5,fill:false,_endLabel:'50%'}
   );
-  _moYieldChart=new Chart(canvas,{plugins:[{id:'lineLbl',afterDatasetsDraw(chart){
+  _moYieldChart=new Chart(canvas,{plugins:[
+    {id:'lineLbl',afterDatasetsDraw(chart){
       const {ctx}=chart; ctx.save();
       chart.data.datasets.forEach((ds,i)=>{
         if(ds.pointRadius===0||ds.pointRadius===undefined&&ds.borderDash) return;
@@ -861,10 +890,26 @@ function _moRenderYieldChart(dailyYields) {
         });
       });
       ctx.restore();
-    }}],
+    }},
+    {id:'endLbl',afterDatasetsDraw(chart){
+      const {ctx}=chart; ctx.save();
+      chart.data.datasets.forEach((d,i)=>{
+        if(!d._endLabel) return;
+        const meta = chart.getDatasetMeta(i).data;
+        if(!meta.length) return;
+        const lastPt = meta[meta.length-1];
+        ctx.fillStyle=d.borderColor||'#475569';
+        ctx.font='bold 11px sans-serif';
+        ctx.textAlign='left'; ctx.textBaseline='middle';
+        ctx.fillText(' '+d._endLabel, lastPt.x+4, lastPt.y);
+      });
+      ctx.restore();
+    }}
+  ],
     type:'line',
     data:{labels,datasets},
     options:{responsive:true,maintainAspectRatio:false,
+      layout:{padding:{right:60}},
       plugins:{legend:{display:true,position:'top',labels:{font:{size:10},boxWidth:12,usePointStyle:true}},
                tooltip:{callbacks:{label:v=>v.dataset.label+': '+v.raw+'%'}}},
       scales:{x:{ticks:{color:'#888',font:{size:9},autoSkip:false,maxRotation:0},grid:{display:false}},
@@ -1015,7 +1060,7 @@ function _moRenderPrevCmp(el, cur, prev, prevYm) {
           <td style="padding:7px 3px;text-align:center">${delta(cur.rm,prev.rm,true)}</td>
         </tr>
         <tr style="border-top:1px solid #f1f5f9">
-          <td style="padding:7px 3px;color:#64748b">완제품 원육 중량</td>
+          <td style="padding:7px 3px;color:#64748b">완제품 중량</td>
           <td style="padding:7px 3px;text-align:center">${fmt(prev.pkKg)}<span style="font-size:9px;color:#94a3b8">kg</span></td>
           <td style="padding:7px 3px;text-align:center;font-weight:600">${fmt(cur.pkKg)}<span style="font-size:9px;color:#94a3b8">kg</span></td>
           <td style="padding:7px 3px;text-align:center">${delta(cur.pkKg,prev.pkKg,true)}</td>
@@ -1134,7 +1179,7 @@ async function exportMonthlyReport() {
 
   // ── 1행: 헤더 ────────────────────────────────────────────
   ['생산일수','생산일자','작업인원','원육종류','제품명',
-   '원육 사용량(KG)','생산량(EA)','완제품 원육 중량(KG)',
+   '원육 사용량(KG)','생산량(EA)','완제품 중량(KG)',
    '원육수율','Full Capa','비고'
   ].forEach((h,ci) => { ws[COL[ci]+'1'] = _sHdr(h); });
 
@@ -1190,7 +1235,7 @@ async function exportMonthlyReport() {
       ws['G'+r] = ea>0
         ? {t:'n', v:ea, z:fmtEa, s:Object.assign({},rowS,{font:{bold:true,sz:10,color:{rgb:'1A56A0'}}})}
         : {t:'s', v:'', s:rowS};
-      // H: 완제품 원육 중량
+      // H: 완제품 중량
       ws['H'+r] = pkVal>0
         ? {t:'n', v:pkVal, z:fmtNum, s:rowS}
         : {t:'s', v:'', s:rowS};
@@ -2354,36 +2399,78 @@ function renderPackingChart(dayEntries, opMap, ym) {
     }
   };
 
-  // 4월 일평균 KG 가로선 (있고, 모드가 weight 또는 detail일 때만)
+  // 이번달 일평균 KG (생산한 날만)
+  const _curDayKgs = [];
+  dayEntries.forEach(([date, dayRows]) => {
+    let dayTotal = 0;
+    dayRows.forEach(r => {
+      const oe = opMap[date+'|'+r.product] || 0;
+      const ea = oe > 0 ? oe : Math.round(r.ea || 0);
+      const gPerEA = prodGramPerEA(r.product);
+      dayTotal += Math.round(ea * gPerEA / 1000);
+    });
+    if(dayTotal > 0) _curDayKgs.push(dayTotal);
+  });
+  const _curAvgKg = _curDayKgs.length ? Math.round(_curDayKgs.reduce((s,v)=>s+v,0)/_curDayKgs.length) : null;
   const _avgPkKg = window._moPrevAvgPkKg;
-  const showAvgLine = (mode === 'weight' || mode === 'detail') && _avgPkKg != null && _avgPkKg > 0;
+  const showAvgLine = (mode === 'weight' || mode === 'detail');
   const datasets = [{ data: dataVals, backgroundColor: bgColors, borderWidth: 0, borderRadius: 3 }];
-  if(showAvgLine){
+  if(showAvgLine && _curAvgKg != null){
     datasets.push({
       type: 'line',
-      label: '전월('+(window._moPrevYm||'')+') 일평균 '+Math.round(_avgPkKg).toLocaleString()+'kg',
+      label: '이번달 일평균',
+      data: Array(rows.length).fill(_curAvgKg),
+      borderColor: '#e24b4a',
+      borderDash: [2,3],
+      pointRadius: 0,
+      borderWidth: 1.5,
+      fill: false,
+      order: 0,
+      _endLabel: _curAvgKg.toLocaleString()+'kg'
+    });
+  }
+  if(showAvgLine && _avgPkKg != null && _avgPkKg > 0){
+    datasets.push({
+      type: 'line',
+      label: '전월 일평균',
       data: Array(rows.length).fill(Math.round(_avgPkKg)),
       borderColor: '#94a3b8',
       borderDash: [5,4],
       pointRadius: 0,
       borderWidth: 1.5,
       fill: false,
-      order: 0
+      order: 0,
+      _endLabel: Math.round(_avgPkKg).toLocaleString()+'kg'
     });
   }
 
   _moPackingChart = new Chart(canvas, {
     type: 'bar',
-    plugins: [topNumPlugin, dateLabelPlugin],
+    plugins: [topNumPlugin, dateLabelPlugin,
+      {id:'endLbl',afterDatasetsDraw(chart){
+        const {ctx}=chart; ctx.save();
+        chart.data.datasets.forEach((d,i)=>{
+          if(!d._endLabel) return;
+          const meta = chart.getDatasetMeta(i).data;
+          if(!meta.length) return;
+          const lastPt = meta[meta.length-1];
+          ctx.fillStyle=d.borderColor||'#475569';
+          ctx.font='bold 11px sans-serif';
+          ctx.textAlign='left'; ctx.textBaseline='middle';
+          ctx.fillText(' '+d._endLabel, lastPt.x+4, lastPt.y);
+        });
+        ctx.restore();
+      }}
+    ],
     data: {
       labels,
       datasets: datasets
     },
     options: {
       responsive: true, maintainAspectRatio: false,
-      layout: { padding: { top: 20, bottom: 20 } },
+      layout: { padding: { top: 20, bottom: 20, right: 70 } },
       plugins: {
-        legend: showAvgLine ? { display: true, position: 'top', labels: { font: {size:10}, boxWidth: 12, usePointStyle: true, filter: (item) => item.text && item.text.indexOf('전월') === 0 } } : { display: false },
+        legend: showAvgLine && (_curAvgKg!=null || _avgPkKg!=null) ? { display: true, position: 'top', labels: { font: {size:10}, boxWidth: 12, usePointStyle: true, filter: (item) => item.text === '이번달 일평균' || item.text === '전월 일평균' } } : { display: false },
         tooltip: {
           callbacks: {
             title: ctx => {
@@ -2405,6 +2492,39 @@ function renderPackingChart(dayEntries, opMap, ym) {
       }
     }
   });
+}
+
+// 일반 차트(불량률/수율) 고화질 다운로드
+async function _downloadGenericChart(canvasId, chart, title){
+  if(!chart) { alert('차트 로딩 중'); return; }
+  const ym = window._moYm || tod().slice(0,7);
+  const S = 2;
+  const origDPR = chart.options.devicePixelRatio;
+  chart.options.devicePixelRatio = S;
+  chart.resize();
+  chart.update('none');
+  await new Promise(r => requestAnimationFrame(r));
+  await new Promise(r => requestAnimationFrame(r));
+  // 캡처
+  const canvas = document.getElementById(canvasId);
+  if(!canvas) return;
+  const link = document.createElement('a');
+  const fname = ym + '_' + title + '.png';
+  link.download = fname;
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+  // 복원
+  chart.options.devicePixelRatio = origDPR;
+  chart.resize();
+  chart.update('none');
+}
+
+async function downloadDefChart(){
+  await _downloadGenericChart('mo_def_chart', _moDefChart, '불량률추이');
+}
+
+async function downloadYieldChart(){
+  await _downloadGenericChart('mo_yield_chart', _moYieldChart, '원육수율일별추이');
 }
 
 async function downloadPackingChart() {
