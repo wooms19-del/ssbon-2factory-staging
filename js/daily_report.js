@@ -207,8 +207,23 @@ async function exportThawingChecklist() {
   
   toast('점검표 생성 중...','i');
 
-  const thawings = await fbGetByDate('thawing', date);
-  if(!thawings.length) { toast('해당 날짜 방혈 데이터 없음','d'); return; }
+  // 시작일 룰: 방혈 record는 시작일 기준 date 박힘 (예: 5/5 시작 → 5/6 종료 시 date='2026-05-05')
+  // 5/6 점검표 = end가 '2026-05-06 ...'으로 시작하는 record들 (전날 + 당일 양쪽 후보)
+  const prevDate = (()=>{
+    const d=new Date(date+'T00:00:00');
+    d.setDate(d.getDate()-1);
+    return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  })();
+  const [prevThawingsRaw, sameDayThawings] = await Promise.all([
+    fbGetByDate('thawing', prevDate),
+    fbGetByDate('thawing', date)
+  ]);
+  // end가 해당 날짜로 시작하는 것만
+  const thawings = [...prevThawingsRaw, ...sameDayThawings].filter(t => {
+    const e = String(t.end||'');
+    return e.startsWith(date);
+  });
+  if(!thawings.length) { toast('해당 날짜에 종료된 방혈 데이터 없음','d'); return; }
 
   // 대차순 정렬
   thawings.sort((a,b)=>{
