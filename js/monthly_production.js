@@ -148,6 +148,8 @@
       // 짝수 행 zebra: sticky 셀도 같은 색
       + '#mpTbl tbody tr:nth-child(even):not(.sumRow):not(.avgRow):not(.prevRow):not(.diffRow) td{background:#fafbfc}'
       + '#mpTbl tbody tr:hover:not(.sumRow):not(.avgRow):not(.prevRow):not(.diffRow) td{background:#fef9c3}'
+      // ★ 클릭으로 고정된 행 — 호버보다 진한 색, 마우스 떠나도 유지
+      + '#mpTbl tbody tr.row-pinned:not(.sumRow):not(.avgRow):not(.prevRow):not(.diffRow) td{background:#fde68a !important}'
       // 합계/평균 등 sticky 셀 배경 일치
       + '#mpTbl tr.sumRow td{background:#fef3c7;font-weight:700;color:#78350f;border-top:2px solid #92400e;padding:9px 8px}'
       + '#mpTbl tr.avgRow td{background:#dcfce7;font-weight:600;color:#14532d;padding:9px 8px}'
@@ -1128,6 +1130,21 @@
 
     tbl.innerHTML = '<thead>'+thHtml+'</thead><tbody>'+bodyHtml+sumHtml+avgHtml+prevHtml+diffHtml+'</tbody>';
     if(tw) tw.style.display='';
+
+    // ★ 행 클릭 시 색칠 유지 (sumRow/avgRow/prevRow/diffRow 제외)
+    var tbody = tbl.querySelector('tbody');
+    if(tbody){
+      tbody.addEventListener('click', function(e){
+        var tr = e.target.closest('tr');
+        if(!tr) return;
+        if(tr.classList.contains('sumRow')||tr.classList.contains('avgRow')
+          ||tr.classList.contains('prevRow')||tr.classList.contains('diffRow')) return;
+        // 같은 행을 다시 누르면 해제, 다른 행 누르면 거기로 이동
+        var was = tr.classList.contains('row-pinned');
+        tbody.querySelectorAll('tr.row-pinned').forEach(function(x){ x.classList.remove('row-pinned'); });
+        if(!was) tr.classList.add('row-pinned');
+      });
+    }
 
     if(st){
       st.style.display='none';
