@@ -286,7 +286,9 @@ async function exportThawingChecklist() {
     const cart = th.cart || '';
     const ty = th.type || '';
     const totalKg = parseFloat(th.totalKg) || 0;
-    const startTime = th.start || '';
+    // start가 'YYYY-MM-DD HH:MM' datetime 형식이면 시간만 추출, 'HH:MM'이면 그대로
+    const startTimeRaw = th.start || '';
+    const startTime = startTimeRaw.includes(' ') ? startTimeRaw.split(' ').pop() : startTimeRaw;
     const endTime = th.end || '';
     const ic = th.importCodes || [];
 
