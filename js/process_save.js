@@ -160,7 +160,6 @@ async function saveP(type){
   if(fbId){
     d.fbId=fbId; saveL();
     const gasAction = {preprocess:'savePreprocess',cooking:'saveCooking',shredding:'saveShredding',packing:'savePacking',sauce:'saveSauce'}[type];
-    if(gasAction) gasRecord(gasAction, d);
     toast(PNM[type]+' 저장됨 ✓');
   } else {
     toast(PNM[type]+' 저장 실패 - 로컬에만 저장됨','d');
@@ -702,12 +701,4 @@ function delR(type,id,fbId){
     updateThawInfo();
   }
 
-  // 구글시트에서도 삭제
-  if(rec) gasRecord('deleteRecord', {
-    type: FBCOL[type]||type,
-    date: rec.date||tod(),
-    importCode: rec.importCode||'',
-    start: rec.start||'',
-    wagon: rec.wagon||''
-  });
 }

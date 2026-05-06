@@ -375,7 +375,6 @@ async function saveShAll(){
     const fbId = await fbSave('shredding', d);
     if(fbId){
       d.fbId = fbId; saveL();
-      if(typeof gasRecord==='function') gasRecord('saveShredding', d);
       okCount++;
     } else {
       failCount++;

@@ -1,7 +1,5 @@
-var GAS_URL = 'https://script.google.com/macros/s/AKfycby_Vr6xrvhnal5p9OQ5uXimY1tug5wt_qSH1eK6G2RDvzidWaYyZzWTJ9mZsHf0Rt-l8g/exec';
+// (GAS_URL 제거됨 — 구글시트 백업 안 씀)
 
-
-// GAS 백업 URL (구글시트 실시간 기록용)
 
 var firebaseConfig = {
   apiKey: "AIzaSyA0Y6VK8EOahDE6O7LEWtyG9-U8YP3yqDE",
@@ -320,17 +318,7 @@ function nowHM(){
 // Firebase CRUD
 // ============================================================
 
-// GAS 구글시트 실시간 기록 (백그라운드, 실패해도 무시)
-async function gasRecord(action, data) {
-  try {
-    const payload = encodeURIComponent(JSON.stringify(data));
-    await fetch(`${GAS_URL}?action=${action}&payload=${payload}`, {
-      method: 'GET', redirect: 'follow'
-    });
-  } catch(e) {
-    console.warn('GAS 기록 실패 (무시):', e);
-  }
-}
+// (gasRecord 제거됨 — Firestore가 단일 진실 원천. 구글시트 백업 없음.)
 
 // 읽기 쉬운 문서 ID 생성 (공정prefix_날짜_시간)
 function makeDocId(colName) {

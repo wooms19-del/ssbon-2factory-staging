@@ -916,7 +916,6 @@ async function savePkEnd(id){
   if(fbId){
     completed.fbId = fbId;
     saveL();
-    gasRecord('savePacking', completed);
     toast(`${completed.machine||'설비'} 종료 저장됨 ✓`);
   } else {
     toast('저장 실패 - 로컬에만 저장됨','d');

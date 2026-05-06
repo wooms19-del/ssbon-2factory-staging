@@ -175,7 +175,6 @@ function procBC(code){
   fbSave('barcode', rec).then(fbId => {
     if(fbId) { rec.fbId = fbId; saveL(); }
   });
-  gasRecord('saveBarcode', rec); // 구글시트 백업
 }
 
 function setBcAl(msg,t){
@@ -266,7 +265,6 @@ function delBC(id,fbId){
   const rec = L.barcodes.find(b=>b.id===id);
   L.barcodes=L.barcodes.filter(b=>b.id!==id); saveL(); renderBC();
   if(fbId) fbDelete('barcode', fbId);
-  if(rec) gasRecord('deleteRecord', {type:'barcode', date:rec.date||tod(), importCode:rec.importCode||''});
 }
 function clrToday(){
   if(!confirm('오늘 해동기 데이터 삭제?'))return;

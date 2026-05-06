@@ -366,7 +366,7 @@ async function saveCkEnd(id){
   }
 
   const fbId = await fbSave('cooking', completed);
-  if(fbId){ completed.fbId=fbId; saveL(); gasRecord('saveCooking', completed); toast(`${completed.tank} 종료 저장됨 ✓`); }
+  if(fbId){ completed.fbId=fbId; saveL(); toast(`${completed.tank} 종료 저장됨 ✓`); }
   else { toast('저장 실패 - 로컬에만 저장됨','d'); }
 
   renderCkPending();

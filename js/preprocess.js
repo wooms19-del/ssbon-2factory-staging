@@ -417,7 +417,6 @@ async function onPpStartBtn(){
         toast('방혈 갱신 실패: 새로고침 후 재시도 (cart='+(rec.cart||'?')+')','d');
       }
     }
-    if(remain<=0) gasRecord('updateThawEnd', {wagon:rec.cart, end:t});
   }
   if(deducted) updPpWagon();
   updateThawInfo();

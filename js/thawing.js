@@ -228,7 +228,6 @@ async function startThawing(){
   if(fbId){
     rec.fbId = fbId;
     // ★ localStorage push 제거 — Firebase가 진실. 다음 render에서 fresh fetch로 가져옴
-    gasRecord('saveThawing', {cart:cartNo, type, start:startTime, end:'', boxes:totalBoxes, totalKg, importCodes});
     // ★ 저장 후 fresh fetch — async 화면들 await로 호출 (다른 디바이스 동시 작업 record 병합)
     await renderThawWaiting();
     await renderThawList();
