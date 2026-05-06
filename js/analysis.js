@@ -2188,12 +2188,27 @@ function renderPackingChart(dayEntries, opMap, ym) {
     return prodColorMap[prod];
   }
 
-  // 행 펼치기 (외포장 있으면 우선, 없으면 내포장 ea)
-  // 생산한 날만 (데이터 있는 날만)
+  // 행 펼치기 — 평일 22일치 모두 X축에. 생산한 날만 막대, 빈 평일은 빈 자리 + 라벨.
   const rows = [], groups = [];
-  // 생산일 인덱스 카운터
-  let _prodDayIdx = 0;
-  dayEntries.forEach(([date, dayRows]) => {
+  // 그 달 평일 전체
+  const _allWeekdays = (function(){
+    const [yy, mm] = (ym || tod().slice(0,7)).split('-').map(Number);
+    const last = new Date(yy, mm, 0).getDate();
+    const arr = [];
+    for(let day=1; day<=last; day++){
+      const dt = new Date(yy, mm-1, day);
+      const w = dt.getDay();
+      if(w===0 || w===6) continue;
+      arr.push(yy+'-'+String(mm).padStart(2,'0')+'-'+String(day).padStart(2,'0'));
+    }
+    return arr;
+  })();
+  // 생산한 날 map
+  const _producedMap = {};
+  dayEntries.forEach(([date, dayRows]) => { _producedMap[date] = dayRows; });
+  // 모든 평일 처리
+  _allWeekdays.forEach((date, idx) => {
+    const dayRows = _producedMap[date] || [];
     const items = dayRows.map(r => {
       const outerEa = opMap[date+'|'+r.product] || 0;
       const ea = outerEa > 0 ? outerEa : Math.round(r.ea || 0);
@@ -2201,11 +2216,17 @@ function renderPackingChart(dayEntries, opMap, ym) {
       const kg = Math.round(ea * gPerEA / 1000);
       return { prod: r.product, short: prodShort(r.product), ea, kg };
     }).filter(x => x.ea > 0).sort((a,b) => b.ea - a.ea);
-    if (!items.length) return;
-    _prodDayIdx++;
+    const dayIdx = idx + 1;
+    const dayLabel = dayIdx+'일차 ('+date.slice(5)+')';
     const si = rows.length;
-    items.forEach(it => rows.push(it));
-    groups.push({ day: _prodDayIdx+'일차 ('+date.slice(5)+')', barIndexes: items.map((_,i) => si+i) });
+    if(items.length){
+      items.forEach(it => rows.push(it));
+      groups.push({ day: dayLabel, barIndexes: items.map((_,i) => si+i) });
+    } else {
+      // 빈 평일 = 빈 막대 1개 자리 (ea=0, kg=0)
+      rows.push({ prod: '', short: '', ea: 0, kg: 0, _empty: true });
+      groups.push({ day: dayLabel, barIndexes: [si] });
+    }
   });
 
   if (!rows.length) return;
