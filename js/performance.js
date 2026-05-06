@@ -634,9 +634,20 @@ function _perfBuildRows(th, pp, ck, sh, pk, op, sc){
             sd = t.bx['설도']||0;
             hd = t.bx['홍두깨']||t.bx['홍두께']||0;
             ud = t.bx['우둔']||0;
+          } else if(!isGroupFirst && t.pkType && !isNoMeatProd){
+            // ★ 같은 그룹 멤버라도 packing.type 다르면 그 부위 표시
+            var pn = t.pkType;
+            rmTypeStr = pn;
+            rmKgVal = _perfR2(t.kg[pn]||0);
+            sd = pn==='설도' ? (t.bx[pn]||0) : 0;
+            hd = (pn==='홍두깨'||pn==='홍두께') ? (t.bx['홍두깨']||t.bx['홍두께']||0) : 0;
+            ud = pn==='우둔' ? (t.bx[pn]||0) : 0;
           }
           // isGroupFirst이지만 partList.length===0 (NOMEAT 또는 누락) → 부위 빈칸
-          // !isGroupFirst → 같은 풀 멤버, 부위 빈칸 (rowspan으로 받음)
+          // !isGroupFirst && !pkType → 같은 풀 멤버, 부위 빈칸 (rowspan으로 받음)
+          // ★ pkr (byDP) = 이미 type별 분리됨 → innerEa/defPouch/sauceKg는 멤버별 그대로
+          // ★ opR (외포장) = product 단위 → 그룹 첫 행에만 (중복 합산 방지)
+          var showOuter = isGroupFirst;
           rows.push({
             date: date, dayNo: dayNo, product: prod,
             productIndex: pi, subRowIdx: 0, totalSub: 1,
@@ -652,13 +663,16 @@ function _perfBuildRows(th, pp, ck, sh, pk, op, sc){
             shKg: isDayFirst ? shD : 0,
             sauceKg: _perfR2(pkr.sauceKg),
             innerEa: innerEa, defPouch: defPouch,
-            outerBoxes: opR.boxes, boxDef: opR.boxDef,
-            tray: opR.tray, trayDef: opR.trayDef,
-            unitCnt: opR.unitCnt, outBoxes: outBoxVal,
+            outerBoxes: showOuter ? opR.boxes : 0,
+            boxDef: showOuter ? opR.boxDef : 0,
+            tray: showOuter ? opR.tray : 0,
+            trayDef: showOuter ? opR.trayDef : 0,
+            unitCnt: showOuter ? opR.unitCnt : 0,
+            outBoxes: showOuter ? outBoxVal : 0,
             sauceFP: isDayFirst ? (scFP[date]||0) : 0,
             sauceFC: isDayFirst ? (scFC[date]||0) : 0,
             qaiKg: qaiKg,
-            pouch: Math.round(pkr.pouch), boxUse: boxUse,
+            pouch: Math.round(pkr.pouch), boxUse: showOuter ? boxUse : 0,
             isTest: false,
             isPending: isPending
           });
