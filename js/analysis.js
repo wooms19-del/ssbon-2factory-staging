@@ -757,15 +757,26 @@ function _moWeekdaysOf(ym){
   return arr;
 }
 
+// 차트용 X축 평일: (생산한 날) + (오늘 이후 미래 평일). 오늘 이전 + 생산 안 한 날은 제외.
+function _moChartWeekdays(ym, producedSet){
+  const today = tod();
+  return _moWeekdaysOf(ym).filter(d => {
+    if(producedSet.has(d)) return true;   // 생산한 날 = 무조건 표시
+    if(d >= today) return true;            // 오늘 이후 미래 = 표시 (앞으로 채워질 자리)
+    return false;                          // 오늘 이전 + 생산 안 함 = 제외
+  });
+}
+
 function _moRedrawDefChart(){
   const ctx2 = document.getElementById('mo_def_chart');
   if(!ctx2) return;
   const byDate = window._moCurByDate || {};
   if(!Object.keys(byDate).length) return;
 
-  // X축 = 그 달 평일 전체. 라벨 2줄: 모든 평일에 "N일차 / MM-DD" 표시 (빈 자리 포함)
+  // X축 = 생산한 날 + 오늘 이후 평일. 오늘 이전 + 생산 안 한 날 제외.
   const ym = (window._moYm || tod().slice(0,7));
-  const weekdays = _moWeekdaysOf(ym);
+  const producedSet = new Set(Object.keys(byDate));
+  const weekdays = _moChartWeekdays(ym, producedSet);
   const labels = weekdays.map((d,i) => [(i+1)+'일차', d.slice(5)]);
   const defVals = weekdays.map(d => {
     const v = byDate[d];
@@ -813,11 +824,12 @@ function _moRenderYieldChart(dailyYields) {
   if(!dailyYields.length) return;
   // 전역 저장 — 전월 데이터 도착 시 차트 다시 그리기
   window._moCurYldDays = dailyYields;
-  // X축 = 그 달 평일 전체. 모든 평일에 "N일차 / MM-DD" 표시.
+  // X축 = 생산한 날 + 오늘 이후 평일. 오늘 이전 + 생산 안 한 날 제외.
   const ym = (window._moYm || tod().slice(0,7));
-  const weekdays = _moWeekdaysOf(ym);
   const yldMap = {};
   dailyYields.forEach(d => { yldMap[d.date] = d.yld; });
+  const producedSet = new Set(Object.keys(yldMap));
+  const weekdays = _moChartWeekdays(ym, producedSet);
   const labels = weekdays.map((d,i) => [(i+1)+'일차', d.slice(5)]);
   const ylds = weekdays.map(d => yldMap[d]!=null ? parseFloat(yldMap[d].toFixed(1)) : null);
   const ptColors = ylds.map(v => v==null?'transparent':v>=55?'#047857':v>=52?'#3b82f6':v>=50?'#f59e0b':'#ef4444');
@@ -2188,26 +2200,31 @@ function renderPackingChart(dayEntries, opMap, ym) {
     return prodColorMap[prod];
   }
 
-  // 행 펼치기 — 평일 22일치 모두 X축에. 생산한 날만 막대, 빈 평일은 빈 자리 + 라벨.
+  // 행 펼치기 — 평일 X축. 생산한 날 + 오늘 이후 평일. 오늘 이전 + 생산 안 한 날 제외.
   const rows = [], groups = [];
-  // 그 달 평일 전체
-  const _allWeekdays = (function(){
-    const [yy, mm] = (ym || tod().slice(0,7)).split('-').map(Number);
-    const last = new Date(yy, mm, 0).getDate();
-    const arr = [];
-    for(let day=1; day<=last; day++){
-      const dt = new Date(yy, mm-1, day);
-      const w = dt.getDay();
-      if(w===0 || w===6) continue;
-      arr.push(yy+'-'+String(mm).padStart(2,'0')+'-'+String(day).padStart(2,'0'));
-    }
-    return arr;
-  })();
+  // 생산한 날 set
+  const _producedSet = new Set(dayEntries.map(([d]) => d));
+  // 사용할 평일 (헬퍼 함수 사용)
+  const _useWeekdays = (typeof _moChartWeekdays === 'function')
+    ? _moChartWeekdays(ym || tod().slice(0,7), _producedSet)
+    : (function(){
+        const today = tod();
+        const [yy, mm] = (ym || tod().slice(0,7)).split('-').map(Number);
+        const last = new Date(yy, mm, 0).getDate();
+        const arr = [];
+        for(let day=1; day<=last; day++){
+          const dt = new Date(yy, mm-1, day);
+          const w = dt.getDay();
+          if(w===0 || w===6) continue;
+          const ds = yy+'-'+String(mm).padStart(2,'0')+'-'+String(day).padStart(2,'0');
+          if(_producedSet.has(ds) || ds>=today) arr.push(ds);
+        }
+        return arr;
+      })();
   // 생산한 날 map
   const _producedMap = {};
   dayEntries.forEach(([date, dayRows]) => { _producedMap[date] = dayRows; });
-  // 모든 평일 처리
-  _allWeekdays.forEach((date, idx) => {
+  _useWeekdays.forEach((date, idx) => {
     const dayRows = _producedMap[date] || [];
     const items = dayRows.map(r => {
       const outerEa = opMap[date+'|'+r.product] || 0;
@@ -2217,13 +2234,13 @@ function renderPackingChart(dayEntries, opMap, ym) {
       return { prod: r.product, short: prodShort(r.product), ea, kg };
     }).filter(x => x.ea > 0).sort((a,b) => b.ea - a.ea);
     const dayIdx = idx + 1;
-    const dayLabel = dayIdx+'일차 ('+date.slice(5)+')';
+    // 라벨 2줄 — '\n'으로 줄바꿈 (Chart.js는 string의 '\n'을 인식)
+    const dayLabel = dayIdx+'일차\n'+date.slice(5);
     const si = rows.length;
     if(items.length){
       items.forEach(it => rows.push(it));
       groups.push({ day: dayLabel, barIndexes: items.map((_,i) => si+i) });
     } else {
-      // 빈 평일 = 빈 막대 1개 자리 (ea=0, kg=0)
       rows.push({ prod: '', short: '', ea: 0, kg: 0, _empty: true });
       groups.push({ day: dayLabel, barIndexes: [si] });
     }
