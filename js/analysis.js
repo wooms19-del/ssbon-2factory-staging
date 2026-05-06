@@ -228,10 +228,26 @@ async function renderMonthly() {
     if(!byDate[d]) byDate[d]={ea:0,def:0};
     byDate[d].ea+=parseFloat(r.ea)||0; byDate[d].def+=parseFloat(r.defect)||0;
   });
-  const dates=Object.keys(byDate).sort();
-  const eaVals=dates.map(d=>byDate[d].ea);
+  // ★ X축 = 그 달 평일(월~금) 전체. 생산 안 한 날은 null로 빈칸.
+  // _moYm = 'YYYY-MM'. 그 달 1일~말일 중 평일만.
+  const _moDates = (function(){
+    const ym = _moYm || tod().slice(0,7);
+    const [yy, mm] = ym.split('-').map(Number);
+    const last = new Date(yy, mm, 0).getDate();  // 그 달 말일
+    const arr = [];
+    for(let day=1; day<=last; day++){
+      const dt = new Date(yy, mm-1, day);
+      const w = dt.getDay();  // 0=일, 6=토
+      if(w===0 || w===6) continue;
+      arr.push(yy+'-'+String(mm).padStart(2,'0')+'-'+String(day).padStart(2,'0'));
+    }
+    return arr;
+  })();
+  const dates = _moDates;  // 평일 전체
+  const eaVals=dates.map(d=>byDate[d]?byDate[d].ea:null);
   const defVals=dates.map(d=>{
-    const pouch = byDate[d].ea + byDate[d].def;  // 파우치사용량 = 정상 + 불량
+    if(!byDate[d]) return null;
+    const pouch = byDate[d].ea + byDate[d].def;
     return pouch>0 ? parseFloat((byDate[d].def/pouch*100).toFixed(2)) : null;
   });
   const labels=dates.map(d=>d.slice(5)+'('+dayOfWeek(d)+')');
@@ -777,10 +793,30 @@ function _moRenderYieldChart(dailyYields) {
   if(!canvas) return;
   if(_moYieldChart){_moYieldChart.destroy();_moYieldChart=null;}
   if(!dailyYields.length) return;
-  const n=dailyYields.length;
-  const labels=dailyYields.map(d=>d.date.slice(5)+'('+['일','월','화','수','목','금','토'][new Date(d.date).getDay()]+')');
-  const ylds=dailyYields.map(d=>parseFloat(d.yld.toFixed(1)));
-  const ptColors=ylds.map(v=>v>=55?'#047857':v>=52?'#3b82f6':v>=50?'#f59e0b':'#ef4444');
+  // ★ 평일 전체로 보강 — 수율 없는 날은 null
+  const _ym = (dailyYields[0].date||'').slice(0,7) || (typeof _moYm!=='undefined'?_moYm:'') || tod().slice(0,7);
+  const _produced = {};
+  dailyYields.forEach(d => { _produced[d.date] = d; });
+  const _allWeekdays = (function(){
+    const [yy, mm] = _ym.split('-').map(Number);
+    const last = new Date(yy, mm, 0).getDate();
+    const arr = [];
+    for(let day=1; day<=last; day++){
+      const dt = new Date(yy, mm-1, day);
+      const w = dt.getDay();
+      if(w===0 || w===6) continue;
+      arr.push(yy+'-'+String(mm).padStart(2,'0')+'-'+String(day).padStart(2,'0'));
+    }
+    return arr;
+  })();
+  const fullDates = _allWeekdays;
+  const n=fullDates.length;
+  const labels=fullDates.map(d=>d.slice(5)+'('+['일','월','화','수','목','금','토'][new Date(d).getDay()]+')');
+  const ylds=fullDates.map(d=>{
+    const r = _produced[d];
+    return r ? parseFloat(r.yld.toFixed(1)) : null;
+  });
+  const ptColors=ylds.map(v=>v==null?'transparent':v>=55?'#047857':v>=52?'#3b82f6':v>=50?'#f59e0b':'#ef4444');
   _moYieldChart=new Chart(canvas,{plugins:[{id:'lineLbl',afterDatasetsDraw(chart){
       const {ctx}=chart; ctx.save();
       chart.data.datasets.forEach((ds,i)=>{
@@ -2075,6 +2111,26 @@ function renderPackingChart(dayEntries, opMap, ym) {
     return prodColorMap[prod];
   }
 
+  // ★ 평일(월~금) 전체로 X축 보강 — 생산 안 한 날도 라벨 표시 (빈 막대)
+  // ym = 'YYYY-MM'. 그 달 1일~말일 중 평일만.
+  const _allWeekdays = (function(){
+    const [yy, mm] = (ym || tod().slice(0,7)).split('-').map(Number);
+    const last = new Date(yy, mm, 0).getDate();
+    const arr = [];
+    for(let day=1; day<=last; day++){
+      const dt = new Date(yy, mm-1, day);
+      const w = dt.getDay();
+      if(w===0 || w===6) continue;
+      arr.push(yy+'-'+String(mm).padStart(2,'0')+'-'+String(day).padStart(2,'0'));
+    }
+    return arr;
+  })();
+  // 생산한 날 map
+  const _produced = {};
+  dayEntries.forEach(([date, dayRows]) => { _produced[date] = dayRows; });
+  // 평일 전체 = (생산일은 있는 그대로, 비 생산일은 빈 dayRows)
+  dayEntries = _allWeekdays.map(d => [d, _produced[d] || []]);
+
   // 행 펼치기 (외포장 있으면 우선, 없으면 내포장 ea)
   const rows = [], groups = [];
   dayEntries.forEach(([date, dayRows]) => {
@@ -2085,13 +2141,17 @@ function renderPackingChart(dayEntries, opMap, ym) {
       const kg = Math.round(ea * gPerEA / 1000);
       return { prod: r.product, short: prodShort(r.product), ea, kg };
     }).filter(x => x.ea > 0).sort((a,b) => b.ea - a.ea);
-    if (!items.length) return;
     const si = rows.length;
-    items.forEach(it => rows.push(it));
-    groups.push({ day: dLabel(date), barIndexes: items.map((_,i) => si+i) });
+    if (items.length) {
+      items.forEach(it => rows.push(it));
+      groups.push({ day: dLabel(date), barIndexes: items.map((_,i) => si+i) });
+    } else {
+      // 빈 평일 = 빈 그룹 (X축 라벨만 표시)
+      groups.push({ day: dLabel(date), barIndexes: [] });
+    }
   });
 
-  if (!rows.length) return;
+  if (!groups.length) return;
 
   const labels   = rows.map(r => r.short);
   const bgColors = rows.map(r => getColor(r.prod) + 'dd');
