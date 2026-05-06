@@ -50,7 +50,7 @@ window.addEventListener('pageshow', function(e){
 // ============================================================
 // 🔧 STAGING MODE - production은 절대 영향받지 않음
 // ============================================================
-const _STAGING_MODE = false;
+const _STAGING_MODE = true;
 
 if(_STAGING_MODE){
   // 1) 화면에 "STAGING" 빨간 배지 표시

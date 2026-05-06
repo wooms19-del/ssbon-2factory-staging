@@ -797,7 +797,7 @@ function _moRedrawDefChart(){
     {label:'이번달 불량률',data:defVals,borderColor:'#e24b4a',backgroundColor:'rgba(226,75,74,0.08)',fill:true,tension:0.3,pointRadius:4,borderWidth:2,spanGaps:false}
   ];
   if(_curAvg!=null){
-    ds.push({label:'이번달 평균',data:Array(xLen).fill(parseFloat(_curAvg.toFixed(2))),borderColor:'#e24b4a',borderDash:[2,3],pointRadius:0,borderWidth:1.5,fill:false,_endLabel:_curAvg.toFixed(2)+'%'});
+    ds.push({label:'이번달 평균',data:Array(xLen).fill(parseFloat(_curAvg.toFixed(2))),borderColor:'#7c3aed',borderDash:[2,3],pointRadius:0,borderWidth:1.5,fill:false,_endLabel:_curAvg.toFixed(2)+'%'});
   }
   const _avgDef = window._moPrevAvgDef;
   if(_avgDef!=null){
@@ -824,15 +824,29 @@ function _moRedrawDefChart(){
     }},
     {id:'endLbl',afterDatasetsDraw(chart){
       const {ctx, chartArea}=chart; ctx.save();
+      ctx.font='bold 11px sans-serif';
+      // 1) 끝 라벨이 있는 dataset 모음
+      const endItems = [];
       chart.data.datasets.forEach((d,i)=>{
         if(!d._endLabel) return;
         const meta = chart.getDatasetMeta(i).data;
         if(!meta.length) return;
         const lastPt = meta[meta.length-1];
-        ctx.fillStyle=d.borderColor||'#475569';
-        ctx.font='bold 11px sans-serif';
+        endItems.push({ y: lastPt.y, x: lastPt.x, text: ' '+d._endLabel, color: d.borderColor||'#475569' });
+      });
+      // 2) Y 기준 정렬 후 겹침 방지 (최소 간격 14px)
+      endItems.sort((a,b) => a.y - b.y);
+      const MIN_GAP = 14;
+      for(let i=1; i<endItems.length; i++){
+        if(endItems[i].y - endItems[i-1].y < MIN_GAP){
+          endItems[i].y = endItems[i-1].y + MIN_GAP;
+        }
+      }
+      // 3) 그리기
+      endItems.forEach(item => {
+        ctx.fillStyle = item.color;
         ctx.textAlign='left'; ctx.textBaseline='middle';
-        ctx.fillText(' '+d._endLabel, lastPt.x+4, lastPt.y);
+        ctx.fillText(item.text, item.x+4, item.y);
       });
       ctx.restore();
     }}
@@ -869,7 +883,7 @@ function _moRenderYieldChart(dailyYields) {
     {label:'이번달 수율',data:ylds,borderColor:'#64748b',backgroundColor:'rgba(100,116,139,0.08)',fill:true,tension:0.3,pointRadius:5,pointBackgroundColor:ptColors,pointBorderColor:ptColors,borderWidth:2,spanGaps:false}
   ];
   if(_curAvg!=null){
-    datasets.push({label:'이번달 평균',data:Array(xLen).fill(parseFloat(_curAvg.toFixed(1))),borderColor:'#e24b4a',borderDash:[2,3],pointRadius:0,borderWidth:1.5,fill:false,_endLabel:_curAvg.toFixed(1)+'%'});
+    datasets.push({label:'이번달 평균',data:Array(xLen).fill(parseFloat(_curAvg.toFixed(1))),borderColor:'#7c3aed',borderDash:[2,3],pointRadius:0,borderWidth:1.5,fill:false,_endLabel:_curAvg.toFixed(1)+'%'});
   }
   const _avgYld = window._moPrevAvgYld;
   if(_avgYld!=null){
@@ -898,15 +912,26 @@ function _moRenderYieldChart(dailyYields) {
     }},
     {id:'endLbl',afterDatasetsDraw(chart){
       const {ctx}=chart; ctx.save();
+      ctx.font='bold 11px sans-serif';
+      const endItems = [];
       chart.data.datasets.forEach((d,i)=>{
         if(!d._endLabel) return;
         const meta = chart.getDatasetMeta(i).data;
         if(!meta.length) return;
         const lastPt = meta[meta.length-1];
-        ctx.fillStyle=d.borderColor||'#475569';
-        ctx.font='bold 11px sans-serif';
+        endItems.push({ y: lastPt.y, x: lastPt.x, text: ' '+d._endLabel, color: d.borderColor||'#475569' });
+      });
+      endItems.sort((a,b) => a.y - b.y);
+      const MIN_GAP = 14;
+      for(let i=1; i<endItems.length; i++){
+        if(endItems[i].y - endItems[i-1].y < MIN_GAP){
+          endItems[i].y = endItems[i-1].y + MIN_GAP;
+        }
+      }
+      endItems.forEach(item => {
+        ctx.fillStyle = item.color;
         ctx.textAlign='left'; ctx.textBaseline='middle';
-        ctx.fillText(' '+d._endLabel, lastPt.x+4, lastPt.y);
+        ctx.fillText(item.text, item.x+4, item.y);
       });
       ctx.restore();
     }}
@@ -2291,8 +2316,8 @@ function renderPackingChart(dayEntries, opMap, ym) {
       return { prod: r.product, short: prodShort(r.product), ea, kg };
     }).filter(x => x.ea > 0).sort((a,b) => b.ea - a.ea);
     const dayIdx = idx + 1;
-    // 라벨 2줄 — '\n'으로 줄바꿈 (Chart.js는 string의 '\n'을 인식)
-    const dayLabel = dayIdx+'일차\n'+date.slice(5);
+    // 라벨 = ['1일차', '05-04'] 배열 — dateLabelPlugin이 두 줄로 그림
+    const dayLabel = [dayIdx+'일차', date.slice(5)];
     const si = rows.length;
     if(items.length){
       items.forEach(it => rows.push(it));
@@ -2397,7 +2422,13 @@ function renderPackingChart(dayEntries, opMap, ym) {
         ctx.font = '10px sans-serif';
         ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--g5') || '#666';
         ctx.textAlign = 'center';
-        ctx.fillText(g.day, cx, bottom + 38);
+        // dayLabel이 배열이면 두 줄로
+        if(Array.isArray(g.day)){
+          ctx.fillText(g.day[0], cx, bottom + 38);
+          ctx.fillText(g.day[1] || '', cx, bottom + 50);
+        } else {
+          ctx.fillText(g.day, cx, bottom + 38);
+        }
         if (bars.length > 1) {
           ctx.strokeStyle = 'rgba(100,116,139,0.3)';
           ctx.lineWidth = 1;
@@ -2432,7 +2463,7 @@ function renderPackingChart(dayEntries, opMap, ym) {
       type: 'line',
       label: '이번달 일평균',
       data: Array(rows.length).fill(_curAvgKg),
-      borderColor: '#e24b4a',
+      borderColor: '#7c3aed',
       borderDash: [2,3],
       pointRadius: 0,
       borderWidth: 1.5,
@@ -2461,15 +2492,26 @@ function renderPackingChart(dayEntries, opMap, ym) {
     plugins: [topNumPlugin, dateLabelPlugin,
       {id:'endLbl',afterDatasetsDraw(chart){
         const {ctx}=chart; ctx.save();
+        ctx.font='bold 11px sans-serif';
+        const endItems = [];
         chart.data.datasets.forEach((d,i)=>{
           if(!d._endLabel) return;
           const meta = chart.getDatasetMeta(i).data;
           if(!meta.length) return;
           const lastPt = meta[meta.length-1];
-          ctx.fillStyle=d.borderColor||'#475569';
-          ctx.font='bold 11px sans-serif';
+          endItems.push({ y: lastPt.y, x: lastPt.x, text: ' '+d._endLabel, color: d.borderColor||'#475569' });
+        });
+        endItems.sort((a,b) => a.y - b.y);
+        const MIN_GAP = 14;
+        for(let i=1; i<endItems.length; i++){
+          if(endItems[i].y - endItems[i-1].y < MIN_GAP){
+            endItems[i].y = endItems[i-1].y + MIN_GAP;
+          }
+        }
+        endItems.forEach(item => {
+          ctx.fillStyle = item.color;
           ctx.textAlign='left'; ctx.textBaseline='middle';
-          ctx.fillText(' '+d._endLabel, lastPt.x+4, lastPt.y);
+          ctx.fillText(item.text, item.x+4, item.y);
         });
         ctx.restore();
       }}
@@ -2488,7 +2530,8 @@ function renderPackingChart(dayEntries, opMap, ym) {
             title: ctx => {
               if(ctx[0].datasetIndex !== 0) return '';
               const g = groups.find(g => g.barIndexes.includes(ctx[0].dataIndex));
-              return (g ? g.day : '') + ' · ' + rows[ctx[0].dataIndex].prod;
+              const dayStr = g ? (Array.isArray(g.day) ? g.day.join(' ') : g.day) : '';
+              return dayStr + ' · ' + rows[ctx[0].dataIndex].prod;
             },
             label: ctx => {
               if(ctx.datasetIndex !== 0) return '';
@@ -2538,7 +2581,7 @@ function _moRenderRmChart(rmByDate, ym){
     datasets.push({
       type: 'line', label: '이번달 일평균',
       data: Array(xLen).fill(_curAvg),
-      borderColor: '#e24b4a', borderDash: [2,3], pointRadius: 0, borderWidth: 1.5, fill: false,
+      borderColor: '#7c3aed', borderDash: [2,3], pointRadius: 0, borderWidth: 1.5, fill: false,
       _endLabel: _curAvg.toLocaleString()+'kg'
     });
   }
@@ -2569,15 +2612,26 @@ function _moRenderRmChart(rmByDate, ym){
       }},
       {id:'endLbl',afterDatasetsDraw(chart){
         const {ctx} = chart; ctx.save();
+        ctx.font = 'bold 11px sans-serif';
+        const endItems = [];
         chart.data.datasets.forEach((d,i) => {
           if(!d._endLabel) return;
           const meta = chart.getDatasetMeta(i).data;
           if(!meta.length) return;
           const lastPt = meta[meta.length-1];
-          ctx.fillStyle = d.borderColor || '#475569';
-          ctx.font = 'bold 11px sans-serif';
+          endItems.push({ y: lastPt.y, x: lastPt.x, text: ' '+d._endLabel, color: d.borderColor || '#475569' });
+        });
+        endItems.sort((a,b) => a.y - b.y);
+        const MIN_GAP = 14;
+        for(let i=1; i<endItems.length; i++){
+          if(endItems[i].y - endItems[i-1].y < MIN_GAP){
+            endItems[i].y = endItems[i-1].y + MIN_GAP;
+          }
+        }
+        endItems.forEach(item => {
+          ctx.fillStyle = item.color;
           ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-          ctx.fillText(' '+d._endLabel, lastPt.x+4, lastPt.y);
+          ctx.fillText(item.text, item.x+4, item.y);
         });
         ctx.restore();
       }}
