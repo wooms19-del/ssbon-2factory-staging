@@ -99,19 +99,52 @@ async function pp2Render(){
 function pp2RenderRemain(){
   const today = (typeof tod==='function') ? tod() : new Date().toISOString().slice(0,10);
   const thList = (L.thawing||[]).filter(t => pp2IsWorkingToday(t, today) && (parseFloat(t.remainKg)||0) > 0.01);
-  if(!thList.length) return '<div class="emp">방혈 완료된 원육 없음 (또는 모두 차감됨)</div>';
+  // ★ 입력 중(미저장)인 행의 (kg+waste)를 부위별로 빼기 (미리보기)
+  const previewByType = {};
+  const tbody = document.getElementById('pp2_tbody');
+  if(tbody){
+    [...tbody.querySelectorAll('tr')].forEach(tr => {
+      if(tr.dataset.saved === '1') return;  // 이미 저장된 행은 잔량에 이미 반영됨
+      const type = (tr.querySelector('.pp2-type')||{}).value || '';
+      const kg = parseFloat((tr.querySelector('.pp2-kg')||{}).value) || 0;
+      const waste = parseFloat((tr.querySelector('.pp2-waste')||{}).value) || 0;
+      if(type && (kg + waste) > 0){
+        previewByType[type] = (previewByType[type]||0) + kg + waste;
+      }
+    });
+  }
+  if(!thList.length && Object.keys(previewByType).length === 0)
+    return '<div class="emp">방혈 완료된 원육 없음 (또는 모두 차감됨)</div>';
   const remainByType = {};
   thList.forEach(t => {
     const ty = t.type || '?';
     remainByType[ty] = (remainByType[ty]||0) + (parseFloat(t.remainKg)||0);
   });
+  // 부위별 잔량 - 미리보기 차감
+  const allTypes = new Set([...Object.keys(remainByType), ...Object.keys(previewByType)]);
   return `
     <div style="display:flex;gap:10px;flex-wrap:wrap">
-      ${Object.entries(remainByType).map(([ty, kg]) => `
-        <div style="background:#f0f7ff;border:1px solid #1a56db;border-radius:8px;padding:6px 12px;font-size:13px">
-          <strong style="color:#1a56db">${ty}</strong> · ${kg.toFixed(2)}kg
-        </div>
-      `).join('')}
+      ${[...allTypes].map(ty => {
+        const remain = remainByType[ty] || 0;
+        const preview = previewByType[ty] || 0;
+        const after = remain - preview;
+        if(preview > 0){
+          // 미리보기 있는 경우 → 차감 표시
+          const colorAfter = after < 0 ? '#dc2626' : '#16a34a';
+          return `
+            <div style="background:#fffbeb;border:1px solid #f59e0b;border-radius:8px;padding:6px 12px;font-size:13px">
+              <strong style="color:#92400e">${ty}</strong>
+              <span style="color:#9ca3af;text-decoration:line-through">${remain.toFixed(2)}kg</span>
+              <span style="margin:0 4px;color:#92400e">→</span>
+              <strong style="color:${colorAfter}">${after.toFixed(2)}kg</strong>
+              <span style="font-size:11px;color:#92400e;margin-left:4px">(입력중 −${preview.toFixed(2)})</span>
+            </div>`;
+        }
+        return `
+          <div style="background:#f0f7ff;border:1px solid #1a56db;border-radius:8px;padding:6px 12px;font-size:13px">
+            <strong style="color:#1a56db">${ty}</strong> · ${remain.toFixed(2)}kg
+          </div>`;
+      }).join('')}
     </div>
   `;
 }
@@ -188,10 +221,26 @@ function pp2AddRow(data){
   tbody.appendChild(tr);
 }
 
-function pp2RemoveRow(idx){
+async function pp2RemoveRow(idx){
   const tr = document.getElementById('pp2Tr_'+idx);
-  if(tr) tr.remove();
+  if(!tr) return;
+  // ★ 이미 저장된 행이면 DB에서도 삭제 + 잔량 복원
+  if(tr.dataset.saved === '1' && tr.dataset.recId){
+    if(!confirm('이 행은 이미 저장되었습니다. DB에서도 삭제하시겠습니까?')){
+      return;
+    }
+    const recId = tr.dataset.recId;
+    const rec = (L.preprocess||[]).find(p => p.id === recId);
+    if(rec){
+      await pp2RestoreTouches(rec);
+      await pp2DeleteRecordInternal(recId);
+    }
+  }
+  tr.remove();
   pp2ReindexRows();
+  // 잔량 카드 갱신 (미리보기 + 복원 둘 다 반영)
+  const remEl = document.getElementById('pp2_remain');
+  if(remEl) remEl.innerHTML = pp2RenderRemain();
 }
 
 function pp2ReindexRows(){
@@ -211,6 +260,9 @@ function pp2OnCellChange(idx){
   const dur = pp2CalcDur(start, end);
   const durCell = tr.querySelector('.pp2-dur');
   if(durCell) durCell.textContent = dur !== null ? dur.toFixed(2) : '-';
+  // ★ 잔량 카드 실시간 미리보기 차감
+  const remEl = document.getElementById('pp2_remain');
+  if(remEl) remEl.innerHTML = pp2RenderRemain();
 }
 
 function pp2CalcDur(start, end){
@@ -338,6 +390,7 @@ async function pp2SaveOne(idx){
   const rec = pp2BuildRecord(d, workers, touches);
   if(!L.preprocess) L.preprocess = [];
   L.preprocess.push(rec);
+  tr.dataset.recId = rec.id;  // ★ X 삭제 시 DB 삭제 위해
 
   if(typeof fbSave==='function'){
     try {

@@ -120,24 +120,86 @@ function sh2GetWagonAvail(){
 
 function sh2RenderRemain(){
   const avail = sh2GetWagonAvail();
-  if(!avail.length) return '<div class="emp">자숙 완료된 와건 없음 (또는 모두 파쇄됨)</div>';
+  // ★ 입력 중(미저장)인 행의 (kg+waste)를 와건별로 빼기
+  const previewByWagon = {};  // {와건번호: 빼야할 kg}
+  const tbody = document.getElementById('sh2_tbody');
+  if(tbody){
+    [...tbody.querySelectorAll('tr')].forEach(tr => {
+      if(tr.dataset.saved === '1') return;
+      const type = (tr.querySelector('.sh2-type')||{}).value || '';
+      const wagonOut = (tr.querySelector('.sh2-wagon-out')||{}).value.trim();
+      const kg = parseFloat((tr.querySelector('.sh2-kg')||{}).value) || 0;
+      const waste = parseFloat((tr.querySelector('.sh2-waste')||{}).value) || 0;
+      const total = kg + waste;
+      if(!type || total <= 0) return;
+      // FIFO 시뮬레이션: 부위에 해당하는 와건들에서 순서대로 빼기
+      let need = total;
+      const sorted = avail.filter(a => a.type === type).sort((x,y) => (x.ckId||'').localeCompare(y.ckId||''));
+      for(const a of sorted){
+        if(need <= 0) break;
+        const already = previewByWagon[a.wagon] || 0;
+        const free = a.remain - already;
+        if(free <= 0) continue;
+        const take = Math.min(free, need);
+        previewByWagon[a.wagon] = (previewByWagon[a.wagon]||0) + take;
+        need -= take;
+      }
+    });
+  }
+  // 와건별 미리보기 차감 후 잔량
+  const availPreview = avail.map(a => ({
+    ...a,
+    remainPreview: a.remain - (previewByWagon[a.wagon] || 0),
+    preview: previewByWagon[a.wagon] || 0,
+  }));
+  const totalPreviewKg = Object.values(previewByWagon).reduce((s,v) => s+v, 0);
+  if(!avail.length && totalPreviewKg === 0)
+    return '<div class="emp">자숙 완료된 와건 없음 (또는 모두 파쇄됨)</div>';
+  // 부위 합계
   const byType = {};
-  avail.forEach(a => { byType[a.type] = (byType[a.type] || 0) + a.remain; });
+  availPreview.forEach(a => {
+    byType[a.type] = byType[a.type] || {remain:0, preview:0};
+    byType[a.type].remain += a.remain;
+    byType[a.type].preview += a.preview;
+  });
+  const sumHtml = Object.entries(byType).map(([ty, v]) => {
+    const after = v.remain - v.preview;
+    if(v.preview > 0){
+      const colorAfter = after < 0 ? '#dc2626' : '#16a34a';
+      return `
+        <div style="background:#fffbeb;border:1px solid #f59e0b;border-radius:8px;padding:6px 12px;font-size:13px">
+          <strong style="color:#92400e">${ty}</strong>
+          <span style="color:#9ca3af;text-decoration:line-through">${v.remain.toFixed(2)}kg</span>
+          <span style="margin:0 4px;color:#92400e">→</span>
+          <strong style="color:${colorAfter}">${after.toFixed(2)}kg</strong>
+          <span style="font-size:11px;color:#92400e;margin-left:4px">(입력중 −${v.preview.toFixed(2)})</span>
+        </div>`;
+    }
+    return `
+      <div style="background:#f0fdf4;border:1px solid #16a34a;border-radius:8px;padding:6px 12px;font-size:13px">
+        <strong style="color:#16a34a">${ty}</strong> · ${v.remain.toFixed(2)}kg
+      </div>`;
+  }).join('');
+  // 와건 칩들
+  const chipHtml = availPreview.map(a => {
+    const after = a.remainPreview;
+    if(a.preview > 0){
+      const colorAfter = after < 0.01 ? '#9ca3af' : '#dc2626';
+      const opacity = after < 0.01 ? '0.4' : '1';
+      const deco = after < 0.01 ? 'text-decoration:line-through' : '';
+      return `
+        <span style="background:#fffbeb;border:1px solid #f59e0b;border-radius:6px;padding:3px 8px;font-size:11px;opacity:${opacity};${deco}">
+          와건${a.wagon} (${a.type}) <span style="color:${colorAfter}">${Math.max(0,after).toFixed(2)}kg</span>
+        </span>`;
+    }
+    return `
+      <span style="background:#fff;border:1px solid #ddd;border-radius:6px;padding:3px 8px;font-size:11px">
+        와건${a.wagon} (${a.type}) ${a.remain.toFixed(2)}kg
+      </span>`;
+  }).join('');
   return `
-    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px">
-      ${Object.entries(byType).map(([ty, kg]) => `
-        <div style="background:#f0fdf4;border:1px solid #16a34a;border-radius:8px;padding:6px 12px;font-size:13px">
-          <strong style="color:#16a34a">${ty}</strong> · ${kg.toFixed(2)}kg
-        </div>
-      `).join('')}
-    </div>
-    <div style="display:flex;gap:6px;flex-wrap:wrap">
-      ${avail.map(a => `
-        <span style="background:#fff;border:1px solid #ddd;border-radius:6px;padding:3px 8px;font-size:11px">
-          와건${a.wagon} (${a.type}) ${a.remain.toFixed(2)}kg
-        </span>
-      `).join('')}
-    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px">${sumHtml}</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">${chipHtml}</div>
   `;
 }
 
@@ -211,10 +273,22 @@ function sh2AddRow(data){
   tbody.appendChild(tr);
 }
 
-function sh2RemoveRow(idx){
+async function sh2RemoveRow(idx){
   const tr = document.getElementById('sh2Tr_'+idx);
-  if(tr) tr.remove();
+  if(!tr) return;
+  // ★ 이미 저장된 행이면 DB 삭제 + 잔량 복원
+  if(tr.dataset.saved === '1' && tr.dataset.recId){
+    if(!confirm('이 행은 이미 저장되었습니다. DB에서도 삭제하시겠습니까?')){
+      return;
+    }
+    const recId = tr.dataset.recId;
+    await sh2DeleteRecordInternal(recId);
+  }
+  tr.remove();
   sh2ReindexRows();
+  // 잔량 카드 갱신
+  const remEl = document.getElementById('sh2_remain');
+  if(remEl) remEl.innerHTML = sh2RenderRemain();
 }
 
 function sh2ReindexRows(){
@@ -234,6 +308,9 @@ function sh2OnCellChange(idx){
   const dur = sh2CalcDur(start, end);
   const durCell = tr.querySelector('.sh2-dur');
   if(durCell) durCell.textContent = dur !== null ? dur.toFixed(2) : '-';
+  // ★ 잔량 카드 실시간 미리보기 차감
+  const remEl = document.getElementById('sh2_remain');
+  if(remEl) remEl.innerHTML = sh2RenderRemain();
 }
 
 function sh2CalcDur(start, end){
@@ -358,6 +435,7 @@ async function sh2SaveOne(idx){
   const rec = sh2BuildRecord(d, touches);
   if(!L.shredding) L.shredding = [];
   L.shredding.push(rec);
+  tr.dataset.recId = rec.id;  // ★ X 삭제 시 DB 삭제 위해
 
   if(typeof fbSave==='function'){
     try {
