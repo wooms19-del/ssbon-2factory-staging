@@ -107,6 +107,7 @@ document.addEventListener('DOMContentLoaded', function() {
   window.onPkStartBtn = onPkStartBtn;
   window.showPkStartCard = showPkStartCard;
   window.renderPkPending = renderPkPending;
+  window.renderPkWagonList = renderPkWagonList;
   window.togglePkEndForm = togglePkEndForm;
   window.savePkEnd = savePkEnd;
   // ============================================================

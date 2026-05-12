@@ -4,6 +4,100 @@
 
 var _pkRowIdx = 0;
 
+// ============================================================
+// 파쇄 완료 와건 잔량 표시 (포장 탭 상단)
+// → 파쇄에서 산출된 와건 - 포장에서 사용된 양 = 잔량
+// ============================================================
+function renderPkWagonList(){
+  const el = document.getElementById('pk_wagonList');
+  if(!el) return;
+  const today = tod();
+  // 파쇄 산출 와건 map (와건번호 → {kg, type})
+  const shMap = {};  // {와건: {kg, type}}
+  (L.shredding||[]).filter(r => {
+    const d = String(r.date||'').slice(0,10);
+    return d === today && r.end && (r.wagonOut || r.cartOut);
+  }).forEach(sh => {
+    if(sh.wagonOutDist){
+      Object.entries(sh.wagonOutDist).forEach(([w, kg]) => {
+        if(!shMap[w]) shMap[w] = {kg: 0, type: sh.type || ''};
+        shMap[w].kg += parseFloat(kg) || 0;
+      });
+    } else if(sh.wagonOut){
+      const ws = (sh.wagonOut||'').split(',').map(x => x.trim()).filter(Boolean);
+      if(ws.length){
+        const each = (parseFloat(sh.kg)||0) / ws.length;
+        ws.forEach(w => {
+          if(!shMap[w]) shMap[w] = {kg: 0, type: sh.type || ''};
+          shMap[w].kg += each;
+        });
+      }
+    }
+  });
+  // 포장에서 사용된 양 차감 (오늘 packing + packing_pending)
+  const usedMap = {};  // {와건: 사용된 kg}
+  const pkRecs = [
+    ...(L.packing||[]).filter(r => String(r.date||'').slice(0,10) === today),
+    ...(L.packing_pending||[]).filter(r => String(r.date||'').slice(0,10) === today),
+  ];
+  pkRecs.forEach(pk => {
+    if(pk.wagonDist){
+      Object.entries(pk.wagonDist).forEach(([w, kg]) => {
+        usedMap[w] = (usedMap[w] || 0) + (parseFloat(kg) || 0);
+      });
+    } else if(pk.wagon){
+      // 호환: wagonDist 없으면 단일 wagon 필드 + kg 또는 totalKg
+      const ws = (pk.wagon||'').split(',').map(x => x.trim()).filter(Boolean);
+      if(ws.length){
+        const each = (parseFloat(pk.kg || pk.totalKg)||0) / ws.length;
+        ws.forEach(w => { usedMap[w] = (usedMap[w] || 0) + each; });
+      }
+    }
+  });
+  // 와건별 잔량 계산
+  const wagons = Object.keys(shMap).map(w => ({
+    wagon: w,
+    type: shMap[w].type,
+    total: shMap[w].kg,
+    used: usedMap[w] || 0,
+    remain: shMap[w].kg - (usedMap[w] || 0),
+  }));
+  if(!wagons.length){
+    el.innerHTML = '<div class="emp">파쇄 완료된 와건 없음</div>';
+    return;
+  }
+  // 부위별 합계
+  const byType = {};
+  wagons.forEach(w => {
+    if(!byType[w.type]) byType[w.type] = {total:0, remain:0};
+    byType[w.type].total += w.total;
+    byType[w.type].remain += w.remain;
+  });
+  const sumHtml = Object.entries(byType).map(([ty, v]) => {
+    const color = v.remain < 0.01 ? '#9ca3af' : '#16a34a';
+    return `
+      <div style="background:#f0fdf4;border:1px solid #16a34a;border-radius:8px;padding:6px 12px;font-size:13px">
+        <strong style="color:#16a34a">${ty}</strong> · 잔량 <strong style="color:${color}">${v.remain.toFixed(2)}kg</strong>
+        <span style="font-size:11px;color:#6b7280;margin-left:4px">/ 산출 ${v.total.toFixed(2)}kg</span>
+      </div>`;
+  }).join('');
+  // 와건별 칩
+  const chipHtml = wagons.map(w => {
+    const done = w.remain < 0.01;
+    const colorAfter = done ? '#9ca3af' : '#16a34a';
+    const deco = done ? 'text-decoration:line-through;opacity:0.55' : '';
+    return `
+      <span style="background:#fff;border:1px solid #ddd;border-radius:6px;padding:3px 8px;font-size:11px;${deco}">
+        와건${w.wagon} (${w.type}) <strong style="color:${colorAfter}">${w.remain.toFixed(2)}kg</strong>
+        ${w.used > 0 ? `<span style="font-size:10px;color:#6b7280;margin-left:3px">(사용 ${w.used.toFixed(2)})</span>` : ''}
+      </span>`;
+  }).join('');
+  el.innerHTML = `
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px">${sumHtml}</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">${chipHtml}</div>
+  `;
+}
+
 // 설비 시작 행 추가
 function addPkMachRow(){
   const idx = _pkRowIdx++;
