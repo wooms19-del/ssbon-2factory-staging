@@ -50,7 +50,10 @@ async function pp2Render(){
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
         <div class="ct" style="margin:0">전처리 케이지 입력</div>
-        <button class="btn bo bsm" style="color:var(--d);border-color:var(--d);font-weight:600" onclick="pp2FinishDay()">⏹ 오늘 전처리 종료</button>
+        <div style="display:flex;gap:6px">
+          ${pp2HasFinishedToday() ? `<button class="btn bo bsm" style="color:#0891b2;border-color:#0891b2;font-weight:600" onclick="pp2UnfinishDay()">↩ 종료 취소</button>` : ''}
+          <button class="btn bo bsm" style="color:var(--d);border-color:var(--d);font-weight:600" onclick="pp2FinishDay()">⏹ 오늘 전처리 종료</button>
+        </div>
       </div>
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;padding:8px 12px;background:#f0f7ff;border:1px solid #bfdbfe;border-radius:6px">
         <label style="font-size:13px;font-weight:600;color:#1a56db">인원</label>
@@ -564,6 +567,17 @@ async function pp2DeleteRecord(id){
   const rec = (L.preprocess||[]).find(p => p.id === id);
   if(rec) await pp2RestoreTouches(rec);
   await pp2DeleteRecordInternal(id);
+  // 마지막 record였고 + 오늘 종료 백업이 남아있으면 → 같이 취소 제안
+  const today = (typeof tod==='function') ? tod() : new Date().toISOString().slice(0,10);
+  const remainingToday = (L.preprocess||[]).filter(p => p.date === today).length;
+  if(remainingToday === 0 && pp2HasFinishedToday()){
+    if(confirm(
+      `오늘 마지막 전처리 record가 삭제됐습니다.\n\n` +
+      `"오늘 전처리 종료" 버튼으로 깎인 잔량도 함께 복원할까요?`
+    )) {
+      await pp2UnfinishDay();
+    }
+  }
 }
 
 async function pp2DeleteRecordInternal(id, silent){
@@ -601,18 +615,58 @@ async function pp2FinishDay(){
     `오늘 전처리 종료\n\n` +
     `남은 대차 ${remaining.length}건 · 합계 ${totalRem.toFixed(2)}kg\n` +
     `→ 모두 0으로 처리 (핏물/자연감량)\n\n` +
+    `※ 실수했을 경우 "종료 취소" 버튼으로 되돌릴 수 있음\n\n` +
     `진행?`
   )) return;
   for(const th of remaining){
+    th._finishedRemainBackup = parseFloat(th.remainKg) || 0;
+    th._finishedDate = today;
     th.remainKg = 0;
     if(th.fbId && typeof fbUpdate==='function'){
-      try { await fbUpdate('thawing', th.fbId, {remainKg: 0}); }
+      try { await fbUpdate('thawing', th.fbId, {
+        remainKg: 0,
+        _finishedRemainBackup: th._finishedRemainBackup,
+        _finishedDate: today,
+      }); }
       catch(e){ console.error('thawing 종료 실패', e); }
     }
   }
   if(typeof saveL==='function') saveL();
   await pp2Refresh();
   toast(`전처리 종료 — ${remaining.length}건 잔량 0 ✓`,'s');
+}
+
+async function pp2UnfinishDay(){
+  const today = (typeof tod==='function') ? tod() : new Date().toISOString().slice(0,10);
+  const finished = (L.thawing||[]).filter(t => t._finishedDate === today && (parseFloat(t._finishedRemainBackup)||0) > 0.01);
+  if(!finished.length){ toast('취소할 종료 기록 없음','i'); return; }
+  const totalRestore = finished.reduce((s,t) => s + (parseFloat(t._finishedRemainBackup)||0), 0);
+  if(!confirm(
+    `오늘 전처리 종료를 취소합니다.\n\n` +
+    `복원 대상: ${finished.length}건 · 합계 ${totalRestore.toFixed(2)}kg\n\n` +
+    `진행?`
+  )) return;
+  for(const th of finished){
+    th.remainKg = parseFloat(th._finishedRemainBackup) || 0;
+    delete th._finishedRemainBackup;
+    delete th._finishedDate;
+    if(th.fbId && typeof fbUpdate==='function'){
+      try { await fbUpdate('thawing', th.fbId, {
+        remainKg: th.remainKg,
+        _finishedRemainBackup: null,
+        _finishedDate: null,
+      }); }
+      catch(e){ console.error('thawing 종료 취소 실패', e); }
+    }
+  }
+  if(typeof saveL==='function') saveL();
+  await pp2Refresh();
+  toast(`종료 취소 — ${finished.length}건 잔량 복원 ✓`,'s');
+}
+
+function pp2HasFinishedToday(){
+  const today = (typeof tod==='function') ? tod() : new Date().toISOString().slice(0,10);
+  return (L.thawing||[]).some(t => t._finishedDate === today && (parseFloat(t._finishedRemainBackup)||0) > 0.01);
 }
 
 if(typeof window !== 'undefined'){
@@ -629,4 +683,5 @@ if(typeof window !== 'undefined'){
   window.pp2EditSave = pp2EditSave;
   window.pp2DeleteRecord = pp2DeleteRecord;
   window.pp2FinishDay = pp2FinishDay;
+  window.pp2UnfinishDay = pp2UnfinishDay;
 }

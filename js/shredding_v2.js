@@ -24,7 +24,10 @@ async function sh2Render(){
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
         <div class="ct" style="margin:0">파쇄 입력</div>
-        <button class="btn bo bsm" style="color:var(--d);border-color:var(--d);font-weight:600" onclick="sh2FinishDay()">⏹ 오늘 파쇄 종료</button>
+        <div style="display:flex;gap:6px">
+          ${sh2HasFinishedToday() ? `<button class="btn bo bsm" style="color:#0891b2;border-color:#0891b2;font-weight:600" onclick="sh2UnfinishDay()">↩ 종료 취소</button>` : ''}
+          <button class="btn bo bsm" style="color:var(--d);border-color:var(--d);font-weight:600" onclick="sh2FinishDay()">⏹ 오늘 파쇄 종료</button>
+        </div>
       </div>
       <div style="overflow-x:auto">
         <table id="sh2_table" style="width:100%;border-collapse:collapse;font-size:14px;min-width:980px">
@@ -407,6 +410,7 @@ async function sh2FinishDay(){
     `오늘 파쇄 종료\n\n` +
     `남은 자숙 와건 ${avail.length}건 · 합계 ${totalRem.toFixed(2)}kg\n` +
     `→ 모두 0으로 처리 (잔량 소진 마킹)\n\n` +
+    `※ 실수했을 경우 "종료 취소" 버튼으로 되돌릴 수 있음\n\n` +
     `진행?`
   )) return;
 
@@ -425,6 +429,32 @@ async function sh2FinishDay(){
   if(typeof saveL==='function') saveL();
   await sh2Refresh();
   toast(`파쇄 종료 — ${avail.length}건 잔량 소진 ✓`,'s');
+}
+
+async function sh2UnfinishDay(){
+  const today = (typeof tod==='function') ? tod() : new Date().toISOString().slice(0,10);
+  const closed = (L.cooking||[]).filter(c => c._shClosed === today);
+  if(!closed.length){ toast('취소할 종료 기록 없음','i'); return; }
+  if(!confirm(
+    `오늘 파쇄 종료를 취소합니다.\n\n` +
+    `자숙 ${closed.length}건의 잔량 소진 마커를 제거합니다.\n\n` +
+    `진행?`
+  )) return;
+  for(const ck of closed){
+    delete ck._shClosed;
+    if(ck.fbId && typeof fbUpdate==='function'){
+      try { await fbUpdate('cooking', ck.fbId, {_shClosed: null}); }
+      catch(e){ console.error('cooking 종료 취소 실패', e); }
+    }
+  }
+  if(typeof saveL==='function') saveL();
+  await sh2Refresh();
+  toast(`종료 취소 — ${closed.length}건 잔량 복원 ✓`,'s');
+}
+
+function sh2HasFinishedToday(){
+  const today = (typeof tod==='function') ? tod() : new Date().toISOString().slice(0,10);
+  return (L.cooking||[]).some(c => c._shClosed === today);
 }
 
 // sh2GetWagonAvail에서 _shClosed 마커 있는 cooking은 제외하도록 보강 필요
@@ -638,6 +668,17 @@ async function sh2EditSave(id){
 async function sh2DeleteRecord(id){
   if(!confirm('이 record를 삭제하시겠습니까?')) return;
   await sh2DeleteRecordInternal(id);
+  // 마지막 record였고 + 오늘 종료 마커가 남아있으면 → 같이 취소 제안
+  const today = (typeof tod==='function') ? tod() : new Date().toISOString().slice(0,10);
+  const remainingToday = (L.shredding||[]).filter(r => r.date === today).length;
+  if(remainingToday === 0 && sh2HasFinishedToday()){
+    if(confirm(
+      `오늘 마지막 파쇄 record가 삭제됐습니다.\n\n` +
+      `"오늘 파쇄 종료" 버튼으로 소진된 자숙 잔량도 함께 복원할까요?`
+    )) {
+      await sh2UnfinishDay();
+    }
+  }
 }
 
 async function sh2DeleteRecordInternal(id, silent){
@@ -666,4 +707,5 @@ if(typeof window !== 'undefined'){
   window.sh2EditSave = sh2EditSave;
   window.sh2DeleteRecord = sh2DeleteRecord;
   window.sh2FinishDay = sh2FinishDay;
+  window.sh2UnfinishDay = sh2UnfinishDay;
 }
