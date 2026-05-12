@@ -736,6 +736,24 @@ async function onPkStartBtn(){
     if(wagonDist) rec.wagonDist = wagonDist;
     if(cartDist)  rec.cartDist  = cartDist;
     if(typeKgs) rec.typeKgs = typeKgs;
+    // 옵션 C: 수정 모드면 기존 record 업데이트 (첫 row만 적용)
+    if(_pkEditingId && added===0){
+      const existing = L.packing_pending.find(r=>r.id===_pkEditingId);
+      if(existing){
+        // id, fbId, date는 보존
+        Object.assign(existing, {
+          product, machine, wagon, cart, workers, type,
+          start: startTime,
+          sauceTank, subName,
+        });
+        // 분배 필드는 새 값 있으면 갱신, 없으면 제거
+        if(wagonDist) existing.wagonDist = wagonDist; else delete existing.wagonDist;
+        if(cartDist) existing.cartDist = cartDist; else delete existing.cartDist;
+        if(typeKgs) existing.typeKgs = typeKgs; else delete existing.typeKgs;
+        added++;
+        return;  // forEach 콜백 종료 — 새 record는 push 안 함
+      }
+    }
     L.packing_pending.push(rec);
     added++;
   });
@@ -743,11 +761,22 @@ async function onPkStartBtn(){
   if(!added) return;
   saveL();
 
-  // Firebase에 pending 저장 (다른 기기에서도 보이게)
-  const pendingToSave = L.packing_pending.filter(r => !r.fbId && String(r.date||'').slice(0,10) === tod());
-  for(const rec of pendingToSave) {
-    const fbId = await fbSave('packing_pending', rec);
-    if(fbId) { rec.fbId = fbId; }
+  // Firebase 처리
+  if(_pkEditingId){
+    // 수정 모드: 기존 record fbId로 update
+    const edited = L.packing_pending.find(r=>r.id===_pkEditingId);
+    if(edited && edited.fbId){
+      const {id, fbId, ...updateData} = edited;
+      try { await fbUpdate('packing_pending', fbId, updateData); }
+      catch(e){ console.error('Firebase packing_pending 수정 오류',e); toast('Firebase 저장 실패 - 로컬만 반영','w'); }
+    }
+  } else {
+    // 신규 모드: 새 fbSave
+    const pendingToSave = L.packing_pending.filter(r => !r.fbId && String(r.date||'').slice(0,10) === tod());
+    for(const rec of pendingToSave) {
+      const fbId = await fbSave('packing_pending', rec);
+      if(fbId) { rec.fbId = fbId; }
+    }
   }
   saveL();
 
@@ -759,7 +788,9 @@ async function onPkStartBtn(){
   document.getElementById('pk_pendingCard').style.display='';
 
   renderPkPending();
-  toast(`포장 시작 — ${added}개 설비 진행중 ✓`,'i');
+  const wasEditing = !!_pkEditingId;
+  _pkEditingId = null;  // 클리어
+  toast(wasEditing ? '포장 수정됨 ✓' : `포장 시작 — ${added}개 설비 진행중 ✓`, wasEditing ? 's' : 'i');
 }
 
 // + 추가 설비 시작 버튼
@@ -812,25 +843,8 @@ function renderPkPending(){
         </div>
         <div style="display:flex;gap:6px">
           <button class="btn bs bsm" onclick="togglePkEndForm('${r.id}')">종료 입력</button>
-          <button class="btn bo bsm" onclick="togglePkEditForm('${r.id}')">수정</button>
+          <button class="btn bo bsm" onclick="startEditPkPending('${r.id}')">수정</button>
           <button class="btn bo bsm" style="color:var(--d);border-color:var(--d)" onclick="deletePkPending('${r.id}')">삭제</button>
-        </div>
-      </div>
-      <!-- 수정 폼 (숨김) -->
-      <div id="pkEditForm_${r.id}" style="display:none;padding:12px;background:#fffaf0;border-bottom:1px solid var(--g2)">
-        <div class="fg" style="margin-bottom:8px">
-          <div class="fgrp">
-            <label class="fl">시작시간</label>
-            <input class="fc" type="text" inputmode="decimal" maxlength="5" placeholder="HH:MM" id="pkEdit_t_${r.id}" value="${r.start||''}">
-          </div>
-          <div class="fgrp">
-            <label class="fl">인원</label>
-            <input class="fc" type="number" id="pkEdit_w_${r.id}" placeholder="0" value="${r.workers||''}">
-          </div>
-        </div>
-        <div style="display:flex;gap:8px">
-          <button class="btn bs bblk" style="flex:1" onclick="savePkEdit('${r.id}')">저장</button>
-          <button class="btn bo bsm" onclick="togglePkEditForm('${r.id}')">취소</button>
         </div>
       </div>
       <!-- 종료 입력 폼 (숨김) -->
@@ -944,31 +958,83 @@ async function deletePkPending(id){
   toast('포장 삭제됨','i');
 }
 
-// 진행중 포장 수정 폼 토글
-function togglePkEditForm(id){
-  const form = document.getElementById('pkEditForm_'+id);
-  if(!form) return;
-  form.style.display = form.style.display === 'none' ? '' : 'none';
-}
-
-// 진행중 포장 수정 저장 (시작시간, 인원)
-async function savePkEdit(id){
+// 옵션 C: 진행중 record를 입력 폼에 불러와 수정
+// 저장 시 onPkStartBtn에서 _pkEditingId 있으면 기존 record 업데이트
+var _pkEditingId = null;
+function startEditPkPending(id){
   if(!L.packing_pending) L.packing_pending=[];
   const rec = L.packing_pending.find(r=>r.id===id);
   if(!rec){ toast('데이터 없음','d'); return; }
-  const t = (document.getElementById('pkEdit_t_'+id)?.value || '').trim();
-  const w = parseInt(document.getElementById('pkEdit_w_'+id)?.value) || 0;
-  if(!/^\d{1,2}:\d{2}$/.test(t)){ toast('시작시간 형식: HH:MM','d'); return; }
-  if(w <= 0){ toast('인원은 1명 이상','d'); return; }
-  rec.start = t;
-  rec.workers = w;
-  saveL();
-  if(rec.fbId){
-    try { await fbUpdate('packing_pending', rec.fbId, { start: t, workers: w }); }
-    catch(e){ console.error('Firebase packing_pending 수정 오류',e); toast('Firebase 저장 실패 - 로컬만 반영','w'); }
+  // 입력 카드 펼침 + 새 row 추가
+  document.getElementById('pk_startCard').style.display='';
+  document.getElementById('pk_machRows').innerHTML='';
+  _pkRowIdx = 0;
+  if(typeof addPkMachRow==='function') addPkMachRow();
+  // row의 idx (방금 추가한 row)
+  const row = document.querySelector('#pk_machRows > div');
+  if(!row){ toast('row 생성 실패','d'); return; }
+  const idx = parseInt(row.id.replace('pkRow_',''));
+  // 값 채움 (제품/설비/와건/시작시간/인원/소스탱크/부재료)
+  const prodSel = row.querySelector('.pk-row-prod');
+  if(prodSel && rec.product){
+    prodSel.value = rec.product;
+    // 제품 onchange는 셀렉트 옵션을 다시 그리므로 수동 호출
+    if(typeof onPkRowProd==='function') onPkRowProd(idx);
   }
-  renderPkPending();
-  toast('포장 수정됨 ✓','s');
+  // 약간 지연: onPkRowProd가 비동기로 셀렉트 옵션 다시 그리므로
+  setTimeout(()=>{
+    const r2 = document.getElementById('pkRow_'+idx);
+    if(!r2) return;
+    const machSel = r2.querySelector('.pk-row-mach');
+    if(machSel && rec.machine) machSel.value = rec.machine;
+    const startInp = r2.querySelector('.pk-row-start');
+    if(startInp) startInp.value = rec.start||'';
+    const workersInp = r2.querySelector('.pk-row-workers');
+    if(workersInp) workersInp.value = rec.workers||'';
+    const stankSel = r2.querySelector('.pk-row-stank');
+    if(stankSel && rec.sauceTank) stankSel.value = rec.sauceTank;
+    const subSel = r2.querySelector('.pk-row-subnm');
+    if(subSel && rec.subName) subSel.value = rec.subName;
+    // 와건 hidden + 토글 버튼 클릭 시뮬
+    if(rec.wagon){
+      const wagons = rec.wagon.split(',').map(x=>x.trim()).filter(Boolean);
+      wagons.forEach(w=>{
+        const btn = r2.querySelector(`.pk-wagon-btn[data-w="${w}"][data-kind="wagon"]`);
+        if(btn && btn.dataset.done!=='true') btn.click();
+      });
+    }
+    if(rec.cart){
+      const carts = rec.cart.split(',').map(x=>x.trim()).filter(Boolean);
+      carts.forEach(c=>{
+        const btn = r2.querySelector(`.pk-wagon-btn[data-w="${c}"][data-kind="cart"]`);
+        if(btn && btn.dataset.done!=='true') btn.click();
+      });
+    }
+    // 와건별 kg 분배 채우기 (wagonDist/cartDist)
+    if(rec.wagonDist){
+      setTimeout(()=>{
+        Object.entries(rec.wagonDist).forEach(([w,kg])=>{
+          const inp = r2.querySelector(`.pk-wagon-kg-input[data-w="${w}"]`);
+          if(inp) inp.value = kg;
+        });
+        if(typeof pkWagonSumChange==='function') pkWagonSumChange(idx);
+      }, 100);
+    }
+    if(rec.cartDist){
+      setTimeout(()=>{
+        Object.entries(rec.cartDist).forEach(([c,kg])=>{
+          const inp = r2.querySelector(`.pk-cart-kg-input[data-w="${c}"]`);
+          if(inp) inp.value = kg;
+        });
+        if(typeof pkWagonSumChange==='function') pkWagonSumChange(idx);
+      }, 100);
+    }
+  }, 50);
+  // 편집 모드 마킹
+  _pkEditingId = id;
+  // 시작 카드로 스크롤
+  document.getElementById('pk_startCard').scrollIntoView({behavior:'smooth', block:'start'});
+  toast('수정 모드: 값을 고치고 시작 저장','i');
 }
 
 function togglePkEndForm(id){
