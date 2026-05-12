@@ -10,7 +10,7 @@
 // - 기존 스키마 호환: thawingTouches, distribution, cageTanks, wagons 등 그대로
 // ============================================================
 
-const PP2_TYPES = ['우둔', '홍두깨', '도가니', '아롱사태', '사태', '안창살'];
+const PP2_TYPES = ['우둔', '홍두깨', '설도'];
 const PP2_INIT_ROWS = 12;
 let _pp2RowIdx = 0;
 
@@ -127,8 +127,8 @@ function pp2AddRow(data){
   )];
   // 수정 모드(data.type)에선 잔량 0이어도 그 부위는 포함
   if(data.type && !availTypes.includes(data.type)) availTypes.push(data.type);
-  // 잔량 있는 부위 없으면 fallback (PP2_TYPES 전체)
-  const typeList = availTypes.length ? availTypes : PP2_TYPES;
+  // 잔량 있는 부위만. 잔량 없으면 빈 셀렉트 (작업 불가 상태)
+  const typeList = availTypes;
   const typeOpts = '<option value="">선택</option>' +
     typeList.map(t => `<option ${t===data.type?'selected':''}>${t}</option>`).join('');
 
