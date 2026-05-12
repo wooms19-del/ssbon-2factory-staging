@@ -14,6 +14,8 @@ async function loadOpenThawingAndRender(){
 }
 // 외부 호환 — 기존 코드가 호출하던 onPpStartBtn (사용 안 함, 빈 함수)
 function onPpStartBtn(){ pp2SaveAll(); }
+// 외부 호환 — globals.js가 참조하는 onPpWagonChange (v2에선 사용 안 함, 빈 stub)
+function onPpWagonChange(){ /* v2 미사용 */ }
 
 let _pp2RowIdx = 0;
 
