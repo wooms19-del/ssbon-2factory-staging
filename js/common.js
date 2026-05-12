@@ -686,6 +686,12 @@ async function loadFromServer(date) {
     const cols = ['barcodes','thawing','preprocess','cooking','shredding','packing','sauce'];
     const colMap = {barcodes:'barcode', thawing:'thawing', preprocess:'preprocess',
       cooking:'cooking', shredding:'shredding', packing:'packing', sauce:'sauce'};
+    // ★ 잘못된 fbId prefix 검출용 (컬렉션별 정상 fbId prefix)
+    // cooking record가 cooking_pending_ 시작 fbId 가지면 잘못됨 (saveCkEnd 옛 버그 잔여)
+    const wrongPrefix = {
+      cooking: 'cooking_pending_',
+      packing: 'packing_pending_',
+    };
     
     await Promise.all(cols.map(async lKey => {
       const fbCol = colMap[lKey] || lKey;
@@ -698,6 +704,16 @@ async function loadFromServer(date) {
         ...recs,
         ...pending
       ];
+      // ★ 잘못된 fbId 자동 정리 (saveCkEnd 옛 버그 잔여물 청소)
+      const badPrefix = wrongPrefix[lKey];
+      if(badPrefix){
+        merged.forEach(r => {
+          if(r.fbId && String(r.fbId).startsWith(badPrefix)){
+            console.warn(`[loadFromServer] ${lKey} record의 잘못된 fbId 정리:`, r.fbId);
+            r.fbId = null;
+          }
+        });
+      }
       // ★ id 기준 중복 제거 (DB record 우선)
       const seen = new Set();
       L[lKey] = merged.filter(r => {
