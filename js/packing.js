@@ -812,7 +812,25 @@ function renderPkPending(){
         </div>
         <div style="display:flex;gap:6px">
           <button class="btn bs bsm" onclick="togglePkEndForm('${r.id}')">종료 입력</button>
+          <button class="btn bo bsm" onclick="togglePkEditForm('${r.id}')">수정</button>
           <button class="btn bo bsm" style="color:var(--d);border-color:var(--d)" onclick="deletePkPending('${r.id}')">삭제</button>
+        </div>
+      </div>
+      <!-- 수정 폼 (숨김) -->
+      <div id="pkEditForm_${r.id}" style="display:none;padding:12px;background:#fffaf0;border-bottom:1px solid var(--g2)">
+        <div class="fg" style="margin-bottom:8px">
+          <div class="fgrp">
+            <label class="fl">시작시간</label>
+            <input class="fc" type="text" inputmode="decimal" maxlength="5" placeholder="HH:MM" id="pkEdit_t_${r.id}" value="${r.start||''}">
+          </div>
+          <div class="fgrp">
+            <label class="fl">인원</label>
+            <input class="fc" type="number" id="pkEdit_w_${r.id}" placeholder="0" value="${r.workers||''}">
+          </div>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn bs bblk" style="flex:1" onclick="savePkEdit('${r.id}')">저장</button>
+          <button class="btn bo bsm" onclick="togglePkEditForm('${r.id}')">취소</button>
         </div>
       </div>
       <!-- 종료 입력 폼 (숨김) -->
@@ -924,6 +942,33 @@ async function deletePkPending(id){
   saveL();
   renderPkPending();
   toast('포장 삭제됨','i');
+}
+
+// 진행중 포장 수정 폼 토글
+function togglePkEditForm(id){
+  const form = document.getElementById('pkEditForm_'+id);
+  if(!form) return;
+  form.style.display = form.style.display === 'none' ? '' : 'none';
+}
+
+// 진행중 포장 수정 저장 (시작시간, 인원)
+async function savePkEdit(id){
+  if(!L.packing_pending) L.packing_pending=[];
+  const rec = L.packing_pending.find(r=>r.id===id);
+  if(!rec){ toast('데이터 없음','d'); return; }
+  const t = (document.getElementById('pkEdit_t_'+id)?.value || '').trim();
+  const w = parseInt(document.getElementById('pkEdit_w_'+id)?.value) || 0;
+  if(!/^\d{1,2}:\d{2}$/.test(t)){ toast('시작시간 형식: HH:MM','d'); return; }
+  if(w <= 0){ toast('인원은 1명 이상','d'); return; }
+  rec.start = t;
+  rec.workers = w;
+  saveL();
+  if(rec.fbId){
+    try { await fbUpdate('packing_pending', rec.fbId, { start: t, workers: w }); }
+    catch(e){ console.error('Firebase packing_pending 수정 오류',e); toast('Firebase 저장 실패 - 로컬만 반영','w'); }
+  }
+  renderPkPending();
+  toast('포장 수정됨 ✓','s');
 }
 
 function togglePkEndForm(id){
