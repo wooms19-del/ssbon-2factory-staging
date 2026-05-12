@@ -98,7 +98,7 @@ function showTab(mode,tab){
   } else if(tab==='preprocess'){
     const yd2=getYesterday_();
     Promise.all([loadOpenThawing(), loadFromServer(today), loadFromServer(yd2)])
-      .then(()=>{ updateThawInfo(); updPpWagon(); renderPL('preprocess'); });
+      .then(()=>{ if(typeof pp2Render==='function') pp2Render(); });
   } else if(tab==='cooking'){
     if(!L.cooking_pending) L.cooking_pending=[];
     // ★ loadOpenCooking 추가 (다른 디바이스 진행중 자숙 가시성)

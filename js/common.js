@@ -828,7 +828,7 @@ function refreshCurrentTab_() {
   if(MODE === 'i') {
     if(ITAB === 'barcode') renderBC();
     else if(ITAB === 'thawing') { renderThawWaiting(); renderThawList(); }
-    else if(ITAB === 'preprocess') { loadOpenThawingAndRender(); renderPL('preprocess'); }
+    else if(ITAB === 'preprocess') { if(typeof pp2Render==='function') pp2Render(); }
     else if(ITAB === 'outerpacking') loadOuterPacking();
     else renderPL(ITAB);
   }

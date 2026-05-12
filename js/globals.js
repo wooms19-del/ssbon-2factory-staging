@@ -18,8 +18,6 @@ document.addEventListener('DOMContentLoaded', function() {
   window.startThawing = startThawing;
   window.renderThawWaiting = renderThawWaiting;
   window.updateTwSummary = updateTwSummary;
-  window.onPpWagonChange = onPpWagonChange;
-  window.onPpStartBtn = onPpStartBtn;
   window.saveP = saveP;
   window.delR = delR;
   window.chDay = chDay;
@@ -47,7 +45,6 @@ document.addEventListener('DOMContentLoaded', function() {
   window.renderTrend = renderTrend;
   window.renderDaily = renderDaily;
   window.setPd = setPd;
-  window.getSelectedWagons = getSelectedWagons;
   window.addGt = addGt;
   window.delGt = delGt;
   window.loadRecipe = loadRecipe;
@@ -57,7 +54,6 @@ document.addEventListener('DOMContentLoaded', function() {
   window.saveRecipe = saveRecipe;
   window.delRecipe = delRecipe;
   window.selectRecipe = selectRecipe;
-  window.updPpWagon = updPpWagon;
   window.renderCkCageList = renderCkCageList;
   window.renderShWagonList = renderShWagonList;
   window.onCkCageChange = onCkCageChange;

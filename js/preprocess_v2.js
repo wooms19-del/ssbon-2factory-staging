@@ -9,19 +9,9 @@
 // ============================================================
 
 // 외부 호환 — 탭 진입 시 호출되는 함수 이름 동일 유지
+// 외부 호환 — common.js / app.js 등에서 진입 시 호출되는 함수
 async function loadOpenThawingAndRender(){
   await pp2Render();
-}
-// 외부 호환 — 기존 코드가 호출하던 onPpStartBtn (사용 안 함, 빈 함수)
-function onPpStartBtn(){ pp2SaveAll(); }
-// 외부 호환 — globals.js가 참조하는 onPpWagonChange (v2에선 사용 안 함, 빈 stub)
-function onPpWagonChange(){ /* v2 미사용 */ }
-// 외부 호환 — globals.js line 50 ReferenceError 방지
-function getSelectedWagons(){ return []; }
-function updPpWagon(){ /* v2 미사용 */ }
-// 외부 호환 — app.js:101이 호출. v2에선 이 시점에 pp2Render 실행해서 새 UI로 그림
-function updateThawInfo(){
-  if(typeof pp2Render === 'function') pp2Render();
 }
 
 let _pp2RowIdx = 0;
@@ -512,7 +502,6 @@ async function pp2FinishDay(){
 // ============================================================
 if(typeof window !== 'undefined'){
   window.loadOpenThawingAndRender = loadOpenThawingAndRender;
-  window.onPpStartBtn = onPpStartBtn;
   window.pp2Render = pp2Render;
   window.pp2AddRow = pp2AddRow;
   window.pp2RemoveRow = pp2RemoveRow;
