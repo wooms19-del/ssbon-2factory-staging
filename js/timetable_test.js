@@ -2117,7 +2117,7 @@ function ttmRenderTimeline(scen, workers, sim) {
   const fpName = scen.fp.info.name;
 
   const SVG_W = 800, LEFT = 100, RIGHT = 780;
-  const tMin = sim.fp.pre.s;
+  const tMin = Math.min(sim.fp.pre.s, sim.fc.pre.s);  // 두 제품 중 더 일찍 시작
   const tMax = sim.endMin + 30;
   const span = Math.max(1, tMax - tMin);
   const xPos = m => LEFT + (m - tMin) / span * (RIGHT - LEFT);
