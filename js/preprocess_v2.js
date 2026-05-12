@@ -331,10 +331,20 @@ async function pp2SaveOne(idx){
       if(fbId) rec.fbId = fbId;
     } catch(e){ console.error('preprocess fbSave 실패', e); }
   }
+  // 차감된 thawing들 — remainKg 갱신 + end 비어있으면 전처리 시작시각으로 자동 채움
+  const today = (typeof tod==='function') ? tod() : new Date().toISOString().slice(0,10);
+  const ppStartFull = `${today} ${d.start}`;  // 예: "2026-05-12 05:00"
   for(const t of touches){
     const th = (L.thawing||[]).find(x => x.id === t.thId);
-    if(th && th.fbId && typeof fbUpdate==='function'){
-      try { await fbUpdate('thawing', th.fbId, {remainKg: th.remainKg}); }
+    if(!th) continue;
+    const update = { remainKg: th.remainKg };
+    // 방혈 종료 자동 채움 (비어있을 때만)
+    if(!th.end || String(th.end).trim() === ''){
+      th.end = ppStartFull;
+      update.end = ppStartFull;
+    }
+    if(th.fbId && typeof fbUpdate==='function'){
+      try { await fbUpdate('thawing', th.fbId, update); }
       catch(e){ console.error('thawing 갱신 실패', e); }
     }
   }
