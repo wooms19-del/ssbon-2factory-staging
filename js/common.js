@@ -693,11 +693,20 @@ async function loadFromServer(date) {
       // ★ DB 결과가 0건이어도 로컬 동기화 (다른 디바이스 삭제 반영)
       // pending(fbId 없는 새 record)은 보존 (Firebase 저장 응답 대기중)
       const pending = (L[lKey]||[]).filter(r => !r.fbId && String(r.date||'').slice(0,10) === date);
-      L[lKey] = [
+      const merged = [
         ...(L[lKey]||[]).filter(x => String(x.date||'').slice(0,10) !== date),
         ...recs,
         ...pending
       ];
+      // ★ id 기준 중복 제거 (DB record 우선)
+      const seen = new Set();
+      L[lKey] = merged.filter(r => {
+        const k = r.id || r.fbId;
+        if(!k) return true;
+        if(seen.has(k)) return false;
+        seen.add(k);
+        return true;
+      });
     }));
     saveL();
     return true;
