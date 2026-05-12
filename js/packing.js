@@ -42,12 +42,13 @@ function addPkMachRow(){
   const shWagons = Object.keys(shWagonsMap);
   const shCarts  = Object.keys(shCartsMap);
   // 완료/사용중 판정 - 잔여 ≤ 0 이면 차단
-  // (today + yesterday 둘 다 봐야 어제 포장된 건도 잡힘)
+  // (오늘 shredding output 와건만 보여주므로 사용량도 오늘 packing 만 차감.
+  //  와건 번호는 매일 재사용되므로 어제 와건 6번 ≠ 오늘 와건 6번.)
   const usedMap = {};      // 와건 사용량
   const usedCartMap = {};  // 카트 사용량
   (L.packing||[]).filter(p => {
     const d = String(p.date||'').slice(0,10);
-    return d===today || d===yesterday;
+    return d===today;
   }).forEach(p => {
     if(p.wagonDist){
       Object.entries(p.wagonDist).forEach(([w,kg])=>{ usedMap[w]=(usedMap[w]||0)+(parseFloat(kg)||0); });
@@ -67,7 +68,7 @@ function addPkMachRow(){
   });
   (L.packing_pending||[]).filter(p => {
     const d = String(p.date||'').slice(0,10);
-    return d===today || d===yesterday;
+    return d===today;
   }).forEach(p => {
     if(p.wagonDist){
       Object.entries(p.wagonDist).forEach(([w,kg])=>{ usedMap[w]=(usedMap[w]||0)+(parseFloat(kg)||0); });
@@ -240,8 +241,39 @@ function pkAddWagonRow(idx, prefilledW, kind){
       <input class="fc pk-wd-kg" type="number" step="0.01" value="${defaultKg}" placeholder="0" oninput="pkWagonSumChange(${idx})" style="padding:5px 7px;font-size:12px;box-sizing:border-box;flex:1;text-align:right">
       <span style="font-size:11px;color:var(--g5)">kg</span>
     </div>
-    <button onclick="this.closest('.pk-wd-row').remove();pkWagonSumChange(${idx})" style="width:24px;height:28px;border:1px solid var(--g3);border-radius:4px;background:#fff;color:var(--d);font-size:13px;cursor:pointer;padding:0">−</button>`;
+    <button onclick="pkRemoveWagonRow(this,${idx})" style="width:24px;height:28px;border:1px solid var(--g3);border-radius:4px;background:#fff;color:var(--d);font-size:13px;cursor:pointer;padding:0">−</button>`;
   c.appendChild(row);
+  pkWagonSumChange(idx);
+}
+
+// dist 행 삭제 시 매칭 와건/카트 버튼 상태도 같이 unselected 로 풀기
+function pkRemoveWagonRow(btnEl, idx){
+  const row = btnEl.closest('.pk-wd-row');
+  if(!row) return;
+  const w = row.dataset.w || '';
+  const kind = row.dataset.kind === 'cart' ? 'cart' : 'wagon';
+  // 매칭 와건/카트 버튼 색상/상태 reset
+  if(w){
+    const wagonBtn = document.querySelector(`#pkRow_${idx} .pk-wagon-btn[data-w="${w}"][data-kind="${kind}"]`);
+    if(wagonBtn){
+      const baseColor = kind === 'cart' ? '#1a56db' : '#72243E';
+      wagonBtn.style.background = '#fff';
+      wagonBtn.style.color = baseColor;
+      wagonBtn.style.borderColor = baseColor;
+      wagonBtn.style.textDecoration = '';
+      wagonBtn.style.cursor = '';
+      wagonBtn.dataset.done = 'false';
+      wagonBtn.onclick = function(){ togglePkWagon(idx, w, kind); };
+    }
+  }
+  row.remove();
+  // hidden wagon 필드 갱신 (와건만)
+  const distC = document.getElementById('pkWagonDist_'+idx);
+  const hidden = document.querySelector(`#pkRow_${idx} .pk-row-wagon`);
+  if(hidden && distC){
+    const wagonRows = [...distC.querySelectorAll('.pk-wd-row[data-kind="wagon"]')];
+    hidden.value = wagonRows.map(r => r.dataset.w).filter(Boolean).join(',');
+  }
   pkWagonSumChange(idx);
 }
 
@@ -425,12 +457,12 @@ function pkGetWagonGlobalUsed(){
   };
   (L.packing_pending||[]).filter(r => {
     const d = String(r.date||'').slice(0,10);
-    return d===today || d===yesterday;
+    return d===today;
   }).forEach(accumPending);
-  // 3) 완료된 packing - today+yesterday
+  // 3) 완료된 packing - today만 (와건 번호는 매일 재사용 — 어제 6번 ≠ 오늘 6번)
   (L.packing||[]).filter(r => {
     const d = String(r.date||'').slice(0,10);
-    return d===today || d===yesterday;
+    return d===today;
   }).forEach(p => {
     if(p.wagonDist){
       Object.entries(p.wagonDist).forEach(([w,kg])=>{
@@ -492,6 +524,8 @@ function pkRefreshWagonRemain(){
     const remEl = btn.querySelector('.pk-w-rem');
     const isDone = remain < 0.01 && total > 0;
     const label = kind === 'cart' ? '카트' : '와건';
+    const idx = btn.dataset.idx;
+    const baseColor = kind === 'cart' ? '#1a56db' : '#72243E';
     // 완료 상태 동적 갱신 (완전 소진되면 즉시 차단)
     if(isDone && btn.dataset.done !== 'true'){
       btn.dataset.done = 'true';
@@ -500,6 +534,15 @@ function pkRefreshWagonRemain(){
       btn.style.cursor = 'not-allowed';
       btn.style.textDecoration = 'line-through';
       btn.onclick = () => toast(w+'번 '+label+'은 이미 포장 완료됨','d');
+    } else if(!isDone && btn.dataset.done === 'true'){
+      // done 상태 해제 (사용량 줄어듦 — 예: dist 행 삭제로 used=0)
+      btn.dataset.done = 'false';
+      btn.style.background = '#fff';
+      btn.style.color = baseColor;
+      btn.style.borderColor = baseColor;
+      btn.style.cursor = 'pointer';
+      btn.style.textDecoration = '';
+      btn.onclick = () => togglePkWagon(idx, w, kind);
     }
     if(remEl){
       if(isDone) remEl.textContent = '(완료)';
@@ -767,7 +810,10 @@ function renderPkPending(){
             ${r.sauceTank ? ' · 소스 '+r.sauceTank : ''}
           </div>
         </div>
-        <button class="btn bs bsm" onclick="togglePkEndForm('${r.id}')">종료 입력</button>
+        <div style="display:flex;gap:6px">
+          <button class="btn bs bsm" onclick="togglePkEndForm('${r.id}')">종료 입력</button>
+          <button class="btn bo bsm" style="color:var(--d);border-color:var(--d)" onclick="deletePkPending('${r.id}')">삭제</button>
+        </div>
       </div>
       <!-- 종료 입력 폼 (숨김) -->
       <div id="pkEndForm_${r.id}" style="display:none;padding:12px;background:#fff">
@@ -863,6 +909,21 @@ function getPkEndSauceTanks(pendId){
     if(t) tanks.push({tank: t, kg: kg});
   });
   return tanks.length ? tanks : null;
+}
+
+// 진행중 포장 삭제 (cooking deleteCkPending 패턴)
+async function deletePkPending(id){
+  if(!confirm('진행중인 포장을 삭제하시겠습니까?')) return;
+  if(!L.packing_pending) L.packing_pending=[];
+  const rec = L.packing_pending.find(r=>r.id===id);
+  if(rec && rec.fbId){
+    try { await fbDelete('packing_pending', rec.fbId); }
+    catch(e){ console.error('Firebase packing_pending 삭제 오류',e); }
+  }
+  L.packing_pending = L.packing_pending.filter(r=>r.id!==id);
+  saveL();
+  renderPkPending();
+  toast('포장 삭제됨','i');
 }
 
 function togglePkEndForm(id){
