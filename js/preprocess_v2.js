@@ -81,7 +81,7 @@ async function pp2Render(){
         <button class="btn bp bblk" onclick="pp2SaveAll()" style="flex:2;padding:8px">전체 저장</button>
       </div>
       <div style="font-size:11px;color:var(--g5);margin-top:6px;text-align:center">
-        ※ 필수칸(부위·케이지·시작·종료·무게)을 다 채우면 자동 저장. ⨯ 로 행 제거.
+        ※ 입력 후 [전체 저장] 버튼을 눌러야 저장됨. ⨯ 로 행 제거.
       </div>
     </div>
     <div class="card">
@@ -208,12 +208,6 @@ function pp2OnCellChange(idx){
   const dur = pp2CalcDur(start, end);
   const durCell = tr.querySelector('.pp2-dur');
   if(durCell) durCell.textContent = dur !== null ? dur.toFixed(2) : '-';
-
-  const d = pp2GetRowData(idx);
-  if(!d) return;
-  if(d.type && d.cage && /^\d{1,2}:\d{2}$/.test(d.start) && /^\d{1,2}:\d{2}$/.test(d.end) && d.kg > 0 && !tr.dataset.saved){
-    pp2SaveOne(idx);
-  }
 }
 
 function pp2CalcDur(start, end){
@@ -414,7 +408,7 @@ function pp2RenderTodayList(){
       총 ${list.length}건 · 케이지 합계 ${totalKg.toFixed(2)}kg · 비가식부 ${totalWaste.toFixed(2)}kg${yieldText}
     </div>
     ${list.map(p => `
-      <div style="border:1px solid var(--g2);border-radius:8px;padding:10px;margin-bottom:8px">
+      <div id="pp2RecCard_${p.id}" style="border:1px solid var(--g2);border-radius:8px;padding:10px;margin-bottom:8px">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
           <div>
             <strong style="font-size:14px">케이지 ${p.cage} · ${p.type}</strong>
@@ -441,18 +435,108 @@ function pp2RenderTodayList(){
 async function pp2EditRecord(id){
   const rec = (L.preprocess||[]).find(p => p.id === id);
   if(!rec){ toast('데이터 없음','d'); return; }
-  if(!confirm('이 record를 수정합니다.\n기존 대차 차감을 되돌리고 새 행으로 채워줄까요?')) return;
+  const card = document.getElementById('pp2RecCard_'+id);
+  if(!card) return;
+  // 카드 내용을 input 폼으로 교체
+  const today = (typeof tod==='function') ? tod() : new Date().toISOString().slice(0,10);
+  const availTypes = [...new Set(
+    (L.thawing||[])
+      .filter(t => pp2IsWorkingToday(t, today) && t.type)
+      .map(t => t.type)
+  )];
+  if(!availTypes.includes(rec.type)) availTypes.push(rec.type);
+  const typeOpts = availTypes.map(t => `<option ${t===rec.type?'selected':''}>${t}</option>`).join('');
+  card.innerHTML = `
+    <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px">
+      <select id="pp2Ed_type_${id}" style="height:32px;padding:0 6px;border:1px solid var(--g3);border-radius:4px;font-size:13px">${typeOpts}</select>
+      <input id="pp2Ed_cage_${id}" type="text" value="${rec.cage||''}" placeholder="케이지" style="width:90px;height:32px;padding:0 6px;border:1px solid var(--g3);border-radius:4px;font-size:13px;text-align:center">
+      <input id="pp2Ed_start_${id}" type="text" maxlength="5" placeholder="HH:MM" value="${rec.start||''}" style="width:70px;height:32px;padding:0 6px;border:1px solid var(--g3);border-radius:4px;font-size:13px;text-align:center">
+      <span>~</span>
+      <input id="pp2Ed_end_${id}" type="text" maxlength="5" placeholder="HH:MM" value="${rec.end||''}" style="width:70px;height:32px;padding:0 6px;border:1px solid var(--g3);border-radius:4px;font-size:13px;text-align:center">
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px">
+      <label style="font-size:12px;color:var(--g6)">KG</label>
+      <input id="pp2Ed_kg_${id}" type="number" step="0.01" value="${rec.kg||0}" style="width:90px;height:32px;padding:0 6px;border:1px solid var(--g3);border-radius:4px;font-size:13px;text-align:right">
+      <label style="font-size:12px;color:var(--g6)">비가식부</label>
+      <input id="pp2Ed_waste_${id}" type="number" step="0.01" value="${rec.waste||0}" style="width:80px;height:32px;padding:0 6px;border:1px solid var(--g3);border-radius:4px;font-size:13px;text-align:right">
+      <label style="font-size:12px;color:var(--g6)">인원</label>
+      <input id="pp2Ed_workers_${id}" type="number" value="${rec.workers||0}" style="width:60px;height:32px;padding:0 6px;border:1px solid var(--g3);border-radius:4px;font-size:13px;text-align:center">
+    </div>
+    <div style="display:flex;gap:6px;justify-content:flex-end">
+      <button class="btn bo bsm" onclick="pp2EditCancel('${id}')">취소</button>
+      <button class="btn bp bsm" onclick="pp2EditSave('${id}')">저장</button>
+    </div>
+  `;
+}
+
+async function pp2EditCancel(id){
+  // 단순 다시 렌더
+  await pp2Refresh();
+}
+
+async function pp2EditSave(id){
+  const rec = (L.preprocess||[]).find(p => p.id === id);
+  if(!rec){ toast('데이터 없음','d'); return; }
+  const d = {
+    type:    document.getElementById('pp2Ed_type_'+id).value,
+    cage:    document.getElementById('pp2Ed_cage_'+id).value.trim(),
+    start:   document.getElementById('pp2Ed_start_'+id).value.trim(),
+    end:     document.getElementById('pp2Ed_end_'+id).value.trim(),
+    kg:      parseFloat(document.getElementById('pp2Ed_kg_'+id).value) || 0,
+    waste:   parseFloat(document.getElementById('pp2Ed_waste_'+id).value) || 0,
+    workers: parseInt(document.getElementById('pp2Ed_workers_'+id).value) || 0,
+  };
+  const err = pp2ValidateRow(d);
+  if(err){ toast(`${err} 입력 필요`,'d'); return; }
+  if(d.workers <= 0){ toast('인원 입력 필요','d'); return; }
+  // 1) 기존 touches 복원
   await pp2RestoreTouches(rec);
-  await pp2DeleteRecordInternal(id, true);
-  pp2AddRow({
-    type: rec.type, cage: rec.cage,
-    start: rec.start, end: rec.end,
-    kg: rec.kg, waste: rec.waste,
+  // 2) 새 FIFO 차감
+  const totalDeduct = d.kg + d.waste;
+  const {touches, shortage} = pp2FifoDeduct(d.type, totalDeduct);
+  if(shortage > 0.01){
+    if(!confirm(`${d.type} 잔량 ${shortage.toFixed(2)}kg 부족\n그대로 저장?`)){
+      // 복원해 둔 것 다시 차감(원상복구) — 간단히 전체 새로고침으로 처리
+      await pp2Refresh();
+      return;
+    }
+  }
+  // 3) 레코드 업데이트
+  const today = (typeof tod==='function') ? tod() : new Date().toISOString().slice(0,10);
+  const wagons = [...new Set(touches.map(t => t.cart).filter(Boolean))].join(',');
+  const distribution = {};
+  touches.forEach(t => {
+    if(!t.cart) return;
+    if(!distribution[t.cart]){
+      distribution[t.cart] = { type: d.type, start: d.start, end: d.end, cages: {}, cart: t.cart };
+    }
+    distribution[t.cart].cages[d.cage] =
+      (distribution[t.cart].cages[d.cage] || 0) + t.deductKg;
   });
-  const wEl = document.getElementById('pp2_workers');
-  if(wEl && rec.workers) wEl.value = rec.workers;
-  toast('수정 모드: 값 고치면 자동 저장','i');
-  document.getElementById('pp2_table')?.scrollIntoView({behavior:'smooth', block:'start'});
+  rec.type = d.type;
+  rec.cage = d.cage;
+  rec.cageTanks = { [d.cage]: '' };
+  rec.start = d.start;
+  rec.end = d.end;
+  rec.kg = parseFloat(d.kg.toFixed(2));
+  rec.waste = parseFloat(d.waste.toFixed(2));
+  rec.workers = d.workers;
+  rec.wagons = wagons;
+  rec.distribution = distribution;
+  rec.thawingTouches = touches;
+  if(rec.fbId && typeof fbUpdate==='function'){
+    try { await fbUpdate('preprocess', rec.fbId, {
+      type: rec.type, cage: rec.cage, cageTanks: rec.cageTanks,
+      start: rec.start, end: rec.end,
+      kg: rec.kg, waste: rec.waste, workers: rec.workers,
+      wagons: rec.wagons, distribution: rec.distribution,
+      thawingTouches: rec.thawingTouches,
+    }); }
+    catch(e){ console.error('preprocess 수정 저장 실패', e); }
+  }
+  if(typeof saveL==='function') saveL();
+  await pp2Refresh();
+  toast('수정 완료 ✓','s');
 }
 
 async function pp2DeleteRecord(id){
@@ -520,6 +604,8 @@ if(typeof window !== 'undefined'){
   window.pp2SaveOne = pp2SaveOne;
   window.pp2SaveAll = pp2SaveAll;
   window.pp2EditRecord = pp2EditRecord;
+  window.pp2EditCancel = pp2EditCancel;
+  window.pp2EditSave = pp2EditSave;
   window.pp2DeleteRecord = pp2DeleteRecord;
   window.pp2FinishDay = pp2FinishDay;
 }
