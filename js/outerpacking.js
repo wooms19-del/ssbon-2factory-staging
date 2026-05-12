@@ -430,7 +430,7 @@ function renderOpDone(list) {
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 16px">
           <div><span style="color:var(--g5);font-size:12px">내포장 생산</span><br><b>${inner} EA</b></div>
           <div><span style="color:var(--g5);font-size:12px">파우치 불량</span><br><b>${defEa} EA</b></div>
-          <div><span style="color:var(--g5);font-size:12px">외포장 완료</span><br><b>${(item.outerEa||(item.ea||item.innerEa||0)-(item.productDefect||0)).toLocaleString()} EA</b></div>
+          <div><span style="color:var(--g5);font-size:12px">외포장 완료</span><br><b>${(opEa(item)||(item.ea||item.innerEa||0)-(item.productDefect||0)).toLocaleString()} EA</b></div>
           <div><span style="color:var(--g5);font-size:12px">외박스 사용</span><br><b>${boxes} 박스</b></div>
           <div><span style="color:var(--g5);font-size:12px">불량률</span><br><b>${rate}</b></div>
           ${item.sample ? `<div><span style="color:var(--g5);font-size:12px">샘플</span><br><b>${item.sample} EA</b></div>` : ''}

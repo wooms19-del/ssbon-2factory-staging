@@ -14,22 +14,146 @@ firebase.initializeApp(firebaseConfig);
 var db = firebase.firestore();
 
 // ============================================================
+// 외포장 완료 EA 계산 헬퍼
+// outerEa(박스×입수) + remainEa(잔량 EA) 합산
+// 외포장 EA를 표시/집계하는 모든 곳에서 사용
+// ============================================================
+function opEa(r){
+  if(!r) return 0;
+  return (parseInt(r.outerEa)||0) + (parseInt(r.remainEa)||0);
+}
+
+// ============================================================
 // 🔄 자동 reload — 새 코드 배포 시 모든 디바이스 즉시 reload
 // 사용 예: deploy 후 _config/version 문서의 value를 새 timestamp로 set
 // 태블릿이 며칠 켜져있어도 자동 갱신됨
+//
+// 입력 중 가드: 사용자가 input/textarea에 값 적고 있거나 focus되어 있으면
+//             reload 미루고 토스트로 알림. 입력 끝나면 자동 reload.
 // ============================================================
+
+// 입력 중 여부 판단
+function _isUserBusy(){
+  // -1. 비동기 저장/삭제/갱신 진행 중이면 busy (race condition 차단)
+  if((window._inProgress||0) > 0) return true;
+  // 0. 최근 30초 내 사용자 활동 (마우스/터치/키보드) 있으면 busy
+  //    "시작" 같은 액션 직후 폼이 비워져도 reload 미루기 위함
+  if(window._lastActivityAt && (Date.now() - window._lastActivityAt) < 30000) return true;
+  // 1. 현재 focus된 요소가 input/textarea/select?
+  const ae = document.activeElement;
+  if(ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.tagName === 'SELECT')){
+    if(!ae.disabled && !ae.readOnly) return true;
+  }
+  // 2. 어떤 input/textarea에 값이 들어가 있는데 비워지지 않은 상태?
+  const inputs = document.querySelectorAll('input[type="text"], input[type="number"], input[type="time"], input[type="date"], textarea');
+  for(const el of inputs){
+    if(el.disabled || el.readOnly) continue;
+    if(el.value && el.value.trim() !== '' && el.value !== el.defaultValue){
+      // placeholder만 있는 빈 입력칸이 아니라, 사용자가 뭔가 적어둠
+      return true;
+    }
+  }
+  return false;
+}
+
+// 사용자 활동 추적 — _isUserBusy 의 "최근 30초" 체크용
+window._lastActivityAt = Date.now();
+['mousemove','click','keydown','touchstart','scroll'].forEach(function(ev){
+  document.addEventListener(ev, function(){ window._lastActivityAt = Date.now(); }, {passive:true, capture:true});
+});
+
+// 대기 중인 새 버전
+window._pendingNewVer = null;
+
+// 토스트 한 번만 띄움
+window._reloadToastShown = false;
+function _showReloadToast(newVer){
+  if(window._reloadToastShown) return;
+  window._reloadToastShown = true;
+  // 기존 toast 함수 있으면 사용, 없으면 직접 div 띄움
+  const div = document.createElement('div');
+  div.id = '_reloadBanner';
+  div.style.cssText = 'position:fixed;top:60px;right:16px;z-index:9999;background:#1d4ed8;color:#fff;padding:12px 16px;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.2);font-size:13px;max-width:320px';
+  div.innerHTML = '🔄 새 버전 있음<div style="font-size:11px;opacity:0.85;margin-top:4px">작업 중인 입력이 있어 자동 적용을 기다리고 있습니다</div><div style="margin-top:8px;display:flex;gap:6px"><button onclick="_applyReloadNow()" style="background:#fff;color:#1d4ed8;border:none;padding:5px 12px;border-radius:4px;cursor:pointer;font-size:12px;font-weight:600">지금 적용</button><button onclick="document.getElementById(\'_reloadBanner\').remove();window._reloadToastShown=false" style="background:transparent;color:#fff;border:1px solid rgba(255,255,255,0.5);padding:5px 12px;border-radius:4px;cursor:pointer;font-size:12px">나중에</button></div>';
+  document.body.appendChild(div);
+}
+
+window._applyReloadNow = function(){
+  console.log('[auto-reload] 사용자가 즉시 적용 선택');
+  location.reload(true);
+};
+
+// 1초마다 입력 비었는지 체크 → 비었으면 reload (자동)
+setInterval(function(){
+  if(!window._pendingNewVer) return;
+  if(!_isUserBusy()){
+    console.log('[auto-reload] 입력 종료 감지 — reload');
+    location.reload(true);
+  }
+}, 1000);
+
 db.collection('_config').doc('version').onSnapshot(function(snap){
   if(!snap.exists) return;
   var v = snap.data() && snap.data().value;
   if(!v) return;
   if(window._appVer && window._appVer !== v){
-    console.log('[auto-reload] 새 버전 감지 — reload:', window._appVer, '→', v);
-    location.reload(true);
+    if(_isUserBusy()){
+      console.log('[auto-reload] 입력 중 — reload 대기:', window._appVer, '→', v);
+      window._pendingNewVer = v;
+      _showReloadToast(v);
+      // _appVer 갱신 안 함 → 다음 onSnapshot도 같은 비교 가능
+    } else {
+      console.log('[auto-reload] 새 버전 감지 — 즉시 reload:', window._appVer, '→', v);
+      location.reload(true);
+    }
   }
-  window._appVer = v;
+  if(!window._pendingNewVer) window._appVer = v;
 }, function(err){
   console.warn('[auto-reload] listener 오류 (무시):', err && err.message);
 });
+
+// ============================================================
+// 🔄 listener fault tolerance — onSnapshot 끊겨도 새 버전 감지
+// 문제: 모바일/태블릿 백그라운드·절전·장시간 켜둔 경우 onSnapshot 연결 끊김.
+//       이 디바이스는 _config/version PATCH 받지 못해 영영 옛 코드 실행.
+// 해결: (1) 탭 다시 활성화될 때 (2) 창 focus될 때 (3) 60초마다
+//       manual fetch로 version 비교 → onSnapshot과 같은 reload 분기 실행.
+// 영향: listener 살아있으면 중복 동작이지만 무해 (같은 _appVer면 분기 통과 X).
+//       listener 끊긴 디바이스는 이 셋 중 하나라도 trigger되면 reload.
+// ============================================================
+window._checkVersionNow = function(reason){
+  db.collection('_config').doc('version').get().then(function(snap){
+    if(!snap.exists) return;
+    var v = snap.data() && snap.data().value;
+    if(!v) return;
+    if(window._appVer && window._appVer !== v){
+      if(_isUserBusy()){
+        console.log('[version-check:'+reason+'] 입력 중 — reload 대기:', window._appVer, '→', v);
+        window._pendingNewVer = v;
+        _showReloadToast(v);
+      } else {
+        console.log('[version-check:'+reason+'] 새 버전 감지 — 즉시 reload:', window._appVer, '→', v);
+        location.reload(true);
+      }
+    }
+    if(!window._pendingNewVer && !window._appVer) window._appVer = v;
+  }).catch(function(err){
+    console.warn('[version-check:'+reason+'] fetch 실패 (무시):', err && err.message);
+  });
+};
+
+// (1) 탭 visibility — 백그라운드에서 다시 보일 때
+document.addEventListener('visibilitychange', function(){
+  if(!document.hidden) window._checkVersionNow('visibility');
+});
+
+// (2) 창 focus — 다른 앱에서 돌아올 때
+window.addEventListener('focus', function(){
+  window._checkVersionNow('focus');
+});
+
+// (3) 60초 폴링 — 위 둘 다 안 트리거되는 극단 케이스 안전망
+setInterval(function(){ window._checkVersionNow('poll'); }, 60000);
 
 // ============================================================
 // 🔄 BFCache 무효화 — 태블릿 잠금 풀고 페이지 부활 시 강제 reload
@@ -50,7 +174,7 @@ window.addEventListener('pageshow', function(e){
 // ============================================================
 // 🔧 STAGING MODE - production은 절대 영향받지 않음
 // ============================================================
-const _STAGING_MODE = true;
+const _STAGING_MODE = false;
 
 if(_STAGING_MODE){
   // 1) 화면에 "STAGING" 빨간 배지 표시
@@ -339,6 +463,7 @@ function makeDocId(colName) {
 
 // 저장
 async function fbSave(colName, data, customDocId) {
+  window._inProgress = (window._inProgress||0) + 1;
   try {
     let docId = customDocId || makeDocId(colName);
     // thawing 저장 시 무결성 검증·보정
@@ -407,11 +532,14 @@ async function fbSave(colName, data, customDocId) {
   } catch(e) {
     console.error('Firebase 저장 오류:', e);
     return null;
+  } finally {
+    window._inProgress--;
   }
 }
 
 // 업데이트
 async function fbUpdate(colName, fbId, data) {
+  window._inProgress = (window._inProgress||0) + 1;
   try {
     await db.collection(colName).doc(fbId).update( data);
     fbClearCache(colName); // 업데이트 후 캐시 무효화
@@ -419,11 +547,14 @@ async function fbUpdate(colName, fbId, data) {
   } catch(e) {
     console.error('Firebase 업데이트 오류:', e);
     return false;
+  } finally {
+    window._inProgress--;
   }
 }
 
 // 삭제
 async function fbDelete(colName, fbId) {
+  window._inProgress = (window._inProgress||0) + 1;
   try {
     await db.collection(colName).doc(fbId).delete();
     fbClearCache(colName); // 삭제 후 캐시 무효화
@@ -431,6 +562,8 @@ async function fbDelete(colName, fbId) {
   } catch(e) {
     console.error('Firebase 삭제 오류:', e);
     return false;
+  } finally {
+    window._inProgress--;
   }
 }
 

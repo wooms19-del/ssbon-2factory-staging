@@ -274,7 +274,7 @@ function _perfBuildRows(th, pp, ck, sh, pk, op, sc){
   var byDP={};
   pkClean.forEach(function(r){
     var key=d(r)+'|'+(r.product||'기타');
-    if(!byDP[key]) byDP[key]={ea:0,pouch:0,defect:0,workers:0,subKg:0,subName:'',sauceKg:0};
+    if(!byDP[key]) byDP[key]={ea:0,pouch:0,defect:0,workers:0,subKg:0,subName:'',sauceKg:0,types:{}};
     byDP[key].ea += parseFloat(r.ea)||0;
     byDP[key].pouch += parseFloat(r.pouch)||0;
     byDP[key].defect += parseFloat(r.defect)||0;
@@ -282,6 +282,9 @@ function _perfBuildRows(th, pp, ck, sh, pk, op, sc){
     if(r.subKg) byDP[key].subKg += parseFloat(r.subKg)||0;
     if(r.subName && !byDP[key].subName) byDP[key].subName=r.subName;
     if(r.sauceKg) byDP[key].sauceKg += parseFloat(r.sauceKg)||0;
+    // ★ type 누적 (월별 방식)
+    var t = String(r.type||'').trim();
+    if(t) byDP[key].types[t] = (byDP[key].types[t]||0) + (parseFloat(r.ea)||0);
   });
 
   // 6) 외포장 매핑 (테스트 제외)
@@ -290,7 +293,7 @@ function _perfBuildRows(th, pp, ck, sh, pk, op, sc){
     if(r.testRun||r.isTest) return;
     var key=d(r)+'|'+(r.product||'');
     if(!opMap[key]) opMap[key]={ea:0,boxes:0,tray:0,trayDef:0,unitCnt:0,boxDef:0};
-    opMap[key].ea += parseInt(r.outerEa)||0;
+    opMap[key].ea += opEa(r);
     opMap[key].boxes += parseInt(r.outerBoxes)||0;
     opMap[key].tray += parseInt(r.trayUsed||r.tray)||0;
     opMap[key].trayDef += parseInt(r.trayDefect)||0;
@@ -310,6 +313,117 @@ function _perfBuildRows(th, pp, ck, sh, pk, op, sc){
   var ckMap=sumKg(ck, testCkIds);
   var shMap=sumKg(sh, testShIds);
   var ppMap=sumKg(pp, testPpIds);
+
+  // ★ 월별생산량 방식: 부위별 합계 (date|type → kg)
+  // type 빈값/누락이면 '_'로 묶어 fallback 처리
+  function sumByDateType(coll, idset, typeFn){
+    var m={};
+    coll.forEach(function(r){
+      if(idset.has(idOf(r))) return;
+      var dt = d(r);
+      var t = typeFn ? typeFn(r) : (String(r.type||'').trim() || '_');
+      if(!dt) return;
+      var k = dt+'|'+t;
+      m[k] = (m[k]||0) + (parseFloat(r.kg)||0);
+    });
+    return m;
+  }
+  var ppByDT = sumByDateType(pp, testPpIds);
+  var ckByDT = sumByDateType(ck, testCkIds);
+  // shredding은 type 누락 많음 — cooking 매칭으로 type 추론 (월별과 동일)
+  function _shTypeFor(r){
+    var t = String(r.type||'').trim();
+    if(t) return t;
+    var dt = d(r);
+    // shredding의 wagonIn으로 cooking 찾아서 cooking type 사용
+    var winList = _perfSplit(r.wagonIn);
+    for(var i=0;i<winList.length;i++){
+      var win = winList[i];
+      // ★ 같은 날짜 cooking 우선 매칭 (다른 날짜의 같은 wagon 번호 잘못 잡는 것 방지)
+      var sameDay = ck.find(function(c){return d(c)===dt && _perfSplit(c.wagonOut).indexOf(win)>=0;});
+      if(sameDay && sameDay.type) return String(sameDay.type).trim();
+    }
+    // 같은 날 매칭 실패 시 전체 검색 (전날에서 넘어온 케이스)
+    for(var j=0;j<winList.length;j++){
+      var win2 = winList[j];
+      var any = ck.find(function(c){return _perfSplit(c.wagonOut).indexOf(win2)>=0;});
+      if(any && any.type) return String(any.type).trim();
+    }
+    return '_';
+  }
+  var shByDT = sumByDateType(sh, testShIds, _shTypeFor);
+
+  // thawing 부위별 합계 (date|type → totalKg)
+  var thByDateType = {};
+  thClean.forEach(function(r){
+    var dt = d(r);
+    var t = String(r.type||r.part||'').trim() || '_';
+    if(!dt) return;
+    var k = dt+'|'+t;
+    thByDateType[k] = (thByDateType[k]||0) + (parseFloat(r.totalKg)||0);
+  });
+
+  // ★ 월별생산량 방식 — packing(date,product)별 부위 + 분배 (allocMap)
+  // 같은 (date, type) 그룹의 packing들끼리 EA × kgea 비율로 pp/ck/sh/rm 분배
+  var _prodKgea = function(name){
+    var p = (typeof L!=='undefined' && L && L.products) ? L.products.find(function(x){return x.name===name;}) : null;
+    return p ? p.kgea : 0.05;
+  };
+  var _byDateForAlloc = {};
+  Object.keys(byDP).forEach(function(k){
+    var dt = k.split('|')[0];
+    var prod = k.split('|')[1];
+    var typeList = Object.keys(byDP[k].types || {});
+    var primaryType = typeList.length ? typeList.sort(function(a,b){return (byDP[k].types[b]||0)-(byDP[k].types[a]||0);})[0] : '';
+    if(!_byDateForAlloc[dt]) _byDateForAlloc[dt] = [];
+    _byDateForAlloc[dt].push({date:dt, product:prod, ea:byDP[k].ea, type:primaryType});
+  });
+  var allocMap = {};
+  function _dataByType(dt, t){
+    return {
+      rmKg: thByDateType[dt+'|'+t] || 0,
+      ppKg: ppByDT[dt+'|'+t] || 0,
+      ckKg: ckByDT[dt+'|'+t] || 0,
+      shKg: shByDT[dt+'|'+t] || 0
+    };
+  }
+  function _dataAll(dt){
+    var rm=0, ppKg=0, ckKg=0, shKg=0;
+    Object.keys(thByDateType).forEach(function(k){ if(k.indexOf(dt+'|')===0) rm+=thByDateType[k]; });
+    Object.keys(ppByDT).forEach(function(k){ if(k.indexOf(dt+'|')===0) ppKg+=ppByDT[k]; });
+    Object.keys(ckByDT).forEach(function(k){ if(k.indexOf(dt+'|')===0) ckKg+=ckByDT[k]; });
+    Object.keys(shByDT).forEach(function(k){ if(k.indexOf(dt+'|')===0) shKg+=shByDT[k]; });
+    return {rmKg:rm, ppKg:ppKg, ckKg:ckKg, shKg:shKg};
+  }
+  Object.keys(_byDateForAlloc).forEach(function(dt){
+    var packs = _byDateForAlloc[dt];
+    var byType = {};
+    packs.forEach(function(p){
+      var t = p.type || '_';
+      if(!byType[t]) byType[t] = [];
+      byType[t].push(p);
+    });
+    Object.keys(byType).forEach(function(t){
+      var group = byType[t];
+      var src = (t==='_') ? _dataAll(dt) : _dataByType(dt, t);
+      // 부위 명시했으나 그 부위 데이터 0이면 → 그날 전체 fallback
+      if(t!=='_' && src.rmKg===0 && src.ppKg===0) src = _dataAll(dt);
+      var totalMeat = group.reduce(function(s,p){return s + p.ea * (_prodKgea(p.product)||0.05);}, 0);
+      group.forEach(function(p){
+        var kgea = _prodKgea(p.product);
+        var ratio;
+        if(group.length===1) ratio = 1;
+        else if(totalMeat>0) ratio = (p.ea * (kgea||0.05)) / totalMeat;
+        else ratio = 1/group.length;
+        allocMap[dt+'|'+p.product] = {
+          rmKg: src.rmKg * ratio,
+          ppKg: src.ppKg * ratio,
+          ckKg: src.ckKg * ratio,
+          shKg: src.shKg * ratio
+        };
+      });
+    });
+  });
 
   // 8) 원육 사용량 (전처리 wagons → 방혈 cart 매칭)
   function getThKg(date){
@@ -391,8 +505,58 @@ function _perfBuildRows(th, pp, ck, sh, pk, op, sc){
     if(isNoMeat){
       return {bx:{}, kg:{}, poolKey:'NOMEAT-'+product, status:'NOMEAT'};
     }
-    // fallback: 그날 thClean 합계 + poolKey도 그날 thClean 기준 (trace 성공 제품과 같은 풀이면 같은 poolKey가 됨)
-    // ★ packing.type이 명시되어 있으면 그 type만으로 좁힘 (다른 부위 잘못 박는 것 방지)
+
+    // ★ 월별생산량 방식 — packing.type 우선 (사용자 입력 신뢰)
+    // chain 역추적은 packing.type 빈값일 때만 fallback
+    var pkD = pkClean.filter(function(r){ return d(r)===date && r.product===product; });
+    var pkTypes = new Set();
+    pkD.forEach(function(r){
+      var t = String(r.type||'').trim();
+      if(t) pkTypes.add(t);
+    });
+
+    // packing.type 명시되어 있으면 그 type만 thawing에서 가져옴
+    if(pkTypes.size > 0){
+      // thawing.date = 입고일이므로 date 만 보면 당일 입고됐지만 아직 안 풀린 박스도 매칭됨.
+      // 정확한 매칭: end 가 작업일 date 와 매칭되는 record (= 실제 그날 풀린 박스)
+      var prevD0 = _perfPrevD(date);
+      var _endsOnDay = function(r,day){
+        var e = String(r.end||'');
+        if(!e) return false;
+        if(e.length>=10 && e.slice(0,10)===day) return true;
+        if(e.length<=5 && d(r)===day) return true;
+        return false;
+      };
+      var thDay = thClean.filter(function(r){
+        if(d(r)!==date && d(r)!==prevD0) return false;
+        if(!_endsOnDay(r,date)) return false;
+        var p = (r.part||r.type||'').trim();
+        return pkTypes.has(p);
+      });
+      // 폴백: end 매칭 0 → 옛 동작 (date==date 매칭) — 옛 데이터 호환
+      if(!thDay.length){
+        thDay = thClean.filter(function(r){
+          if(d(r)!==date) return false;
+          var p = (r.part||r.type||'').trim();
+          return pkTypes.has(p);
+        });
+      }
+      var seen = new Set(); var ded = [];
+      thDay.forEach(function(r){
+        var k = (r.cart||'')+'|'+d(r)+'|'+(r.type||'');
+        if(seen.has(k)) return; seen.add(k); ded.push(r);
+      });
+      var bx={}, kg={};
+      ded.forEach(function(r){
+        var p = r.part||r.type||'';
+        bx[p] = (bx[p]||0) + (parseInt(r.boxes)||0);
+        kg[p] = (kg[p]||0) + (parseFloat(r.totalKg)||0);
+      });
+      var poolKey = 'PKTYPE-'+date+'-'+product+'-'+Array.from(pkTypes).sort().join(',');
+      return {bx:bx, kg:kg, poolKey:poolKey, status:'PK_TYPE'};
+    }
+
+    // packing.type 빈값 → 기존 chain 역추적 fallback
     var _fallback = function(status){
       var thDay = thClean.filter(function(r){ return d(r)===date; });
       var seen = new Set(); var ded = [];
@@ -400,27 +564,16 @@ function _perfBuildRows(th, pp, ck, sh, pk, op, sc){
         var k = (r.cart||'')+'|'+d(r)+'|'+(r.type||'');
         if(seen.has(k)) return; seen.add(k); ded.push(r);
       });
-      // ★ 해당 product의 packing record들의 type 모음 → 있으면 그 type만 사용
-      var pkD = pkClean.filter(function(r){ return d(r)===date && r.product===product; });
-      var pkTypes = new Set();
-      pkD.forEach(function(r){
-        var t = String(r.type||'').trim();
-        if(t) pkTypes.add(t);
-      });
       var bx={}, kg={};
       ded.forEach(function(r){
         var p = r.part||r.type||'';
-        // pkTypes 명시되어 있으면 그 type만 누적
-        if(pkTypes.size && !pkTypes.has(p)) return;
         bx[p] = (bx[p]||0) + (parseInt(r.boxes)||0);
         kg[p] = (kg[p]||0) + (parseFloat(r.totalKg)||0);
       });
       var poolKey = ded.map(function(r){ return d(r)+'|'+r.cart+'|'+(r.part||r.type); }).sort().join(';');
-      // 그날 thClean도 0건이면 정말 빈칸 (poolKey 고유로)
       if(!ded.length) poolKey = status+'-'+date+'-'+product;
       return {bx:bx, kg:kg, poolKey:poolKey, status:status, fallback:true};
     };
-    var pkD = pkClean.filter(function(r){ return d(r)===date && r.product===product; });
     if(!pkD.length) return {bx:{}, kg:{}, poolKey:'NODATA-'+date+'-'+product, status:'NODATA'};
     var pkW = new Set(); var pkC = new Set();
     pkD.forEach(function(r){
@@ -574,6 +727,7 @@ function _perfBuildRows(th, pp, ck, sh, pk, op, sc){
           partList.forEach(function(pn, ppi){
             var isFR = ppi===0;  // 첫 sub-row
             var isDF = isDayFirst && isFR;
+            var alloc = allocMap[date+'|'+prod] || {ppKg:0,ckKg:0,shKg:0};
             rows.push({
               date: date, dayNo: dayNo, product: prod,
               productIndex: pi, subRowIdx: ppi, totalSub: partList.length,
@@ -586,9 +740,9 @@ function _perfBuildRows(th, pp, ck, sh, pk, op, sc){
               boxSeoldo: pn==='설도' ? t.bx[pn] : 0,
               boxHongdu: (pn==='홍두깨'||pn==='홍두께') ? t.bx[pn] : 0,
               boxUdun:   pn==='우둔' ? t.bx[pn] : 0,
-              ppKg: isDF ? ppD : 0,
-              ckKg: isDF ? ckD : 0,
-              shKg: isDF ? shD : 0,
+              ppKg: isFR ? _perfR2(alloc.ppKg) : 0,
+              ckKg: isFR ? _perfR2(alloc.ckKg) : 0,
+              shKg: isFR ? _perfR2(alloc.shKg) : 0,
               sauceKg: isFR ? _perfR2(pkr.sauceKg) : 0,
               innerEa: isFR ? innerEa : 0,
               defPouch: isFR ? defPouch : 0,
@@ -630,9 +784,9 @@ function _perfBuildRows(th, pp, ck, sh, pk, op, sc){
             rmType: rmTypeStr,
             rmKg: rmKgVal,
             boxSeoldo: sd, boxHongdu: hd, boxUdun: ud,
-            ppKg: isDayFirst ? ppD : 0,
-            ckKg: isDayFirst ? ckD : 0,
-            shKg: isDayFirst ? shD : 0,
+            ppKg: _perfR2((allocMap[date+'|'+prod]||{}).ppKg || 0),
+            ckKg: _perfR2((allocMap[date+'|'+prod]||{}).ckKg || 0),
+            shKg: _perfR2((allocMap[date+'|'+prod]||{}).shKg || 0),
             sauceKg: _perfR2(pkr.sauceKg),
             innerEa: innerEa, defPouch: defPouch,
             outerBoxes: opR.boxes, boxDef: opR.boxDef,
@@ -663,7 +817,7 @@ function _perfBuildRows(th, pp, ck, sh, pk, op, sc){
   op.filter(function(r){return r.testRun||r.isTest;}).forEach(function(r){
     var key=d(r)+'|'+(r.product||'');
     if(!testOpByKey[key]) testOpByKey[key]={ea:0,boxes:0};
-    testOpByKey[key].ea+=parseInt(r.outerEa)||0;
+    testOpByKey[key].ea+=opEa(r);
     testOpByKey[key].boxes+=parseInt(r.outerBoxes)||0;
   });
   var testRows=[];
@@ -812,9 +966,9 @@ function _perfRenderTable(rows){
   // 13~20: 내포장~출고박스  21~22: FP·FC소스  23: 메추리알  24~25: 파우치·박스합계
   var MCOLS=new Set([0,1,2,3,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24]);
   // 날짜별 공유 병합 대상 (일수·날짜·소비기한)
-  var DAY_MCOLS=new Set([0,1,2]);
+  var DAY_MCOLS=new Set([0,1]);  // 일수, 날짜만 그날 단위 병합 (소비기한은 제품마다 다를 수 있어 제외)
   // 무육 제외 병합 대상 (전처리·자숙·파쇄 — meat 행만 묶고 noMeat는 빈셀)
-  var DAY_MEAT_COLS=new Set([9,10,11]);
+  var DAY_MEAT_COLS=new Set();  // 전처리/자숙/파쇄 = 제품마다 분배되어 표시 (병합 X)
 
   var headers=[
     '일수','날짜','소비기한','제품명',
@@ -848,7 +1002,8 @@ function _perfRenderTable(rows){
     var cells=[
       (r.dayNo>0 && r.dayRowIdx===0 && !isSubRow) ? r.dayNo : '',
       (r.dayRowIdx===0 && !isSubRow) ? r.date.slice(5) : '',
-      (r.dayRowIdx===0 && !isSubRow && r.expDate) ? r.expDate.slice(2).replace(/-/g,'.') : '',
+      // 소비기한: 각 제품의 첫 행마다 표시 (sub-row일 땐 첫 sub-row에만)
+      ((!isSubRow || r.subRowIdx===0) && r.expDate) ? r.expDate.slice(2).replace(/-/g,'.') : '',
       !isSubRow ? r.product : '',
       r.rmType||'',
       fmt(r.rmKg), r.boxSeoldo||'', r.boxHongdu||'', r.boxUdun||'',
