@@ -114,7 +114,6 @@ function showTab(mode,tab){
   } else if(tab==='packing'){
     if(!L.packing_pending) L.packing_pending = [];
     Promise.all([loadFromServer(today), loadOpenPacking()]).then(()=>{
-      renderPkWagonList();
       renderPL('packing');
       renderPkPending();
       // 진행중 있으면 진행중 카드 표시, 없으면 시작 카드 표시

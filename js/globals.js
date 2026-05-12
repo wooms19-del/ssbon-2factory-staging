@@ -72,7 +72,6 @@ document.addEventListener('DOMContentLoaded', function() {
       }
     });
   }
-  window.renderPkWagonList = renderPkWagonList;
   window.onPkWagonChange = onPkWagonChange;
   window.uploadCSV = uploadBarcodes;
   window.uploadBarcodes = uploadBarcodes;
