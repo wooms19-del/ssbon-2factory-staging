@@ -101,8 +101,19 @@ function pp2AddRow(data){
   const idx = _pp2RowIdx++;
   const tbody = document.getElementById('pp2_tbody');
   if(!tbody) return;
+  // 부위 옵션: 오늘 thawing에 잔량 있는 부위만
+  const today = (typeof tod==='function') ? tod() : new Date().toISOString().slice(0,10);
+  const availTypes = [...new Set(
+    (L.thawing||[])
+      .filter(t => t.date === today && (parseFloat(t.remainKg)||0) > 0.01 && t.type)
+      .map(t => t.type)
+  )];
+  // 수정 모드(data.type)에선 잔량 0이어도 그 부위는 포함
+  if(data.type && !availTypes.includes(data.type)) availTypes.push(data.type);
+  // 잔량 있는 부위 없으면 fallback (PP2_TYPES 전체)
+  const typeList = availTypes.length ? availTypes : PP2_TYPES;
   const typeOpts = '<option value="">선택</option>' +
-    PP2_TYPES.map(t => `<option ${t===data.type?'selected':''}>${t}</option>`).join('');
+    typeList.map(t => `<option ${t===data.type?'selected':''}>${t}</option>`).join('');
 
   // 이전 행의 종료 시각 → 이 행 시작 기본값
   let defaultStart = data.start || '';
