@@ -2251,11 +2251,25 @@ function ttmRenderTimeline(scen, workers, sim) {
   bars += bar(yCursor, 12*60+30, 13*60+30, '#C8882A', '2차', '', '점심 2차', [`12:30~13:30`]);
   yCursor += ROW_H;
 
-  // 종료선
+  // 종료선 — 내포장 종료(보라) + 최종 종료(빨강)
+  const fpPackEnd = sim.fp.pack.e;
+  const fcPackEnd = sim.fc.pack.e;
+  // 두 제품 내포장 종료선 (같은 시각이면 한 줄만)
+  const drawPackEndLine = (t, txt, yOffset) => `
+    <line x1="${xPos(t)}" y1="28" x2="${xPos(t)}" y2="${yCursor}" stroke="#7F77DD" stroke-width="1" stroke-dasharray="4 3" opacity="0.85"/>
+    <text x="${xPos(t)}" y="${yCursor + yOffset}" text-anchor="middle" font-size="11" fill="#7F77DD" font-weight="700">${fmt(t)} ${txt}</text>`;
+  if (fpPackEnd === fcPackEnd) {
+    bars += drawPackEndLine(fpPackEnd, '내포장', 14);
+  } else {
+    bars += drawPackEndLine(fpPackEnd, 'FP 내포장', 14);
+    bars += drawPackEndLine(fcPackEnd, 'FC 내포장', 28);
+  }
+  // 최종 종료선 (빨강)
+  const endLabelY = (fpPackEnd !== fcPackEnd) ? 42 : 28;
   bars += `<line x1="${xPos(sim.endMin)}" y1="28" x2="${xPos(sim.endMin)}" y2="${yCursor}" stroke="#A32D2D" stroke-width="1.5" stroke-dasharray="5 3" opacity="0.8"/>
-    <text x="${xPos(sim.endMin)}" y="${yCursor+14}" text-anchor="middle" font-size="11" fill="#A32D2D" font-weight="700">${fmt(sim.endMin)} 종료</text>`;
+    <text x="${xPos(sim.endMin)}" y="${yCursor + endLabelY}" text-anchor="middle" font-size="11" fill="#A32D2D" font-weight="700">${fmt(sim.endMin)} 종료</text>`;
 
-  const svgH = yCursor + 22;
+  const svgH = yCursor + endLabelY + 10;
   return `
     <style>
       .ttt-bar { cursor:pointer; }
