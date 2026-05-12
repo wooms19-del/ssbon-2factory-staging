@@ -10,7 +10,7 @@
 // - 기존 스키마 호환: wagonIn, kgIn, wagonOut, wagonOutDist, cartOut, cartOutDist
 // ============================================================
 
-const SH2_INIT_ROWS = 8;
+const SH2_INIT_ROWS = 6;
 let _sh2RowIdx = 0;
 
 async function sh2Render(){
@@ -27,19 +27,19 @@ async function sh2Render(){
         <button class="btn bo bsm" style="color:var(--d);border-color:var(--d);font-weight:600" onclick="sh2FinishDay()">⏹ 오늘 파쇄 종료</button>
       </div>
       <div style="overflow-x:auto">
-        <table id="sh2_table" style="width:100%;border-collapse:collapse;font-size:12px;min-width:900px">
+        <table id="sh2_table" style="width:100%;border-collapse:collapse;font-size:14px;min-width:980px">
           <thead>
             <tr style="background:#dc2626;color:#fff">
-              <th style="padding:6px 4px;border:1px solid #b91c1c;width:30px">#</th>
-              <th style="padding:6px 4px;border:1px solid #b91c1c;width:90px">부위</th>
-              <th style="padding:6px 4px;border:1px solid #b91c1c">산출 와건</th>
-              <th style="padding:6px 4px;border:1px solid #b91c1c;width:80px">산출 KG</th>
-              <th style="padding:6px 4px;border:1px solid #b91c1c;width:80px">비가식부</th>
-              <th style="padding:6px 4px;border:1px solid #b91c1c;width:60px">인원</th>
-              <th style="padding:6px 4px;border:1px solid #b91c1c;width:70px">시작</th>
-              <th style="padding:6px 4px;border:1px solid #b91c1c;width:70px">종료</th>
-              <th style="padding:6px 4px;border:1px solid #b91c1c;width:70px">작업시간</th>
-              <th style="padding:6px 4px;border:1px solid #b91c1c;width:36px"></th>
+              <th style="padding:10px 4px;border:1px solid #b91c1c;width:40px;font-size:13px">#</th>
+              <th style="padding:10px 4px;border:1px solid #b91c1c;width:110px;font-size:13px">부위</th>
+              <th style="padding:10px 4px;border:1px solid #b91c1c;width:120px;font-size:13px">산출 와건</th>
+              <th style="padding:10px 4px;border:1px solid #b91c1c;width:90px;font-size:13px">시작</th>
+              <th style="padding:10px 4px;border:1px solid #b91c1c;width:90px;font-size:13px">종료</th>
+              <th style="padding:10px 4px;border:1px solid #b91c1c;width:130px;font-size:13px">산출 KG</th>
+              <th style="padding:10px 4px;border:1px solid #b91c1c;width:120px;font-size:13px">비가식부</th>
+              <th style="padding:10px 4px;border:1px solid #b91c1c;width:80px;font-size:13px">인원</th>
+              <th style="padding:10px 4px;border:1px solid #b91c1c;width:80px;font-size:13px">작업시간</th>
+              <th style="padding:10px 4px;border:1px solid #b91c1c;width:44px;font-size:13px"></th>
             </tr>
           </thead>
           <tbody id="sh2_tbody"></tbody>
@@ -166,43 +166,43 @@ function sh2AddRow(data){
   tr.dataset.idx = idx;
   tr.style.cssText = 'background:#fef3c7';
   tr.innerHTML = `
-    <td style="border:1px solid #ddd;text-align:center;padding:4px;background:#fff">${tbody.children.length + 1}</td>
-    <td style="border:1px solid #ddd;padding:2px">
-      <select class="sh2-type" style="width:100%;border:none;padding:4px 2px;background:transparent;font-size:12px" onchange="sh2OnCellChange(${idx})">${typeOpts}</select>
+    <td style="border:1px solid #ddd;text-align:center;padding:8px 4px;background:#fff;font-size:13px;font-weight:600">${tbody.children.length + 1}</td>
+    <td style="border:1px solid #ddd;padding:0">
+      <select class="sh2-type" style="width:100%;height:42px;border:none;padding:0 6px;background:transparent;font-size:14px" onchange="sh2OnCellChange(${idx})">${typeOpts}</select>
     </td>
-    <td style="border:1px solid #ddd;padding:2px">
+    <td style="border:1px solid #ddd;padding:0">
       <input class="sh2-wagon-out" type="text" value="${data.wagonOut||''}" placeholder="예: 14,17"
-             style="width:100%;border:none;padding:4px 2px;background:transparent;font-size:12px;text-align:center"
+             style="width:100%;height:42px;border:none;padding:0 6px;background:transparent;font-size:14px;text-align:center"
              onchange="sh2OnCellChange(${idx})">
     </td>
-    <td style="border:1px solid #ddd;padding:2px">
-      <input class="sh2-kg" type="number" step="0.01" placeholder="0.00" value="${data.kg||''}"
-             style="width:100%;border:none;padding:4px 2px;background:transparent;font-size:12px;text-align:right"
-             onchange="sh2OnCellChange(${idx})">
-    </td>
-    <td style="border:1px solid #ddd;padding:2px">
-      <input class="sh2-waste" type="number" step="0.01" placeholder="0.00" value="${data.waste||''}"
-             style="width:100%;border:none;padding:4px 2px;background:transparent;font-size:12px;text-align:right"
-             onchange="sh2OnCellChange(${idx})">
-    </td>
-    <td style="border:1px solid #ddd;padding:2px">
-      <input class="sh2-workers" type="number" placeholder="0" value="${data.workers||''}"
-             style="width:100%;border:none;padding:4px 2px;background:transparent;font-size:12px;text-align:center"
-             onchange="sh2OnCellChange(${idx})">
-    </td>
-    <td style="border:1px solid #ddd;padding:2px">
+    <td style="border:1px solid #ddd;padding:0">
       <input class="sh2-start" type="text" inputmode="decimal" maxlength="5" placeholder="HH:MM" value="${defaultStart}"
-             style="width:100%;border:none;padding:4px 2px;background:transparent;font-size:12px;text-align:center"
+             style="width:100%;height:42px;border:none;padding:0 6px;background:transparent;font-size:14px;text-align:center"
              onchange="sh2OnCellChange(${idx})">
     </td>
-    <td style="border:1px solid #ddd;padding:2px">
+    <td style="border:1px solid #ddd;padding:0">
       <input class="sh2-end" type="text" inputmode="decimal" maxlength="5" placeholder="HH:MM" value="${data.end||''}"
-             style="width:100%;border:none;padding:4px 2px;background:transparent;font-size:12px;text-align:center"
+             style="width:100%;height:42px;border:none;padding:0 6px;background:transparent;font-size:14px;text-align:center"
              onchange="sh2OnCellChange(${idx})">
     </td>
-    <td class="sh2-dur" style="border:1px solid #ddd;text-align:center;padding:4px;background:#fff;color:var(--g5);font-size:11px">-</td>
-    <td style="border:1px solid #ddd;text-align:center;padding:2px;background:#fff">
-      <button onclick="sh2RemoveRow(${idx})" style="background:none;border:none;color:var(--g4);font-size:14px;cursor:pointer">⨯</button>
+    <td style="border:1px solid #ddd;padding:0">
+      <input class="sh2-kg" type="number" step="0.01" placeholder="0.00" value="${data.kg||''}"
+             style="width:100%;height:42px;border:none;padding:0 8px;background:transparent;font-size:14px;text-align:right"
+             onchange="sh2OnCellChange(${idx})">
+    </td>
+    <td style="border:1px solid #ddd;padding:0">
+      <input class="sh2-waste" type="number" step="0.01" placeholder="0.00" value="${data.waste||''}"
+             style="width:100%;height:42px;border:none;padding:0 8px;background:transparent;font-size:14px;text-align:right"
+             onchange="sh2OnCellChange(${idx})">
+    </td>
+    <td style="border:1px solid #ddd;padding:0">
+      <input class="sh2-workers" type="number" placeholder="0" value="${data.workers||''}"
+             style="width:100%;height:42px;border:none;padding:0 8px;background:transparent;font-size:14px;text-align:center"
+             onchange="sh2OnCellChange(${idx})">
+    </td>
+    <td class="sh2-dur" style="border:1px solid #ddd;text-align:center;padding:8px 4px;background:#fff;color:var(--g5);font-size:13px">-</td>
+    <td style="border:1px solid #ddd;text-align:center;padding:0;background:#fff">
+      <button onclick="sh2RemoveRow(${idx})" style="width:36px;height:42px;background:none;border:none;color:var(--g4);font-size:18px;cursor:pointer">⨯</button>
     </td>
   `;
   tbody.appendChild(tr);

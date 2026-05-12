@@ -11,7 +11,7 @@
 // ============================================================
 
 const PP2_TYPES = ['우둔', '홍두깨', '설도'];
-const PP2_INIT_ROWS = 12;
+const PP2_INIT_ROWS = 6;
 let _pp2RowIdx = 0;
 
 // 매칭 룰: 어제 방혈 시작분만 오늘 전처리에 보임 (그 이전은 X)
@@ -59,18 +59,18 @@ async function pp2Render(){
         <span style="font-size:11px;color:var(--g5)">명 · 변경 시 다음 저장부터 적용</span>
       </div>
       <div style="overflow-x:auto">
-        <table id="pp2_table" style="width:100%;border-collapse:collapse;font-size:12px;min-width:880px">
+        <table id="pp2_table" style="width:100%;border-collapse:collapse;font-size:14px;min-width:900px">
           <thead>
             <tr style="background:#dc2626;color:#fff">
-              <th style="padding:6px 4px;border:1px solid #b91c1c;width:30px">#</th>
-              <th style="padding:6px 4px;border:1px solid #b91c1c;width:90px">부위</th>
-              <th style="padding:6px 4px;border:1px solid #b91c1c;width:90px">케이지번호</th>
-              <th style="padding:6px 4px;border:1px solid #b91c1c;width:70px">시작</th>
-              <th style="padding:6px 4px;border:1px solid #b91c1c;width:70px">종료</th>
-              <th style="padding:6px 4px;border:1px solid #b91c1c">전처리KG(산출)</th>
-              <th style="padding:6px 4px;border:1px solid #b91c1c">비가식부 중량</th>
-              <th style="padding:6px 4px;border:1px solid #b91c1c;width:70px">작업시간</th>
-              <th style="padding:6px 4px;border:1px solid #b91c1c;width:36px"></th>
+              <th style="padding:10px 4px;border:1px solid #b91c1c;width:40px;font-size:13px">#</th>
+              <th style="padding:10px 4px;border:1px solid #b91c1c;width:110px;font-size:13px">부위</th>
+              <th style="padding:10px 4px;border:1px solid #b91c1c;width:120px;font-size:13px">케이지번호</th>
+              <th style="padding:10px 4px;border:1px solid #b91c1c;width:90px;font-size:13px">시작</th>
+              <th style="padding:10px 4px;border:1px solid #b91c1c;width:90px;font-size:13px">종료</th>
+              <th style="padding:10px 4px;border:1px solid #b91c1c;width:130px;font-size:13px">전처리KG</th>
+              <th style="padding:10px 4px;border:1px solid #b91c1c;width:120px;font-size:13px">비가식부</th>
+              <th style="padding:10px 4px;border:1px solid #b91c1c;width:80px;font-size:13px">작업시간</th>
+              <th style="padding:10px 4px;border:1px solid #b91c1c;width:44px;font-size:13px"></th>
             </tr>
           </thead>
           <tbody id="pp2_tbody"></tbody>
@@ -144,42 +144,42 @@ function pp2AddRow(data){
   tr.dataset.idx = idx;
   tr.style.cssText = 'background:#fef3c7';
   tr.innerHTML = `
-    <td style="border:1px solid #ddd;text-align:center;padding:4px;background:#fff">${tbody.children.length + 1}</td>
-    <td style="border:1px solid #ddd;padding:2px">
-      <select class="pp2-type" style="width:100%;border:none;padding:4px 2px;background:transparent;font-size:12px" onchange="pp2OnCellChange(${idx})">${typeOpts}</select>
+    <td style="border:1px solid #ddd;text-align:center;padding:8px 4px;background:#fff;font-size:13px;font-weight:600">${tbody.children.length + 1}</td>
+    <td style="border:1px solid #ddd;padding:0">
+      <select class="pp2-type" style="width:100%;height:42px;border:none;padding:0 6px;background:transparent;font-size:14px" onchange="pp2OnCellChange(${idx})">${typeOpts}</select>
     </td>
-    <td style="border:1px solid #ddd;padding:2px">
+    <td style="border:1px solid #ddd;padding:0">
       <input class="pp2-cage" type="text" value="${data.cage||''}" placeholder="예: 9,10"
-             style="width:100%;border:none;padding:4px 2px;background:transparent;font-size:12px;text-align:center"
+             style="width:100%;height:42px;border:none;padding:0 6px;background:transparent;font-size:14px;text-align:center"
              onchange="pp2OnCellChange(${idx})">
     </td>
-    <td style="border:1px solid #ddd;padding:2px">
+    <td style="border:1px solid #ddd;padding:0">
       <input class="pp2-start" type="text" inputmode="decimal" maxlength="5" placeholder="HH:MM"
              value="${defaultStart}"
-             style="width:100%;border:none;padding:4px 2px;background:transparent;font-size:12px;text-align:center"
+             style="width:100%;height:42px;border:none;padding:0 6px;background:transparent;font-size:14px;text-align:center"
              onchange="pp2OnCellChange(${idx})">
     </td>
-    <td style="border:1px solid #ddd;padding:2px">
+    <td style="border:1px solid #ddd;padding:0">
       <input class="pp2-end" type="text" inputmode="decimal" maxlength="5" placeholder="HH:MM"
              value="${data.end||''}"
-             style="width:100%;border:none;padding:4px 2px;background:transparent;font-size:12px;text-align:center"
+             style="width:100%;height:42px;border:none;padding:0 6px;background:transparent;font-size:14px;text-align:center"
              onchange="pp2OnCellChange(${idx})">
     </td>
-    <td style="border:1px solid #ddd;padding:2px">
+    <td style="border:1px solid #ddd;padding:0">
       <input class="pp2-kg" type="number" step="0.01" placeholder="0.00"
              value="${data.kg||''}"
-             style="width:100%;border:none;padding:4px 2px;background:transparent;font-size:12px;text-align:right"
+             style="width:100%;height:42px;border:none;padding:0 8px;background:transparent;font-size:14px;text-align:right"
              onchange="pp2OnCellChange(${idx})">
     </td>
-    <td style="border:1px solid #ddd;padding:2px">
+    <td style="border:1px solid #ddd;padding:0">
       <input class="pp2-waste" type="number" step="0.01" placeholder="0.00"
              value="${data.waste||''}"
-             style="width:100%;border:none;padding:4px 2px;background:transparent;font-size:12px;text-align:right"
+             style="width:100%;height:42px;border:none;padding:0 8px;background:transparent;font-size:14px;text-align:right"
              onchange="pp2OnCellChange(${idx})">
     </td>
-    <td class="pp2-dur" style="border:1px solid #ddd;text-align:center;padding:4px;background:#fff;color:var(--g5)">-</td>
-    <td style="border:1px solid #ddd;text-align:center;padding:2px;background:#fff">
-      <button onclick="pp2RemoveRow(${idx})" style="background:none;border:none;color:var(--g4);font-size:14px;cursor:pointer">⨯</button>
+    <td class="pp2-dur" style="border:1px solid #ddd;text-align:center;padding:8px 4px;background:#fff;color:var(--g5);font-size:13px">-</td>
+    <td style="border:1px solid #ddd;text-align:center;padding:0;background:#fff">
+      <button onclick="pp2RemoveRow(${idx})" style="width:36px;height:42px;background:none;border:none;color:var(--g4);font-size:18px;cursor:pointer">⨯</button>
     </td>
   `;
   tbody.appendChild(tr);
