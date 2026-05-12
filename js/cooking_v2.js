@@ -230,13 +230,14 @@ async function onCkStartBtn(){
   }
   saveL();
 
-  document.getElementById('ck_tankRows').innerHTML='';
-  document.getElementById('ck_startTime').value='';
+  const tankRowsEl = document.getElementById('ck_tankRows');
+  if(tankRowsEl) tankRowsEl.innerHTML='';
   _ckRowIdx=0;
-  document.querySelectorAll('.ck-cage-cb').forEach(c=>c.checked=false);
 
-  document.getElementById('ck_startCard').style.display='none';
-  document.getElementById('ck_pendingCard').style.display='';
+  const startCardEl = document.getElementById('ck_startCard');
+  if(startCardEl) startCardEl.style.display='none';
+  const pendingCardEl = document.getElementById('ck_pendingCard');
+  if(pendingCardEl) pendingCardEl.style.display='';
   renderCkPending();
   toast(`자숙 시작 — ${added}개 탱크 진행중 ✓`,'i');
 }
