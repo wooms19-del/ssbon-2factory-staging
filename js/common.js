@@ -824,9 +824,15 @@ async function fetchTodayFromServer() {
   if(isUserEditing()) return;   // 입력 중·패널 열림 → 스킵
   _isRefreshing = true;
   try {
-    await loadFromServer(tod());
+    const today = tod();
+    // 어제 날짜 (KST 로컬 컴포넌트로 안전하게)
+    const ydDate = new Date(today + 'T00:00:00');
+    ydDate.setDate(ydDate.getDate() - 1);
+    const yd = ydDate.getFullYear()+'-'+String(ydDate.getMonth()+1).padStart(2,'0')+'-'+String(ydDate.getDate()).padStart(2,'0');
+    await loadFromServer(today);
+    await loadFromServer(yd);          // ★ 전처리/파쇄가 어제 thawing/cooking 필요
     await loadOpenPacking();
-    await loadOpenCooking();  // ★ Phase 2-A: cooking_pending도 매 30초 fresh
+    await loadOpenCooking();
     refreshCurrentTab_();
   } catch(e) {
     console.warn('자동갱신 오류:', e);
