@@ -371,5 +371,5 @@ async function saveCkEnd(id){
 
   renderCkPending();
   renderPL('cooking');
-  renderShWagonList();
+  if(typeof sh2Render==='function') sh2Render();
 }

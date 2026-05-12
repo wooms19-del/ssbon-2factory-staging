@@ -55,9 +55,7 @@ document.addEventListener('DOMContentLoaded', function() {
   window.delRecipe = delRecipe;
   window.selectRecipe = selectRecipe;
   window.renderCkCageList = renderCkCageList;
-  window.renderShWagonList = renderShWagonList;
   window.onCkCageChange = onCkCageChange;
-  window.onShWagonChange = onShWagonChange;
   function onPkWagonDirectInput(idx){
     const directInput = document.querySelector(`#pkRow_${idx} .pk-row-wagon-input`);
     const hidden = document.querySelector(`#pkRow_${idx} .pk-row-wagon`);
