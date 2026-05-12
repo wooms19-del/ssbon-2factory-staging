@@ -2400,26 +2400,28 @@ function ttmRenderWorkerSlots(scen, workers, sim) {
     const sumMark = isFull
       ? `<span style="color:#0F6E56">${r.total} ✓</span>`
       : `<span style="color:#A32D2D">${r.total}/${r.onsite}</span>`;
-    return `<tr style="${stripe}">
-      <td style="padding:6px 4px;border:1px solid #ddd;font-weight:600;font-size:11px;text-align:center;white-space:nowrap">${r.label}</td>
+    // 모든 행 동일 높이 = 100% / 행수 (tbody 안에서)
+    const rowH = `height:${(100/slots.length).toFixed(2)}%`;
+    return `<tr style="${stripe};${rowH}">
+      <td style="padding:6px 4px;border:1px solid #ddd;font-weight:600;font-size:11px;text-align:center;white-space:nowrap;vertical-align:middle">${r.label}</td>
       ${keys.map((k,ci) => {
         const v = r[k];
         const color = v ? wkColors[ci] : '#ccc';
         const fw = v >= 10 ? 700 : 600;
-        return `<td style="padding:6px 2px;text-align:center;border:1px solid #ddd;color:${color};font-weight:${fw};font-size:13px">${v||'·'}</td>`;
+        return `<td style="padding:6px 2px;text-align:center;border:1px solid #ddd;color:${color};font-weight:${fw};font-size:13px;vertical-align:middle">${v||'·'}</td>`;
       }).join('')}
-      <td style="padding:6px 2px;text-align:center;font-weight:700;font-size:13px;border:1px solid #ddd;background:#f8f7f3">${sumMark}</td>
+      <td style="padding:6px 2px;text-align:center;font-weight:700;font-size:13px;border:1px solid #ddd;background:#f8f7f3;vertical-align:middle">${sumMark}</td>
     </tr>`;
   }).join('');
 
   const headerStyle = 'padding:0 4px;font-weight:700;border:1px solid #0d4a8a;font-size:12px;text-align:center';
   const earlyNote = (earlyFpCrush || earlyFcCrush) ? ' · ⚠️ 파쇄 조기출근 필요' : '';
   return `
-    <div style="font-size:11px;color:var(--color-text-tertiary);margin-bottom:8px">
+    <div style="font-size:11px;color:var(--color-text-tertiary);margin-bottom:8px;flex-shrink:0">
       정원 ${totalWorkers}명 · 외국인 ${earlyWorkers}명(${fmt(sim.fp.pre.s)}~), 관리 +${mgrMin}명(${fmt(mgrTimeMin)}~), 한국인(${fmt(joinTimeMin)}~)${earlyNote}
     </div>
-    <div style="border:2px solid #185FA5;border-radius:6px;overflow:hidden">
-    <table style="width:100%;border-collapse:collapse;font-size:13px;background:#fff">
+    <div style="border:2px solid #185FA5;border-radius:6px;flex:1;display:flex;overflow:hidden">
+    <table style="width:100%;height:100%;border-collapse:collapse;font-size:13px;background:#fff">
       <thead>
         <tr style="background:linear-gradient(135deg,#185FA5,#1a6db5);color:#fff;height:36px">
           <th style="${headerStyle}">시간대</th>
