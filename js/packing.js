@@ -789,6 +789,28 @@ function removePkRow(idx){
   if(el) el.remove();
 }
 
+// ★ 제품에 부재료가 필요한지 판정 (옵션 C: 레시피 inner 부분 일치 + 제품명 폴백)
+// 반환: 필요한 부재료명(string) 또는 '' (불필요)
+function pkNeedsSubmat(productName){
+  if(!productName) return '';
+  const submats = L.submats || [];
+  const p = (L.products||[]).find(x => x.name === productName);
+  if(!p) return '';
+  // 1순위: 레시피 inner에 submats가 부분 일치
+  const rc = (L.recipes||{})[productName];
+  if(rc && Array.isArray(rc.inner)){
+    for(const item of rc.inner){
+      const itemName = String(item.name||'');
+      const matched = submats.find(s => itemName.includes(s));
+      if(matched) return matched;
+    }
+  }
+  // 2순위: 제품명에 submats 이름 포함
+  const matched = submats.find(s => productName.includes(s));
+  if(matched) return matched;
+  return '';
+}
+
 function onPkRowProd(idx){
   const row = document.getElementById('pkRow_'+idx);
   if(!row) return;
@@ -829,29 +851,12 @@ function onPkRowProd(idx){
     }
   }
 
-  // ★ 부재료 박스 표시/숨김 (옵션 C: 레시피 inner 우선, 제품명 폴백)
+  // ★ 부재료 박스 표시/숨김 (옵션 C: 공통 함수 pkNeedsSubmat)
   const subBox = document.getElementById('pkRowSubBox_'+idx);
   if(subBox && p){
-    const submats = L.submats || [];
-    let neededSubmat = '';
-    // 1순위: 레시피의 inner에 submats 이름이 포함된 항목이 있는지 (부분 일치)
-    // 예: inner "깐메추리알" 안에 submat "메추리알" 포함됨
-    const rc = (L.recipes||{})[p.name];
-    if(rc && Array.isArray(rc.inner)){
-      for(const item of rc.inner){
-        const itemName = String(item.name||'');
-        const matched = submats.find(s => itemName.includes(s));
-        if(matched){ neededSubmat = matched; break; }
-      }
-    }
-    // 2순위: 제품명에 submats 이름이 포함되어 있는지
-    if(!neededSubmat){
-      const matched = submats.find(s => p.name.includes(s));
-      if(matched) neededSubmat = matched;
-    }
+    const neededSubmat = pkNeedsSubmat(p.name);
     if(neededSubmat){
       subBox.style.display = '';
-      // 부재료 옵션을 그 부재료 1개로 제한
       const subSel = row.querySelector('.pk-row-subnm');
       if(subSel){
         subSel.innerHTML = `<option value="${neededSubmat}">${neededSubmat}</option>`;
@@ -859,12 +864,10 @@ function onPkRowProd(idx){
       }
     } else {
       subBox.style.display = 'none';
-      // 부재료 값 비우기
       const subSel = row.querySelector('.pk-row-subnm');
       if(subSel) subSel.value = '';
     }
   } else if(subBox){
-    // 제품 미선택 시 숨김
     subBox.style.display = 'none';
   }
 }
@@ -1110,10 +1113,11 @@ function renderPkPending(){
               <span id="pkEndStankSum_${r.id}" style="color:var(--g5);font-weight:500">합계 0kg</span>
             </div>
           </div>
+          ${pkNeedsSubmat(r.product) ? `
           <div class="fgrp">
-            <label class="fl">부재료량</label>
+            <label class="fl">부재료량 (${pkNeedsSubmat(r.product)})</label>
             <input class="fc" type="number" step="0.01" id="pkEnd_subkg_${r.id}" placeholder="0.00">
-          </div>
+          </div>` : `<input type="hidden" id="pkEnd_subkg_${r.id}" value="0">`}
         </div>
         <div style="display:flex;gap:8px">
           <button class="btn bs bblk" style="flex:1" onclick="savePkEnd('${r.id}')">종료 저장</button>
