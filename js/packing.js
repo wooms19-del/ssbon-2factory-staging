@@ -330,6 +330,8 @@ function addPkMachRow(){
       </div>
     </div>`;
   document.getElementById('pk_machRows').appendChild(row);
+  // ★ 새 카드 추가 시 다른 카드의 입력값까지 반영해 와건/카트 칩 갱신
+  if(typeof pkRefreshWagonRemain === 'function') pkRefreshWagonRemain();
 }
 
 // 와건/카트 버튼 토글 (다중 선택)
