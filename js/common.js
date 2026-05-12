@@ -416,7 +416,10 @@ function dayOfWeek(dateStr){ const d=new Date(dateStr+'T00:00:00'); return DAYS[
 function dateWithDay(dateStr){ return dateStr+' ('+dayOfWeek(dateStr)+')'; }
 function setText(id,v){ const el=document.getElementById(id); if(el) el.textContent=v; }
 function getYesterday_(){
-  const d = new Date(); d.setDate(d.getDate()-1);
+  // ★ tod() 기반 (헤더 날짜 변경 반영) + 로컬 컴포넌트 직접 조립 (UTC 어긋남 방지)
+  const today = (typeof tod==='function') ? tod() : new Date().toISOString().slice(0,10);
+  const d = new Date(today + 'T00:00:00');
+  d.setDate(d.getDate()-1);
   return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
 }
 function gid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,5); }

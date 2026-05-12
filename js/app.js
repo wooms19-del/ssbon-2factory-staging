@@ -166,16 +166,27 @@ function init(){
   if(upDate) upDate.value = tod();
   const expDate = document.getElementById('exp_date');
   if(expDate) expDate.value = tod();
-  const n=new Date(), dys=['일','월','화','수','목','금','토'];
-  document.getElementById('hDate').textContent=`${n.getMonth()+1}/${n.getDate()}(${dys[n.getDay()]})`;
+  // 페이지 로드 시 저장된 _testDate 복원
+  const _saved = sessionStorage.getItem('_testDate');
+  if(_saved && /^\d{4}-\d{2}-\d{2}$/.test(_saved)){
+    window._testDate = _saved;
+    window.tod = ()=> window._testDate || new Date().toISOString().slice(0,10);
+    const d=new Date(_saved+'T00:00:00');
+    const dys2=['일','월','화','수','목','금','토'];
+    document.getElementById('hDate').textContent=`${d.getMonth()+1}/${d.getDate()}(${dys2[d.getDay()]}) ✏️`;
+  } else {
+    const n=new Date(), dys=['일','월','화','수','목','금','토'];
+    document.getElementById('hDate').textContent=`${n.getMonth()+1}/${n.getDate()}(${dys[n.getDay()]})`;
+  }
   // 날짜 클릭 시 날짜 변경 (테스트용)
-  // 날짜 클릭 시 변경
   document.getElementById('hDate').style.cursor='pointer';
   document.getElementById('hDate').title='클릭하여 날짜 변경';
   document.getElementById('hDate').onclick=()=>{
-    const val = prompt('날짜 입력 (예: 2026-04-13)', tod());
-    if(!val) return;
+    const val = prompt('날짜 입력 (예: 2026-04-13). 비우고 확인 시 오늘로 복귀.', tod());
+    if(val === null) return;
+    if(val === ''){ sessionStorage.removeItem('_testDate'); window._testDate = null; location.reload(); return; }
     if(!/^\d{4}-\d{2}-\d{2}$/.test(val)){ toast('날짜 형식 오류 (YYYY-MM-DD)','d'); return; }
+    sessionStorage.setItem('_testDate', val);
     const d=new Date(val+'T00:00:00');
     const dys2=['일','월','화','수','목','금','토'];
     document.getElementById('hDate').textContent=`${d.getMonth()+1}/${d.getDate()}(${dys2[d.getDay()]}) ✏️`;
@@ -183,7 +194,7 @@ function init(){
     window.tod = ()=> window._testDate || new Date().toISOString().slice(0,10);
     toast(`날짜 변경: ${val}`,'i');
     // 날짜 변경 후 어제+오늘 데이터 새로 로드
-    const yd = (()=>{const d=new Date(val+'T00:00:00');d.setDate(d.getDate()-1);return d.toISOString().slice(0,10);})();
+    const yd = (()=>{const d=new Date(val+'T00:00:00');d.setDate(d.getDate()-1);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');})();
     Promise.all([loadFromServer(val), loadFromServer(yd)]).then(()=>{
       showTab(MODE, MODE==='i'?ITAB:DTAB);
     });
