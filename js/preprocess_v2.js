@@ -16,6 +16,9 @@ async function loadOpenThawingAndRender(){
 function onPpStartBtn(){ pp2SaveAll(); }
 // 외부 호환 — globals.js가 참조하는 onPpWagonChange (v2에선 사용 안 함, 빈 stub)
 function onPpWagonChange(){ /* v2 미사용 */ }
+// 외부 호환 — globals.js line 50 ReferenceError 방지
+function getSelectedWagons(){ return []; }
+function updPpWagon(){ /* v2 미사용 */ }
 
 let _pp2RowIdx = 0;
 
