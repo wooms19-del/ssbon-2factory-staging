@@ -975,9 +975,9 @@ async function onPkStartBtn(){
   document.getElementById('pk_startCard').style.display='none';
   document.getElementById('pk_pendingCard').style.display='';
 
-  renderPkPending();
   const wasEditing = !!_pkEditingId;
-  _pkEditingId = null;  // 클리어
+  _pkEditingId = null;  // ★ renderPkPending 호출 전에 클리어 (수정 중 배지 안 남게)
+  renderPkPending();
   // ★ 수정 모드 UI 복구
   _restorePkStartCardUI();
   toast(wasEditing ? '포장 수정됨 ✓' : `포장 시작 — ${added}개 설비 진행중 ✓`, wasEditing ? 's' : 'i');
