@@ -297,10 +297,10 @@ async function exportThawingChecklist() {
       ['작업일자', date],
       ['총 작업 인원', '2명'],
       ['제품명', ty],
-      ['대차별 중량(KG)', totalKg.toFixed(2)],
+      ['대차별 중량(KG)', totalKg],
     ];
     Object.entries(totalByType).forEach(([t,v])=>{
-      metaRows.push([`총 무게(${t})`, v.toFixed(2)]);
+      metaRows.push([`총 무게(${t})`, v]);
     });
     
     const titleStartRow = rowIdx;
@@ -329,7 +329,8 @@ async function exportThawingChecklist() {
         fill: { fgColor:{rgb:META_BG} }, border: BORDER_ALL
       };
       styles[cellRef(rowIdx,9)] = {
-        font: FONT_DEFAULT, alignment: ALIGN_CENTER, border: BORDER_ALL
+        font: FONT_DEFAULT, alignment: ALIGN_CENTER, border: BORDER_ALL,
+        ...(typeof value === 'number' ? { numFmt: '0.00' } : {})
       };
       styles[cellRef(rowIdx,10)] = {
         font: FONT_DEFAULT, alignment: ALIGN_CENTER, border: BORDER_ALL
@@ -451,7 +452,7 @@ async function exportThawingChecklist() {
       
       const row = [
         i + 1, ty, cart,
-        bx.weight ? bx.weight.toFixed(2) : '',
+        bx.weight || '',
         rfStart, rfEnd, thawTemp,
         bx.expiry, bloodStart, bloodEnd, bloodTemp
       ];
@@ -459,7 +460,8 @@ async function exportThawingChecklist() {
 
       for(let c = 0; c < 11; c++) {
         styles[cellRef(rowIdx, c)] = {
-          font: FONT_DEFAULT, alignment: ALIGN_CENTER, border: BORDER_ALL
+          font: FONT_DEFAULT, alignment: ALIGN_CENTER, border: BORDER_ALL,
+          ...(c === 3 && typeof bx.weight === 'number' && bx.weight ? { numFmt: '0.00' } : {})
         };
       }
       rowIdx++;
