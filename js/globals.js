@@ -95,8 +95,6 @@ document.addEventListener('DOMContentLoaded', function() {
   window.onCkStartBtn = onCkStartBtn;
   window.addCkTankRow = addCkTankRow;
   window.removeCkRow = removeCkRow;
-  // 파쇄 새 함수
-  window.onShStartBtn = onShStartBtn;
   // 포장 새 함수
   window.setPkNow = setPkNow;
   window.addPkMachRow = addPkMachRow;
