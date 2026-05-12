@@ -1046,8 +1046,11 @@ function renderPkPending(){
       wcText = ''; // 메추리알 등 noMeat 제품: 와건/카트 표시 안 함
     } else {
       const parts = [];
-      if(r.wagon) parts.push(`와건 ${r.wagon}`);
-      if(r.cart)  parts.push(`카트 ${r.cart}`);
+      // ★ wagon 비어있으면 wagonDist 키로 폴백
+      const wagonStr = r.wagon || (r.wagonDist ? Object.keys(r.wagonDist).join(',') : '');
+      const cartStr  = r.cart  || (r.cartDist  ? Object.keys(r.cartDist).join(',')  : '');
+      if(wagonStr) parts.push(`와건 ${wagonStr}`);
+      if(cartStr)  parts.push(`카트 ${cartStr}`);
       wcText = parts.length ? parts.join(' · ') : '와건 -';
     }
     const subText = `${wcText ? wcText+' · ' : ''}시작 ${r.start} · ${r.workers}명`;
