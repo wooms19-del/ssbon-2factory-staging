@@ -50,7 +50,7 @@ async function sh2Render(){
         <button class="btn bp bblk" onclick="sh2SaveAll()" style="flex:2;padding:8px">전체 저장</button>
       </div>
       <div style="font-size:11px;color:var(--g5);margin-top:6px;text-align:center">
-        ※ 필수칸(부위·산출와건·산출KG·인원·시작·종료) 다 채우면 자동 저장.
+        ※ 입력 후 [전체 저장] 버튼을 눌러야 저장됨.
       </div>
     </div>
     <div class="card">
@@ -231,14 +231,6 @@ function sh2OnCellChange(idx){
   const dur = sh2CalcDur(start, end);
   const durCell = tr.querySelector('.sh2-dur');
   if(durCell) durCell.textContent = dur !== null ? dur.toFixed(2) : '-';
-
-  const d = sh2GetRowData(idx);
-  if(!d) return;
-  if(d.type && d.wagonOut && d.kg > 0 && d.workers > 0
-     && /^\d{1,2}:\d{2}$/.test(d.start) && /^\d{1,2}:\d{2}$/.test(d.end)
-     && !tr.dataset.saved){
-    sh2SaveOne(idx);
-  }
 }
 
 function sh2CalcDur(start, end){
@@ -501,7 +493,7 @@ function sh2RenderTodayList(){
       총 ${list.length}건 · 투입 ${totalKgIn.toFixed(2)}kg → 산출 ${totalKg.toFixed(2)}kg · 비가식부 ${totalWaste.toFixed(2)}kg${yieldText}
     </div>
     ${list.map(r => `
-      <div style="border:1px solid var(--g2);border-radius:8px;padding:10px;margin-bottom:8px">
+      <div id="sh2RecCard_${r.id}" style="border:1px solid var(--g2);border-radius:8px;padding:10px;margin-bottom:8px">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
           <div>
             <strong style="font-size:14px">${r.type||'-'} · 와건${r.wagonIn} → 와건${r.wagonOut}</strong>
@@ -526,19 +518,101 @@ function sh2RenderTodayList(){
 async function sh2EditRecord(id){
   const rec = (L.shredding||[]).find(r => r.id === id);
   if(!rec){ toast('데이터 없음','d'); return; }
-  if(!confirm('이 record를 수정하시겠습니까?')) return;
-  await sh2DeleteRecordInternal(id, true);
-  sh2AddRow({
-    type: rec.type,
-    wagonOut: rec.wagonOut,
-    kg: rec.kg,
-    waste: rec.waste,
-    workers: rec.workers,
-    start: rec.start,
-    end: rec.end,
-  });
-  toast('수정 모드: 값 고치면 자동 저장','i');
-  document.getElementById('sh2_table')?.scrollIntoView({behavior:'smooth', block:'start'});
+  const card = document.getElementById('sh2RecCard_'+id);
+  if(!card) return;
+  const avail = sh2GetWagonAvail();
+  const availTypes = [...new Set(avail.map(a => a.type))];
+  if(rec.type && !availTypes.includes(rec.type)) availTypes.push(rec.type);
+  const typeOpts = availTypes.map(t => `<option ${t===rec.type?'selected':''}>${t}</option>`).join('');
+  card.innerHTML = `
+    <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px">
+      <select id="sh2Ed_type_${id}" style="height:32px;padding:0 6px;border:1px solid var(--g3);border-radius:4px;font-size:13px">${typeOpts}</select>
+      <input id="sh2Ed_wagonOut_${id}" type="text" value="${rec.wagonOut||''}" placeholder="산출와건" style="width:90px;height:32px;padding:0 6px;border:1px solid var(--g3);border-radius:4px;font-size:13px;text-align:center">
+      <input id="sh2Ed_start_${id}" type="text" maxlength="5" placeholder="HH:MM" value="${rec.start||''}" style="width:70px;height:32px;padding:0 6px;border:1px solid var(--g3);border-radius:4px;font-size:13px;text-align:center">
+      <span>~</span>
+      <input id="sh2Ed_end_${id}" type="text" maxlength="5" placeholder="HH:MM" value="${rec.end||''}" style="width:70px;height:32px;padding:0 6px;border:1px solid var(--g3);border-radius:4px;font-size:13px;text-align:center">
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px">
+      <label style="font-size:12px;color:var(--g6)">산출KG</label>
+      <input id="sh2Ed_kg_${id}" type="number" step="0.01" value="${rec.kg||0}" style="width:90px;height:32px;padding:0 6px;border:1px solid var(--g3);border-radius:4px;font-size:13px;text-align:right">
+      <label style="font-size:12px;color:var(--g6)">비가식부</label>
+      <input id="sh2Ed_waste_${id}" type="number" step="0.01" value="${rec.waste||0}" style="width:80px;height:32px;padding:0 6px;border:1px solid var(--g3);border-radius:4px;font-size:13px;text-align:right">
+      <label style="font-size:12px;color:var(--g6)">인원</label>
+      <input id="sh2Ed_workers_${id}" type="number" value="${rec.workers||0}" style="width:60px;height:32px;padding:0 6px;border:1px solid var(--g3);border-radius:4px;font-size:13px;text-align:center">
+    </div>
+    <div style="display:flex;gap:6px;justify-content:flex-end">
+      <button class="btn bo bsm" onclick="sh2EditCancel('${id}')">취소</button>
+      <button class="btn bp bsm" onclick="sh2EditSave('${id}')">저장</button>
+    </div>
+  `;
+}
+
+async function sh2EditCancel(id){
+  await sh2Refresh();
+}
+
+async function sh2EditSave(id){
+  const rec = (L.shredding||[]).find(r => r.id === id);
+  if(!rec){ toast('데이터 없음','d'); return; }
+  const d = {
+    type:     document.getElementById('sh2Ed_type_'+id).value,
+    wagonOut: document.getElementById('sh2Ed_wagonOut_'+id).value.trim(),
+    start:    document.getElementById('sh2Ed_start_'+id).value.trim(),
+    end:      document.getElementById('sh2Ed_end_'+id).value.trim(),
+    kg:       parseFloat(document.getElementById('sh2Ed_kg_'+id).value) || 0,
+    waste:    parseFloat(document.getElementById('sh2Ed_waste_'+id).value) || 0,
+    workers:  parseInt(document.getElementById('sh2Ed_workers_'+id).value) || 0,
+  };
+  const err = sh2ValidateRow(d);
+  if(err){ toast(`${err} 입력 필요`,'d'); return; }
+  // FIFO 재계산: 기존 레코드를 잠시 빼고 새로 차감
+  // L.shredding에서 이 rec를 제외한 상태로 sh2GetWagonAvail이 계산되도록 → 임시로 제외
+  const origIdx = L.shredding.findIndex(r => r.id === id);
+  if(origIdx >= 0) L.shredding.splice(origIdx, 1);
+  const totalDeduct = d.kg + d.waste;
+  const {touches, shortage} = sh2FifoDeduct(d.type, totalDeduct);
+  if(shortage > 0.01){
+    if(!confirm(`${d.type} 자숙 잔량 ${shortage.toFixed(2)}kg 부족\n그대로 저장?`)){
+      // 원복
+      if(origIdx >= 0) L.shredding.splice(origIdx, 0, rec);
+      await sh2Refresh();
+      return;
+    }
+  }
+  // 새 값으로 rec 업데이트
+  const wagonIn = touches.map(t => t.wagon).join(',');
+  const wagonInDist = {};
+  touches.forEach(t => { wagonInDist[t.wagon] = t.deductKg; });
+  const kgIn = touches.reduce((s, t) => s + t.deductKg, 0);
+  rec.type = d.type;
+  rec.wagonIn = wagonIn;
+  rec.wagonInDist = wagonInDist;
+  rec.kgIn = parseFloat(kgIn.toFixed(2));
+  rec.wagonOut = d.wagonOut;
+  rec.wagonOutDist = { [d.wagonOut]: parseFloat(d.kg.toFixed(2)) };
+  rec.kg = parseFloat(d.kg.toFixed(2));
+  rec.waste = parseFloat(d.waste.toFixed(2));
+  rec.workers = d.workers;
+  rec.start = d.start;
+  rec.end = d.end;
+  rec._shTouches = touches;
+  // 다시 L.shredding에 복귀 (같은 위치로)
+  if(origIdx >= 0) L.shredding.splice(origIdx, 0, rec);
+  else L.shredding.push(rec);
+  if(rec.fbId && typeof fbUpdate==='function'){
+    try { await fbUpdate('shredding', rec.fbId, {
+      type: rec.type,
+      wagonIn: rec.wagonIn, wagonInDist: rec.wagonInDist, kgIn: rec.kgIn,
+      wagonOut: rec.wagonOut, wagonOutDist: rec.wagonOutDist,
+      kg: rec.kg, waste: rec.waste, workers: rec.workers,
+      start: rec.start, end: rec.end,
+      _shTouches: rec._shTouches,
+    }); }
+    catch(e){ console.error('shredding 수정 저장 실패', e); }
+  }
+  if(typeof saveL==='function') saveL();
+  await sh2Refresh();
+  toast('수정 완료 ✓','s');
 }
 
 async function sh2DeleteRecord(id){
@@ -567,6 +641,8 @@ if(typeof window !== 'undefined'){
   window.sh2SaveOne = sh2SaveOne;
   window.sh2SaveAll = sh2SaveAll;
   window.sh2EditRecord = sh2EditRecord;
+  window.sh2EditCancel = sh2EditCancel;
+  window.sh2EditSave = sh2EditSave;
   window.sh2DeleteRecord = sh2DeleteRecord;
   window.sh2FinishDay = sh2FinishDay;
 }
