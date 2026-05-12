@@ -532,8 +532,8 @@ async function saveCkEnd(id){
     wagonInDist: wagonInDist,     // 투입 (케이지에서 빠진 양)
     note
   };
+  delete completed.fbId;  // ★ rec(cooking_pending)의 fbId가 cooking으로 옮겨가지 않게
   L.cooking_pending = L.cooking_pending.filter(r=>r.id!==id);
-  L.cooking.push(completed);
   saveL();
 
   // ★ cooking_pending Firebase에서 삭제 (packing 패턴 동일)
@@ -542,9 +542,13 @@ async function saveCkEnd(id){
     catch(e) { console.error('[cooking] cooking_pending 삭제 실패:', e); }
   }
 
+  // ★ Firebase에 cooking 저장 → fbId 받은 후에 L.cooking에 push
   const fbId = await fbSave('cooking', completed);
-  if(fbId){ completed.fbId=fbId; saveL(); toast(`${completed.tank} 종료 저장됨 ✓`); }
-  else { toast('저장 실패 - 로컬에만 저장됨','d'); }
+  if(fbId){ completed.fbId = fbId; }
+  L.cooking.push(completed);
+  saveL();
+  if(fbId) toast(`${completed.tank} 종료 저장됨 ✓`);
+  else toast('저장 실패 - 로컬에만 저장됨','d');
 
   renderCkPending();
   renderPL('cooking');
