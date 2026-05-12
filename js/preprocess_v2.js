@@ -23,7 +23,7 @@ function pp2YesterdayOf(today){
   // today = "2026-05-12" → "2026-05-11"
   const d = new Date(today + 'T00:00:00');
   d.setDate(d.getDate() - 1);
-  return d.toISOString().slice(0, 10);
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
 }
 function pp2IsWorkingToday(t, today){
   const startDate = pp2StartDateOf(t);
