@@ -494,11 +494,13 @@ async function exportThawingChecklist() {
     ws['!cols'] = [5, 11, 7, 11, 14, 14, 11, 14, 18, 14, 12].map(w=>({wch:w}));
     ws['!merges'] = merges;
     // 행 높이 설정 (한 페이지에 18행 다 들어가도록 조정)
+    const blankRow = titleEndRow + 1;   // 빈 구분 행
+    const headerRow = titleEndRow + 2;  // 본문 헤더 행
     const rowHeights = [];
     for(let r = 0; r < rowIdx; r++) {
-      if(r < 6) rowHeights.push({hpt: 22});       // 메타박스 6행
-      else if(r === 6) rowHeights.push({hpt: 8});  // 빈 행 (구분용 작게)
-      else if(r === 7) rowHeights.push({hpt: 26}); // 헤더
+      if(r <= titleEndRow) rowHeights.push({hpt: 22});  // 메타박스
+      else if(r === blankRow) rowHeights.push({hpt: 8});  // 빈 행 (구분용 작게)
+      else if(r === headerRow) rowHeights.push({hpt: 26}); // 헤더
       else rowHeights.push({hpt: 22});             // 본문 18행
     }
     ws['!rows'] = rowHeights;
