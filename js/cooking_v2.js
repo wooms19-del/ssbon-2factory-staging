@@ -178,7 +178,8 @@ function removeCkRow(idx){
 }
 
 function setCkNow(){
-  document.getElementById('ck_startTime').value = nowHM();
+  const el = document.getElementById('ck_startTime');
+  if(el) el.value = nowHM();
 }
 function setCkRowNow(idx){
   const row=document.getElementById('ckRow_'+idx);
