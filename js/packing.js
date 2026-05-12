@@ -68,7 +68,10 @@ function addPkMachRow(){
   });
   (L.packing_pending||[]).filter(p => {
     const d = String(p.date||'').slice(0,10);
-    return d===today;
+    if(d !== today) return false;
+    // 옵션 C: 수정 중인 record는 자기 자신 점유분이라 사용량에서 제외
+    if(_pkEditingId && p.id === _pkEditingId) return false;
+    return true;
   }).forEach(p => {
     if(p.wagonDist){
       Object.entries(p.wagonDist).forEach(([w,kg])=>{ usedMap[w]=(usedMap[w]||0)+(parseFloat(kg)||0); });
@@ -965,6 +968,8 @@ function startEditPkPending(id){
   if(!L.packing_pending) L.packing_pending=[];
   const rec = L.packing_pending.find(r=>r.id===id);
   if(!rec){ toast('데이터 없음','d'); return; }
+  // 편집 모드 마킹 (addPkMachRow가 사용량 계산 시 본 record 제외하도록 먼저 설정)
+  _pkEditingId = id;
   // 입력 카드 펼침 + 새 row 추가
   document.getElementById('pk_startCard').style.display='';
   document.getElementById('pk_machRows').innerHTML='';
@@ -1010,12 +1015,15 @@ function startEditPkPending(id){
         if(btn && btn.dataset.done!=='true') btn.click();
       });
     }
-    // 와건별 kg 분배 채우기 (wagonDist/cartDist)
+    // 와건별 kg 분배 채우기 (wagonDist/cartDist) — togglePkWagon이 row 추가했으니 그 안의 kg input 갱신
     if(rec.wagonDist){
       setTimeout(()=>{
         Object.entries(rec.wagonDist).forEach(([w,kg])=>{
-          const inp = r2.querySelector(`.pk-wagon-kg-input[data-w="${w}"]`);
-          if(inp) inp.value = kg;
+          const wdRow = r2.querySelector(`.pk-wd-row[data-w="${w}"][data-kind="wagon"]`);
+          if(wdRow){
+            const kgInp = wdRow.querySelector('.pk-wd-kg');
+            if(kgInp) kgInp.value = kg;
+          }
         });
         if(typeof pkWagonSumChange==='function') pkWagonSumChange(idx);
       }, 100);
@@ -1023,15 +1031,16 @@ function startEditPkPending(id){
     if(rec.cartDist){
       setTimeout(()=>{
         Object.entries(rec.cartDist).forEach(([c,kg])=>{
-          const inp = r2.querySelector(`.pk-cart-kg-input[data-w="${c}"]`);
-          if(inp) inp.value = kg;
+          const wdRow = r2.querySelector(`.pk-wd-row[data-w="${c}"][data-kind="cart"]`);
+          if(wdRow){
+            const kgInp = wdRow.querySelector('.pk-wd-kg');
+            if(kgInp) kgInp.value = kg;
+          }
         });
         if(typeof pkWagonSumChange==='function') pkWagonSumChange(idx);
       }, 100);
     }
   }, 50);
-  // 편집 모드 마킹
-  _pkEditingId = id;
   // 시작 카드로 스크롤
   document.getElementById('pk_startCard').scrollIntoView({behavior:'smooth', block:'start'});
   toast('수정 모드: 값을 고치고 시작 저장','i');
