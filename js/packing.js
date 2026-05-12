@@ -834,11 +834,15 @@ function onPkRowProd(idx){
   if(subBox && p){
     const submats = L.submats || [];
     let neededSubmat = '';
-    // 1순위: 레시피의 inner에 submats 이름이 있는지
+    // 1순위: 레시피의 inner에 submats 이름이 포함된 항목이 있는지 (부분 일치)
+    // 예: inner "깐메추리알" 안에 submat "메추리알" 포함됨
     const rc = (L.recipes||{})[p.name];
     if(rc && Array.isArray(rc.inner)){
-      const found = rc.inner.find(i => submats.includes(i.name));
-      if(found) neededSubmat = found.name;
+      for(const item of rc.inner){
+        const itemName = String(item.name||'');
+        const matched = submats.find(s => itemName.includes(s));
+        if(matched){ neededSubmat = matched; break; }
+      }
     }
     // 2순위: 제품명에 submats 이름이 포함되어 있는지
     if(!neededSubmat){
