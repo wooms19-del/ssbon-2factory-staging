@@ -447,24 +447,44 @@ async function pp2EditRecord(id){
   if(!availTypes.includes(rec.type)) availTypes.push(rec.type);
   const typeOpts = availTypes.map(t => `<option ${t===rec.type?'selected':''}>${t}</option>`).join('');
   card.innerHTML = `
-    <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px">
-      <select id="pp2Ed_type_${id}" style="height:32px;padding:0 6px;border:1px solid var(--g3);border-radius:4px;font-size:13px">${typeOpts}</select>
-      <input id="pp2Ed_cage_${id}" type="text" value="${rec.cage||''}" placeholder="케이지" style="width:90px;height:32px;padding:0 6px;border:1px solid var(--g3);border-radius:4px;font-size:13px;text-align:center">
-      <input id="pp2Ed_start_${id}" type="text" maxlength="5" placeholder="HH:MM" value="${rec.start||''}" style="width:70px;height:32px;padding:0 6px;border:1px solid var(--g3);border-radius:4px;font-size:13px;text-align:center">
-      <span>~</span>
-      <input id="pp2Ed_end_${id}" type="text" maxlength="5" placeholder="HH:MM" value="${rec.end||''}" style="width:70px;height:32px;padding:0 6px;border:1px solid var(--g3);border-radius:4px;font-size:13px;text-align:center">
-    </div>
-    <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:8px">
-      <label style="font-size:12px;color:var(--g6)">KG</label>
-      <input id="pp2Ed_kg_${id}" type="number" step="0.01" value="${rec.kg||0}" style="width:90px;height:32px;padding:0 6px;border:1px solid var(--g3);border-radius:4px;font-size:13px;text-align:right">
-      <label style="font-size:12px;color:var(--g6)">비가식부</label>
-      <input id="pp2Ed_waste_${id}" type="number" step="0.01" value="${rec.waste||0}" style="width:80px;height:32px;padding:0 6px;border:1px solid var(--g3);border-radius:4px;font-size:13px;text-align:right">
-      <label style="font-size:12px;color:var(--g6)">인원</label>
-      <input id="pp2Ed_workers_${id}" type="number" value="${rec.workers||0}" style="width:60px;height:32px;padding:0 6px;border:1px solid var(--g3);border-radius:4px;font-size:13px;text-align:center">
-    </div>
-    <div style="display:flex;gap:6px;justify-content:flex-end">
-      <button class="btn bo bsm" onclick="pp2EditCancel('${id}')">취소</button>
-      <button class="btn bp bsm" onclick="pp2EditSave('${id}')">저장</button>
+    <div style="background:#fff7ed;border:1px solid #fb923c;border-radius:6px;padding:10px">
+      <div style="font-size:11px;color:#c2410c;font-weight:600;margin-bottom:8px">✏️ 수정 중</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-bottom:8px">
+        <label style="display:flex;flex-direction:column;gap:3px">
+          <span style="font-size:11px;color:#475569;font-weight:600">부위</span>
+          <select id="pp2Ed_type_${id}" style="height:34px;padding:0 8px;border:1px solid #94a3b8;border-radius:4px;background:#fff;font-size:13px">${typeOpts}</select>
+        </label>
+        <label style="display:flex;flex-direction:column;gap:3px">
+          <span style="font-size:11px;color:#475569;font-weight:600">케이지번호</span>
+          <input id="pp2Ed_cage_${id}" type="text" value="${rec.cage||''}" placeholder="예: 1,2" style="height:34px;padding:0 8px;border:1px solid #94a3b8;border-radius:4px;background:#fff;font-size:13px;text-align:center">
+        </label>
+        <label style="display:flex;flex-direction:column;gap:3px">
+          <span style="font-size:11px;color:#475569;font-weight:600">시작</span>
+          <input id="pp2Ed_start_${id}" type="text" maxlength="5" placeholder="HH:MM" value="${rec.start||''}" style="height:34px;padding:0 8px;border:1px solid #94a3b8;border-radius:4px;background:#fff;font-size:13px;text-align:center">
+        </label>
+        <label style="display:flex;flex-direction:column;gap:3px">
+          <span style="font-size:11px;color:#475569;font-weight:600">종료</span>
+          <input id="pp2Ed_end_${id}" type="text" maxlength="5" placeholder="HH:MM" value="${rec.end||''}" style="height:34px;padding:0 8px;border:1px solid #94a3b8;border-radius:4px;background:#fff;font-size:13px;text-align:center">
+        </label>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-bottom:10px">
+        <label style="display:flex;flex-direction:column;gap:3px">
+          <span style="font-size:11px;color:#475569;font-weight:600">전처리 KG</span>
+          <input id="pp2Ed_kg_${id}" type="number" step="0.01" value="${rec.kg||0}" style="height:34px;padding:0 8px;border:1px solid #94a3b8;border-radius:4px;background:#fff;font-size:13px;text-align:right">
+        </label>
+        <label style="display:flex;flex-direction:column;gap:3px">
+          <span style="font-size:11px;color:#475569;font-weight:600">비가식부 KG</span>
+          <input id="pp2Ed_waste_${id}" type="number" step="0.01" value="${rec.waste||0}" style="height:34px;padding:0 8px;border:1px solid #94a3b8;border-radius:4px;background:#fff;font-size:13px;text-align:right">
+        </label>
+        <label style="display:flex;flex-direction:column;gap:3px">
+          <span style="font-size:11px;color:#475569;font-weight:600">인원</span>
+          <input id="pp2Ed_workers_${id}" type="number" value="${rec.workers||0}" style="height:34px;padding:0 8px;border:1px solid #94a3b8;border-radius:4px;background:#fff;font-size:13px;text-align:center">
+        </label>
+      </div>
+      <div style="display:flex;gap:6px;justify-content:flex-end">
+        <button class="btn bo bsm" onclick="pp2EditCancel('${id}')">취소</button>
+        <button class="btn bp bsm" onclick="pp2EditSave('${id}')">저장</button>
+      </div>
     </div>
   `;
 }
