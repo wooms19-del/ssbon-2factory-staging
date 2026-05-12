@@ -1261,16 +1261,18 @@ function startEditPkPending(id){
     if(stankSel && rec.sauceTank) stankSel.value = rec.sauceTank;
     const subSel = r2.querySelector('.pk-row-subnm');
     if(subSel && rec.subName) subSel.value = rec.subName;
-    // 와건 hidden + 토글 버튼 클릭 시뮬
-    if(rec.wagon){
-      const wagons = rec.wagon.split(',').map(x=>x.trim()).filter(Boolean);
+    // 와건 hidden + 토글 버튼 클릭 시뮬 (wagon 비어있으면 wagonDist 키로 폴백)
+    const wagonStr = rec.wagon || (rec.wagonDist ? Object.keys(rec.wagonDist).join(',') : '');
+    if(wagonStr){
+      const wagons = wagonStr.split(',').map(x=>x.trim()).filter(Boolean);
       wagons.forEach(w=>{
         const btn = r2.querySelector(`.pk-wagon-btn[data-w="${w}"][data-kind="wagon"]`);
         if(btn && btn.dataset.done!=='true') btn.click();
       });
     }
-    if(rec.cart){
-      const carts = rec.cart.split(',').map(x=>x.trim()).filter(Boolean);
+    const cartStr = rec.cart || (rec.cartDist ? Object.keys(rec.cartDist).join(',') : '');
+    if(cartStr){
+      const carts = cartStr.split(',').map(x=>x.trim()).filter(Boolean);
       carts.forEach(c=>{
         const btn = r2.querySelector(`.pk-wagon-btn[data-w="${c}"][data-kind="cart"]`);
         if(btn && btn.dataset.done!=='true') btn.click();
