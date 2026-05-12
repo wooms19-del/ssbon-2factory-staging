@@ -1886,6 +1886,7 @@ function ttmGetScenario() {
 
   return {
     startMin,
+    order: document.getElementById('ttt-order')?.value || 'fc-first',
     joinTime: document.getElementById('ttt-join')?.value || '09:00',
     earlyWorkers: parseInt(document.getElementById('ttt-early')?.value) || 7,
     fp: { kg: fpKg, info: fpInfo, yPre: fpYpre, yCook: fpYcook, yCrush: fpYcrush, pPre: fpPpre, pCrush: fpPcrush },
@@ -1952,10 +1953,15 @@ function ttmSimulate(scen, workers) {
   const fcCrushMin = Math.ceil(fcCrushIn / (fcPcrush * workers.crushFc) * 60);
   const fcPackMin = Math.ceil(fcEa / (fcPpackEaMin * workers.packFc / 6));
 
-  // === 타임라인 배치 (FP 먼저) ===
+  // === 타임라인 배치 (order에 따라 FC 먼저 / FP 먼저) ===
   const t0 = scen.startMin;
-  const fpPre = { s: t0, e: t0 + fpPreMin };
-  const fcPre = { s: fpPre.e, e: fpPre.e + fcPreMin };
+  const fcFirst = scen.order === 'fc-first';
+  const fpPre = fcFirst
+    ? { s: t0 + fcPreMin, e: t0 + fcPreMin + fpPreMin }
+    : { s: t0,            e: t0 + fpPreMin };
+  const fcPre = fcFirst
+    ? { s: t0,        e: t0 + fcPreMin }
+    : { s: fpPre.e,   e: fpPre.e + fcPreMin };
   const fpCook = { s: fpPre.e, e: fpPre.e + (TTM_FIXED.fpCookMin + TTM_FIXED.cookWagonMin), tank: 5 };
 
   // === FC 자숙 탱크 분배 (기존 A/B/E 방식, 순차 투입) ===
