@@ -327,20 +327,31 @@ var _unsubscribes = [];
 // ============================================================
 // 로컬 스토리지 (오프라인 버퍼)
 // ============================================================
+// ============================================================
+// 작업 데이터 (thawing/preprocess/cooking/shredding/packing/sauce, _pending 포함, barcodes)
+// → localStorage에 절대 저장하지 않음. Firestore가 단일 source of truth.
+// 설정 데이터 (products/sauces/submats/gtinMap/recipes) → localStorage OK (별도 정리 예정).
+// ============================================================
+const WORK_KEYS = ['barcodes','thawing','preprocess','cooking','shredding','packing','sauce',
+                   'packing_pending','cooking_pending'];
+
 function pruneOldData(d) {
   const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 90);
   const cutStr = cutoff.toISOString().slice(0,10);
-  ['barcodes','thawing','preprocess','cooking','shredding','packing','sauce'].forEach(k => {
+  WORK_KEYS.filter(k => k !== 'packing_pending' && k !== 'cooking_pending').forEach(k => {
     if(Array.isArray(d[k])) d[k] = d[k].filter(r => String(r.date||'').slice(0,10) >= cutStr);
   });
 }
 function loadL(){
   try{
     const raw = JSON.parse(localStorage.getItem(SK));
-    if(!raw) return nL();
     const base = nL();
-    ['barcodes','thawing','preprocess','cooking','shredding','packing','sauce',
-     'packing_pending','cooking_pending'].forEach(k => { if(!Array.isArray(raw[k])) raw[k]=base[k]||[]; });
+    if(!raw){
+      return base;  // 작업 데이터 모두 빈 배열 (Firestore 로드 대기)
+    }
+    // ★ 작업 데이터는 localStorage 무시 — 항상 빈 배열로 시작 (Firestore가 채움)
+    WORK_KEYS.forEach(k => { raw[k] = []; });
+    // 설정 데이터만 localStorage 사용
     if(!raw.products || !raw.products.length) raw.products = base.products;
     else {
       // 베이스에 추가된 신제품이 있으면 자동 병합 (사용자 localStorage에 누락된 것)
@@ -354,12 +365,20 @@ function loadL(){
     if(!raw.submats)  raw.submats  = base.submats;
     if(!raw.gtinMap)  raw.gtinMap  = base.gtinMap;
     if(!raw.recipes)  raw.recipes  = {};
-    pruneOldData(raw);
     return raw;
   }
   catch(e){ return nL(); }
 }
-function saveL(){ if(L) localStorage.setItem(SK, JSON.stringify(L)); }
+function saveL(){
+  if(!L) return;
+  // ★ 작업 데이터는 localStorage에서 제외하고 설정 데이터만 저장
+  const persist = {};
+  Object.keys(L).forEach(k => {
+    if(!WORK_KEYS.includes(k)) persist[k] = L[k];
+  });
+  try { localStorage.setItem(SK, JSON.stringify(persist)); }
+  catch(e){ console.warn('saveL 실패:', e); }
+}
 function nL(){
   return {
     barcodes:[], thawing:[], preprocess:[], cooking:[], shredding:[], packing:[], sauce:[],

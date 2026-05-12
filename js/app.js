@@ -110,7 +110,9 @@ function showTab(mode,tab){
     });
   } else if(tab==='shredding'){
     // ★ loadOpenPacking 추가 — shredding은 packing/packing_pending도 표시 (사용된 wagon 추적)
-    Promise.all([loadFromServer(today), loadOpenPacking()]).then(()=>{ if(typeof sh2Render==='function') sh2Render(); });
+    // ★ 어제 데이터도 필요 (어제 만든 자숙 와건이 오늘 파쇄 대기)
+    const yd3 = getYesterday_();
+    Promise.all([loadFromServer(today), loadFromServer(yd3), loadOpenPacking()]).then(()=>{ if(typeof sh2Render==='function') sh2Render(); });
   } else if(tab==='packing'){
     if(!L.packing_pending) L.packing_pending = [];
     Promise.all([loadFromServer(today), loadOpenPacking()]).then(()=>{
