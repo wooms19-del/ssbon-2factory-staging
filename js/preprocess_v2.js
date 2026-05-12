@@ -14,14 +14,16 @@ const PP2_TYPES = ['우둔', '홍두깨', '도가니', '아롱사태', '사태',
 const PP2_INIT_ROWS = 12;
 let _pp2RowIdx = 0;
 
-// 매칭 룰: thawing.end의 날짜 부분이 작업일과 같은가
-// 메모리: "Thawing/날짜 매칭은 thawing.date(입고일) 아닌 thawing.end(작업일) 기준"
-function pp2EndDateOf(t){
-  const e = t.end || '';
-  return e.slice(0, 10);  // "2026-05-12 05:00" → "2026-05-12", "" → ""
+// 매칭 룰 (사용자분 명확화):
+// "오늘 방혈 시작된 건 오늘 전처리에 안 보임. 어제 이전 방혈한 것만 오늘 전처리 가능."
+function pp2StartDateOf(t){
+  const s = t.start || '';
+  return s.slice(0, 10);  // "2026-05-12 11:46" → "2026-05-12"
 }
 function pp2IsWorkingToday(t, today){
-  return pp2EndDateOf(t) === today;
+  const startDate = pp2StartDateOf(t);
+  if(!startDate) return false;       // start 없으면 후보 X
+  return startDate < today;           // start 날짜가 오늘보다 이전 = 어제 이전
 }
 
 async function loadOpenThawingAndRender(){ await pp2Render(); }
