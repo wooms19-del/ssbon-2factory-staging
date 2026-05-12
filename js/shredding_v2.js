@@ -508,7 +508,14 @@ async function sh2FinishDay(){
     if(!ck) continue;
     ck._shClosed = today;  // 마커
     if(ck.fbId && typeof fbUpdate==='function'){
-      try { await fbUpdate('cooking', ck.fbId, {_shClosed: today}); }
+      try {
+        const ok = await fbUpdate('cooking', ck.fbId, {_shClosed: today});
+        if(!ok){
+          // fbId가 잘못된 경우 (이전 버그로 cooking_pending fbId가 박힘) — fbId 초기화
+          console.warn('cooking fbUpdate 실패, fbId 정리:', ck.fbId);
+          ck.fbId = null;
+        }
+      }
       catch(e){ console.error('cooking 마커 실패', e); }
     }
   }
