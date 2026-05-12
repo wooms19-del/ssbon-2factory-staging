@@ -800,6 +800,17 @@ function isUserEditing() {
   // 포장: 설비 카드가 1개라도 펼쳐져 있으면 입력 중
   const pkRows = document.querySelectorAll('[id^="pkRow_"]');
   if(pkRows.length > 0) return true;
+  // v2 (전처리/파쇄): 입력 테이블의 input/select에 값이 들어있으면 입력 중
+  // (부위 select가 비어있지 않거나, text/number input이 비어있지 않으면)
+  const v2Selects = document.querySelectorAll('#pp2_tbody select, #sh2_tbody select');
+  if(Array.from(v2Selects).some(s => s.value && s.value !== '')) return true;
+  const v2TextInputs = document.querySelectorAll('#pp2_tbody input[type="text"], #sh2_tbody input[type="text"]');
+  if(Array.from(v2TextInputs).some(i => (i.value||'').trim() !== '')) return true;
+  const v2NumInputs = document.querySelectorAll('#pp2_tbody input[type="number"], #sh2_tbody input[type="number"]');
+  if(Array.from(v2NumInputs).some(i => (i.value||'').trim() !== '' && parseFloat(i.value) > 0)) return true;
+  // v2 인라인 수정 폼이 열려있으면 입력 중
+  const v2EditForms = document.querySelectorAll('[id^="pp2Ed_"],[id^="sh2Ed_"]');
+  if(v2EditForms.length > 0) return true;
   return false;
 }
 
@@ -828,7 +839,8 @@ function refreshCurrentTab_() {
   if(MODE === 'i') {
     if(ITAB === 'barcode') renderBC();
     else if(ITAB === 'thawing') { renderThawWaiting(); renderThawList(); }
-    else if(ITAB === 'preprocess') { if(typeof pp2Render==='function') pp2Render(); }
+    else if(ITAB === 'preprocess') { if(typeof pp2Refresh==='function') pp2Refresh(); }
+    else if(ITAB === 'shredding') { if(typeof sh2Refresh==='function') sh2Refresh(); }
     else if(ITAB === 'outerpacking') loadOuterPacking();
     else renderPL(ITAB);
   }

@@ -635,6 +635,7 @@ async function sh2DeleteRecordInternal(id, silent){
 
 if(typeof window !== 'undefined'){
   window.sh2Render = sh2Render;
+  window.sh2Refresh = sh2Refresh;
   window.sh2AddRow = sh2AddRow;
   window.sh2RemoveRow = sh2RemoveRow;
   window.sh2OnCellChange = sh2OnCellChange;

@@ -598,6 +598,7 @@ async function pp2FinishDay(){
 if(typeof window !== 'undefined'){
   window.loadOpenThawingAndRender = loadOpenThawingAndRender;
   window.pp2Render = pp2Render;
+  window.pp2Refresh = pp2Refresh;
   window.pp2AddRow = pp2AddRow;
   window.pp2RemoveRow = pp2RemoveRow;
   window.pp2OnCellChange = pp2OnCellChange;
