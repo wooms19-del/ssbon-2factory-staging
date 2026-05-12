@@ -14,16 +14,21 @@ const PP2_TYPES = ['우둔', '홍두깨', '도가니', '아롱사태', '사태',
 const PP2_INIT_ROWS = 12;
 let _pp2RowIdx = 0;
 
-// 매칭 룰 (사용자분 명확화):
-// "오늘 방혈 시작된 건 오늘 전처리에 안 보임. 어제 이전 방혈한 것만 오늘 전처리 가능."
+// 매칭 룰: 어제 방혈 시작분만 오늘 전처리에 보임 (그 이전은 X)
 function pp2StartDateOf(t){
   const s = t.start || '';
   return s.slice(0, 10);  // "2026-05-12 11:46" → "2026-05-12"
 }
+function pp2YesterdayOf(today){
+  // today = "2026-05-12" → "2026-05-11"
+  const d = new Date(today + 'T00:00:00');
+  d.setDate(d.getDate() - 1);
+  return d.toISOString().slice(0, 10);
+}
 function pp2IsWorkingToday(t, today){
   const startDate = pp2StartDateOf(t);
-  if(!startDate) return false;       // start 없으면 후보 X
-  return startDate < today;           // start 날짜가 오늘보다 이전 = 어제 이전
+  if(!startDate) return false;
+  return startDate === pp2YesterdayOf(today);  // 정확히 어제만
 }
 
 async function loadOpenThawingAndRender(){ await pp2Render(); }
