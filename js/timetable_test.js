@@ -2000,42 +2000,25 @@ function ttmSimulate(scen, workers) {
     s: fcTankInTimes[i], e: fcTankOutTimes[i], tank: i + 1, kg: r2(kg)
   }));
   const fpCookFullMin = TTM_FIXED.fpCookMin + TTM_FIXED.cookWagonMin;
+  // FP 파쇄 (FP 자숙 끝나면)
+  const fpCrush = { s: fpCook.e, e: fpCook.e + fpCrushMin };
 
-  // ── 파쇄: 자숙 끝난 순서대로 선착순 (파쇄 라인 1개) ──
-  // FP 자숙(단일) + FC 자숙(배열)을 한 풀에 모아 end 시각 오름차순 정렬,
-  // 라인 가용 시각과 max 잡아 빈틈 없이 순차 배치
-  const fpCookTankKg = fpPreOut; // FP 자숙 투입(=전처리 산출). 파쇄 산출은 yCrush 적용
-  const fpCookKgAfterCrush = fpCrushOut;
-  const crushQueue = [
-    { type: 'fp', tankEnd: fpCook.e, kg: fpCookKgAfterCrush, crushMin: fpCrushMin },
-  ];
-  for (let i = 0; i < fcCook.length; i++) {
-    const tankKgAfterCrush = fcTankKgs[i] * (fcYcrush / 100);
-    const tankCrushMin = Math.ceil(tankKgAfterCrush / (fcPcrush * workers.crushFc) * 60);
-    crushQueue.push({ type: 'fc', idx: i, tankEnd: fcCook[i].e, kg: tankKgAfterCrush, crushMin: tankCrushMin });
-  }
-  // 자숙 끝나는 순서대로 정렬 (동률은 안정성 위해 type/idx 순)
-  crushQueue.sort((a, b) => a.tankEnd - b.tankEnd);
-
-  let crushLineEnd = 0;
-  let fpCrush = null;
+  // FC 파쇄: 탱크별로 순차 처리 (앞 탱크 자숙 끝나면 바로 그 탱크분 파쇄 시작)
+  // 단, FP 파쇄가 끝나야 라인 사용 가능 (파쇄 라인 1개 공유)
   const fcCrushes = [];
-  for (const item of crushQueue) {
-    const crushStart = Math.max(item.tankEnd, crushLineEnd);
-    const crushEnd = crushStart + item.crushMin;
-    crushLineEnd = crushEnd;
-    if (item.type === 'fp') {
-      fpCrush = { s: crushStart, e: crushEnd };
-    } else {
-      fcCrushes.push({ s: crushStart, e: crushEnd, tank: item.idx + 1, kg: r2(item.kg) });
-    }
+  let fcCrushLineEnd = fpCrush.e; // 파쇄 라인 가용 시각
+  for (let i = 0; i < fcCook.length; i++) {
+    const tankEnd = fcCook[i].e;
+    const tankKg = fcTankKgs[i] * (fcYcrush / 100); // 이 탱크분 파쇄 산출량
+    const tankCrushMin = Math.ceil(tankKg / (fcPcrush * workers.crushFc) * 60);
+    const crushStart = Math.max(tankEnd, fcCrushLineEnd);
+    const crushEnd = crushStart + tankCrushMin;
+    fcCrushes.push({ s: crushStart, e: crushEnd, tank: i + 1, kg: r2(tankKg) });
+    fcCrushLineEnd = crushEnd;
   }
-  // FC 파쇄 회차는 탱크 번호(idx) 순으로 다시 정렬해 표시 안정성 유지
-  fcCrushes.sort((a, b) => a.tank - b.tank);
-  // FC 파쇄 전체 (호환용) — s는 가장 이른 시작, e는 가장 늦은 종료
-  const fcCrushStart = Math.min(...fcCrushes.map(c => c.s));
-  const fcCrushEnd   = Math.max(...fcCrushes.map(c => c.e));
-  const fcCrush = { s: fcCrushStart, e: fcCrushEnd };
+  // FC 파쇄 전체 (호환용)
+  const fcCrushStart = fcCrushes[0].s;
+  const fcCrush = { s: fcCrushStart, e: fcCrushes[fcCrushes.length - 1].e };
   // FP 내포장 시작:
   // - 원육 400kg 이하: 파쇄 완전히 끝난 후
   // - 원육 400kg 초과: 파쇄 산출 200kg 누적 시점
