@@ -256,13 +256,14 @@ function renderCkPending(){
 
   el.innerHTML = pending.map(r=>`
     <div id="ckPend_${r.id}" style="border:1px solid var(--g2);border-radius:8px;margin-bottom:10px;overflow:hidden">
-      <div style="background:#f0fdf4;padding:12px;display:flex;justify-content:space-between;align-items:center">
+      <div id="ckPendHead_${r.id}" style="background:#f0fdf4;padding:12px;display:flex;justify-content:space-between;align-items:center">
         <div>
           <div style="font-size:14px;font-weight:700;color:var(--g8)">${r.tank} · ${r.type||'타입미정'} · 케이지 ${r.cage||'-'}</div>
           <div style="font-size:12px;color:var(--g5);margin-top:3px">시작 ${r.start} · ${r.workers}명</div>
         </div>
         <div style="display:flex;gap:6px">
           <button class="btn bs bsm" onclick="toggleCkEndForm('${r.id}')">종료 입력</button>
+          <button class="btn bo bsm" onclick="ckEditPending('${r.id}')">수정</button>
           <button class="btn bo bsm" style="color:var(--d);border-color:var(--d)" onclick="deleteCkPending('${r.id}')">삭제</button>
         </div>
       </div>
@@ -361,6 +362,110 @@ async function deleteCkPending(id){
   saveL();
   renderCkPending();
   toast('자숙 삭제됨','i');
+}
+
+// ============================================================
+// 진행중 자숙 인라인 수정 (탱크/케이지묶음/시작시간/인원)
+// ============================================================
+function ckEditPending(id){
+  const rec = (L.cooking_pending||[]).find(r => r.id === id);
+  if(!rec){ toast('데이터 없음','d'); return; }
+  const head = document.getElementById('ckPendHead_'+id);
+  if(!head) return;
+  // 현재 사용 가능한 묶음 옵션 (현재 묶음도 포함)
+  const today = tod();
+  const ppList = L.preprocess.filter(r =>
+    String(r.date||'').slice(0,10)===today && r.cage && r.end
+  );
+  const usedCages = new Set([
+    ...L.cooking.filter(r=>String(r.date||'').slice(0,10)===today)
+      .flatMap(r=>(r.cage||'').split(',').map(c=>c.trim()).filter(Boolean)),
+    ...(L.cooking_pending||[]).filter(r=>String(r.date||'').slice(0,10)===today && r.id !== id)  // 본인은 제외
+      .flatMap(r=>(r.cage||'').split(',').map(c=>c.trim()).filter(Boolean))
+  ]);
+  const groupOpts = [];
+  ppList.forEach(pp => {
+    const cg = (pp.cage||'').trim();
+    if(!cg) return;
+    const nums = cg.split(',').map(c=>c.trim()).filter(Boolean);
+    const allUsed = nums.every(n => usedCages.has(n));
+    if(allUsed) return;
+    const key = cg + '|' + (pp.type||'');
+    if(!groupOpts.find(o => o.key === key)){
+      groupOpts.push({ key, cage: cg, type: pp.type||'' });
+    }
+  });
+  // 현재 묶음 옵션 강제 포함 (다른 곳에서 빠졌어도)
+  const curKey = (rec.cage||'') + '|' + (rec.type||'');
+  if(rec.cage && !groupOpts.find(o => o.key === curKey)){
+    groupOpts.unshift({ key: curKey, cage: rec.cage, type: rec.type||'' });
+  }
+  const optsHtml = groupOpts.map(g =>
+    `<option value="${g.key}" ${g.key===curKey?'selected':''}>케이지 ${g.cage} (${g.type})</option>`
+  ).join('');
+  head.innerHTML = `
+    <div style="background:#fff7ed;border:1px solid #fb923c;border-radius:6px;padding:10px;width:100%">
+      <div style="font-size:11px;color:#c2410c;font-weight:600;margin-bottom:8px">✏️ 진행중 자숙 수정</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-bottom:8px">
+        <label style="display:flex;flex-direction:column;gap:3px">
+          <span style="font-size:11px;color:#475569;font-weight:600">탱크</span>
+          <select id="ckEd_tank_${id}" style="height:34px;padding:0 8px;border:1px solid #94a3b8;border-radius:4px;background:#fff;font-size:13px">
+            ${['1번탱크','2번탱크','3번탱크','4번탱크','5번탱크','6번탱크','7번탱크'].map(t =>
+              `<option ${t===rec.tank?'selected':''}>${t}</option>`).join('')}
+          </select>
+        </label>
+        <label style="display:flex;flex-direction:column;gap:3px">
+          <span style="font-size:11px;color:#475569;font-weight:600">케이지 묶음</span>
+          <select id="ckEd_group_${id}" style="height:34px;padding:0 8px;border:1px solid #94a3b8;border-radius:4px;background:#fff;font-size:13px">${optsHtml}</select>
+        </label>
+        <label style="display:flex;flex-direction:column;gap:3px">
+          <span style="font-size:11px;color:#475569;font-weight:600">시작시간</span>
+          <input id="ckEd_start_${id}" type="text" maxlength="5" placeholder="HH:MM" value="${rec.start||''}" style="height:34px;padding:0 8px;border:1px solid #94a3b8;border-radius:4px;background:#fff;font-size:13px;text-align:center">
+        </label>
+        <label style="display:flex;flex-direction:column;gap:3px">
+          <span style="font-size:11px;color:#475569;font-weight:600">인원</span>
+          <input id="ckEd_workers_${id}" type="number" value="${rec.workers||0}" style="height:34px;padding:0 8px;border:1px solid #94a3b8;border-radius:4px;background:#fff;font-size:13px;text-align:center">
+        </label>
+      </div>
+      <div style="display:flex;gap:6px;justify-content:flex-end">
+        <button class="btn bo bsm" onclick="ckEditPendingCancel('${id}')">취소</button>
+        <button class="btn bp bsm" onclick="ckEditPendingSave('${id}')">저장</button>
+      </div>
+    </div>
+  `;
+}
+
+function ckEditPendingCancel(id){
+  renderCkPending();
+}
+
+async function ckEditPendingSave(id){
+  const rec = (L.cooking_pending||[]).find(r => r.id === id);
+  if(!rec){ toast('데이터 없음','d'); return; }
+  const tank = document.getElementById('ckEd_tank_'+id).value;
+  const groupVal = document.getElementById('ckEd_group_'+id).value;
+  const start = document.getElementById('ckEd_start_'+id).value.trim();
+  const workers = parseFloat(document.getElementById('ckEd_workers_'+id).value) || 0;
+  if(!tank){ toast('탱크 입력','d'); return; }
+  if(!groupVal){ toast('케이지 묶음 입력','d'); return; }
+  if(!/^\d{1,2}:\d{2}$/.test(start)){ toast('시작시간 형식 오류 (HH:MM)','d'); return; }
+  if(workers <= 0){ toast('인원 입력','d'); return; }
+  const [cage, type] = groupVal.split('|');
+  rec.tank = tank;
+  rec.cage = cage || '';
+  rec.type = type || '';
+  rec.start = start;
+  rec.workers = workers;
+  if(rec.fbId && typeof fbUpdate==='function'){
+    try { await fbUpdate('cooking_pending', rec.fbId, {
+      tank: rec.tank, cage: rec.cage, type: rec.type,
+      start: rec.start, workers: rec.workers,
+    }); }
+    catch(e){ console.error('cooking_pending 수정 실패', e); }
+  }
+  saveL();
+  renderCkPending();
+  toast('수정 완료 ✓','s');
 }
 
 async function saveCkEnd(id){

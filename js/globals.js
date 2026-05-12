@@ -90,6 +90,9 @@ document.addEventListener('DOMContentLoaded', function() {
   window.toggleCkEndForm = toggleCkEndForm;
   window.saveCkEnd = saveCkEnd;
   window.onCkRowGroupChange = onCkRowGroupChange;  // ★ v2: 묶음 선택 시 부위 자동 채움
+  window.ckEditPending = ckEditPending;
+  window.ckEditPendingCancel = ckEditPendingCancel;
+  window.ckEditPendingSave = ckEditPendingSave;
   // 아코디언
   window.toggleAcc = toggleAcc;
   // 자숙 새 함수
