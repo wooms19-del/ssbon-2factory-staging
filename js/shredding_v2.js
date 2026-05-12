@@ -171,7 +171,7 @@ function sh2AddRow(data){
       <select class="sh2-type" style="width:100%;height:42px;border:none;padding:0 6px;background:transparent;font-size:14px" onchange="sh2OnCellChange(${idx})">${typeOpts}</select>
     </td>
     <td style="border:1px solid #ddd;padding:0">
-      <input class="sh2-wagon-out" type="text" value="${data.wagonOut||''}" placeholder="예: 14,17"
+      <input class="sh2-wagon-out" type="text" value="${data.wagonOut||''}" placeholder="예: 14"
              style="width:100%;height:42px;border:none;padding:0 6px;background:transparent;font-size:14px;text-align:center"
              onchange="sh2OnCellChange(${idx})">
     </td>
@@ -267,6 +267,7 @@ function sh2GetRowData(idx){
 function sh2ValidateRow(d){
   if(!d.type) return '부위';
   if(!d.wagonOut) return '산출 와건';
+  if(d.wagonOut.includes(',')) return '산출 와건은 1개만 (여러 개면 행 추가)';
   if(!(d.kg > 0)) return '산출 KG';
   if(!(d.workers > 0)) return '인원';
   if(!/^\d{1,2}:\d{2}$/.test(d.start)) return '시작 (HH:MM)';
@@ -312,13 +313,8 @@ function sh2BuildRecord(d, touches){
   touches.forEach(t => { wagonInDist[t.wagon] = t.deductKg; });
   const kgIn = touches.reduce((s, t) => s + t.deductKg, 0);
 
-  // 산출 와건 균등 분배
-  const outs = d.wagonOut.split(',').map(x => x.trim()).filter(Boolean);
-  const wagonOutDist = {};
-  if(outs.length > 0){
-    const each = d.kg / outs.length;
-    outs.forEach(w => { wagonOutDist[w] = parseFloat(each.toFixed(2)); });
-  }
+  // 산출 와건 1개 = 산출 KG 그대로
+  const wagonOutDist = { [d.wagonOut]: parseFloat(d.kg.toFixed(2)) };
 
   return {
     id, date: today,
