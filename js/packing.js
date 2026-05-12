@@ -730,7 +730,7 @@ async function onPkStartBtn(){
     const cart = cartDist ? Object.keys(cartDist).join(',') : '';
 
     const rec = {
-      id: gid(), date: DDATE||tod(),
+      id: gid(), date: tod(),
       product, machine, wagon, cart, workers, type,
       start: startTime,
       sauceTank, subName,

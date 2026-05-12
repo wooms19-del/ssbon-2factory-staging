@@ -162,7 +162,7 @@ async function onCkStartBtn(){
     const type = row.querySelector('.ck-row-type').value;
     const cage = row.querySelector('.ck-row-cage').value.trim();
     const workers = parseFloat(row.querySelector('.ck-row-workers').value)||0;
-    L.cooking_pending.push({ id:gid(), date:DDATE||tod(), tank, type, cage, workers, start:startTime, end:'', kg:0, wagonOut:'', note:'' });
+    L.cooking_pending.push({ id:gid(), date:tod(), tank, type, cage, workers, start:startTime, end:'', kg:0, wagonOut:'', note:'' });
     added++;
   });
 

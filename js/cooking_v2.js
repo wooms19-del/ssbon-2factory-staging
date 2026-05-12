@@ -209,7 +209,7 @@ async function onCkStartBtn(){
     const type = row.querySelector('.ck-row-type').value;
     const cage = row.querySelector('.ck-row-cage').value.trim();
     if(!cage){ toast('케이지 묶음을 선택하세요','d'); abort=true; return; }
-    L.cooking_pending.push({ id:gid(), date:DDATE||tod(), tank, type, cage, workers, start:startTime, end:'', kg:0, wagonOut:'', note:'' });
+    L.cooking_pending.push({ id:gid(), date:tod(), tank, type, cage, workers, start:startTime, end:'', kg:0, wagonOut:'', note:'' });
     added++;
   });
   if(abort) return;

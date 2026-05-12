@@ -12,7 +12,7 @@ var FBCOL={preprocess:'preprocess',cooking:'cooking',shredding:'shredding',packi
 var PNM={preprocess:'전처리',cooking:'자숙',shredding:'파쇄',packing:'포장',sauce:'소스'};
 
 async function saveP(type){
-  const d={id:gid(),date:DDATE||tod()};
+  const d={id:gid(),date:tod()};
   PF[type].forEach(f=>{
     const el=document.getElementById(f.i);
     if(!el) return;
