@@ -219,13 +219,21 @@
 
   <!-- ▶ 시작 입력 카드 -->
   <div class="card" id="pk_startCard">
-    <div class="ct">포장 시작</div>
+    <!-- 수정 모드 헤더 (수정 중일 때만 표시) -->
+    <div id="pk_editBanner" style="display:none;background:#fff7ed;border:1.5px solid #fb923c;border-radius:6px;padding:8px 12px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center">
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="background:#fb923c;color:#fff;font-size:11px;padding:3px 8px;border-radius:4px;font-weight:600">✏️ 수정 모드</span>
+        <span id="pk_editTarget" style="font-size:13px;font-weight:600;color:#c2410c"></span>
+      </div>
+      <button class="btn bo bsm" style="color:#c2410c;border-color:#c2410c" onclick="cancelEditPkPending()">수정 취소</button>
+    </div>
+    <div class="ct" id="pk_startCardTitle">포장 시작</div>
 
     <div style="font-size:12px;font-weight:700;color:var(--g5);margin-bottom:6px">설비별 입력 <span style="font-weight:400;color:var(--g4)">(가동할 설비 수만큼 추가)</span></div>
     <div id="pk_machRows"></div>
-    <button class="btn bo bsm" onclick="addPkMachRow()" style="margin-bottom:1rem;width:100%">+ 설비 추가</button>
+    <button class="btn bo bsm" id="pk_addMachBtn" onclick="addPkMachRow()" style="margin-bottom:1rem;width:100%">+ 설비 추가</button>
 
-    <button class="btn bp bblk" onclick="onPkStartBtn()">시작</button>
+    <button class="btn bp bblk" id="pk_startBtn" onclick="onPkStartBtn()">시작</button>
   </div>
 
   <!-- ⏳ 진행중 설비 카드 -->
@@ -1559,7 +1567,7 @@
 <script src="js/process_save.js?v=1778594572"></script>
 <script src="js/cooking_v2.js?v=1778596916"></script>
 <script src="js/shredding_v2.js?v=1778597290"></script>
-<script src="js/packing.js?v=1778599061"></script>
+<script src="js/packing.js?v=1778599476"></script>
 <script src="js/csv_upload.js?v=1778129561"></script>
 <script src="js/daily_report.js?v=1778546951"></script>
 <script src="js/analysis.js?v=1778550054"></script>
@@ -1573,7 +1581,7 @@
 <script src="js/schedule.js?v=1778132322"></script>
 <script src="js/attendance.js?v=1778129561"></script>
 <script src="js/timepicker.js?v=1778129561"></script>
-<script src="js/globals.js?v=1778597192"></script>
+<script src="js/globals.js?v=1778599476"></script>
 <script src="js/performance.js?v=1778547898"></script>
 <script src="js/monthly_production.js?v=1778547898"></script>
 <script src="js/timetable.js?v=1778495630"></script>

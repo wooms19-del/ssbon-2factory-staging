@@ -978,7 +978,40 @@ async function onPkStartBtn(){
   renderPkPending();
   const wasEditing = !!_pkEditingId;
   _pkEditingId = null;  // 클리어
+  // ★ 수정 모드 UI 복구
+  _restorePkStartCardUI();
   toast(wasEditing ? '포장 수정됨 ✓' : `포장 시작 — ${added}개 설비 진행중 ✓`, wasEditing ? 's' : 'i');
+}
+
+// ★ 수정 모드 UI 복구 (시작 카드 원래 상태로)
+function _restorePkStartCardUI(){
+  const banner = document.getElementById('pk_editBanner');
+  const title = document.getElementById('pk_startCardTitle');
+  const addBtn = document.getElementById('pk_addMachBtn');
+  const startBtn = document.getElementById('pk_startBtn');
+  if(banner) banner.style.display = 'none';
+  if(title) title.style.display = '';
+  if(addBtn) addBtn.style.display = '';
+  if(startBtn) startBtn.textContent = '시작';
+}
+
+// ★ 수정 취소
+function cancelEditPkPending(){
+  _pkEditingId = null;
+  _restorePkStartCardUI();
+  // 입력 카드 비우고 닫기
+  const machRows = document.getElementById('pk_machRows');
+  if(machRows) machRows.innerHTML = '';
+  _pkRowIdx = 0;
+  // 진행중 있으면 시작 카드 닫고 진행중 카드 표시
+  const hasPending = (L.packing_pending||[]).some(r => String(r.date||'').slice(0,10) === tod());
+  if(hasPending){
+    document.getElementById('pk_startCard').style.display = 'none';
+    document.getElementById('pk_pendingCard').style.display = '';
+  }
+  // 진행중 카드 다시 그림 (수정 중 표시 해제)
+  if(typeof renderPkPending === 'function') renderPkPending();
+  toast('수정 취소','i');
 }
 
 // + 추가 설비 시작 버튼
@@ -1018,21 +1051,31 @@ function renderPkPending(){
       wcText = parts.length ? parts.join(' · ') : '와건 -';
     }
     const subText = `${wcText ? wcText+' · ' : ''}시작 ${r.start} · ${r.workers}명`;
+    // ★ 수정 모드: 현재 수정 중인 record는 회색 처리 + 버튼 비활성화
+    const isEditing = (_pkEditingId === r.id);
+    const cardStyle = isEditing
+      ? 'border:1px solid var(--g3);border-radius:8px;margin-bottom:10px;overflow:hidden;opacity:0.6;background:#f3f4f6'
+      : 'border:1px solid var(--g2);border-radius:8px;margin-bottom:10px;overflow:hidden';
+    const headBg = isEditing ? '#f3f4f6' : 'var(--pl)';
+    const editingBadge = isEditing
+      ? '<span style="background:#fb923c;color:#fff;font-size:10px;padding:2px 6px;border-radius:4px;margin-right:6px;font-weight:600">수정 중</span>'
+      : '';
+    const btnDisabled = isEditing ? 'disabled style="opacity:0.5;cursor:not-allowed"' : '';
     return `
-    <div id="pkPend_${r.id}" style="border:1px solid var(--g2);border-radius:8px;margin-bottom:10px;overflow:hidden">
+    <div id="pkPend_${r.id}" style="${cardStyle}">
       <!-- 헤더 -->
-      <div style="background:var(--pl);padding:12px;display:flex;justify-content:space-between;align-items:center">
+      <div style="background:${headBg};padding:12px;display:flex;justify-content:space-between;align-items:center">
         <div>
-          <div style="font-size:14px;font-weight:700;color:var(--g8)">${r.machine||'설비미정'} · ${r.product}</div>
+          <div style="font-size:14px;font-weight:700;color:var(--g8)">${editingBadge}${r.machine||'설비미정'} · ${r.product}</div>
           <div style="font-size:12px;color:var(--g5);margin-top:3px">
             ${subText}
             ${r.sauceTank ? ' · 소스 '+r.sauceTank : ''}
           </div>
         </div>
         <div style="display:flex;gap:6px">
-          <button class="btn bs bsm" onclick="togglePkEndForm('${r.id}')">종료 입력</button>
-          <button class="btn bo bsm" onclick="startEditPkPending('${r.id}')">수정</button>
-          <button class="btn bo bsm" style="color:var(--d);border-color:var(--d)" onclick="deletePkPending('${r.id}')">삭제</button>
+          <button class="btn bs bsm" ${btnDisabled} ${isEditing?'':`onclick="togglePkEndForm('${r.id}')"`}>종료 입력</button>
+          <button class="btn bo bsm" ${btnDisabled} ${isEditing?'':`onclick="startEditPkPending('${r.id}')"`}>수정</button>
+          <button class="btn bo bsm" ${btnDisabled} style="color:var(--d);border-color:var(--d)${isEditing?';opacity:0.5;cursor:not-allowed':''}" ${isEditing?'':`onclick="deletePkPending('${r.id}')"`}>삭제</button>
         </div>
       </div>
       <!-- 종료 입력 폼 (숨김) -->
@@ -1155,6 +1198,19 @@ function startEditPkPending(id){
   if(!rec){ toast('데이터 없음','d'); return; }
   // 편집 모드 마킹 (addPkMachRow가 사용량 계산 시 본 record 제외하도록 먼저 설정)
   _pkEditingId = id;
+  // ★ 수정 모드 UI 활성화
+  const banner = document.getElementById('pk_editBanner');
+  const target = document.getElementById('pk_editTarget');
+  const title = document.getElementById('pk_startCardTitle');
+  const addBtn = document.getElementById('pk_addMachBtn');
+  const startBtn = document.getElementById('pk_startBtn');
+  if(banner) banner.style.display = 'flex';
+  if(target) target.textContent = `${rec.machine||'설비'} · ${rec.product||''}`;
+  if(title) title.style.display = 'none';
+  if(addBtn) addBtn.style.display = 'none';  // 수정 모드에선 행 추가 X
+  if(startBtn) startBtn.textContent = '수정 저장';
+  // 진행중 카드 다시 그려서 수정 중인 카드 비활성화 표시
+  if(typeof renderPkPending === 'function') renderPkPending();
   // 입력 카드 펼침 + 새 row 추가
   document.getElementById('pk_startCard').style.display='';
   document.getElementById('pk_machRows').innerHTML='';
