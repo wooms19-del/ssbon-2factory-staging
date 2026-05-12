@@ -452,10 +452,20 @@ async function ckEditPendingSave(id){
   rec.start = start;
   rec.workers = workers;
   if(rec.fbId && typeof fbUpdate==='function'){
-    try { await fbUpdate('cooking_pending', rec.fbId, {
-      tank: rec.tank, cage: rec.cage, type: rec.type,
-      start: rec.start, workers: rec.workers,
-    }); }
+    try { 
+      const ok = await fbUpdate('cooking_pending', rec.fbId, {
+        tank: rec.tank, cage: rec.cage, type: rec.type,
+        start: rec.start, workers: rec.workers,
+      });
+      if(!ok){
+        // Firestore에 없으면 (이미 종료됐을 수 있음) — 메모리에서도 제거
+        L.cooking_pending = L.cooking_pending.filter(r => r.id !== id);
+        saveL();
+        toast('이 자숙은 이미 종료됨 → 메모리 정리','i');
+        renderCkPending();
+        return;
+      }
+    }
     catch(e){ console.error('cooking_pending 수정 실패', e); }
   }
   saveL();
