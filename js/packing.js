@@ -983,6 +983,8 @@ async function onPkStartBtn(){
   renderPkPending();
   // ★ 수정 모드 UI 복구
   _restorePkStartCardUI();
+  // ★ 파쇄 완료 와건 현황 갱신 (와건 사용 변경 시 즉시 차감 표시)
+  if(typeof renderPkWagonList === 'function') renderPkWagonList();
   toast(wasEditing ? '포장 수정됨 ✓' : `포장 시작 — ${added}개 설비 진행중 ✓`, wasEditing ? 's' : 'i');
 }
 
@@ -1206,6 +1208,8 @@ async function deletePkPending(id){
   const hasPending = (L.packing_pending||[]).some(r => String(r.date||'').slice(0,10) === tod());
   document.getElementById('pk_pendingCard').style.display = hasPending ? '' : 'none';
   if(!hasPending) document.getElementById('pk_startCard').style.display = '';
+  // ★ 파쇄 완료 와건 현황 갱신 (삭제 시 잔량 복귀)
+  if(typeof renderPkWagonList === 'function') renderPkWagonList();
   toast('포장 삭제됨','i');
 }
 
@@ -1379,6 +1383,8 @@ async function savePkEnd(id){
 
   renderPkPending();
   renderPL('packing');
+  // ★ 파쇄 완료 와건 현황 갱신 (사용량 즉시 차감 표시)
+  if(typeof renderPkWagonList === 'function') renderPkWagonList();
 }
 
 // onPkWagonChange - 마지막 설비 행 와건에 자동 입력
