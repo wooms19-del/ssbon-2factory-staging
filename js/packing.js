@@ -1326,28 +1326,40 @@ async function savePkEnd(id){
 
   // 완성된 레코드
   const completed = {...rec, end, ea, pouch, defect, sauceKg, subKg};
+  delete completed.fbId;  // ★ saveCkEnd와 동일 — rec(packing_pending)의 fbId가 packing으로 옮겨가지 않게
   if(sauceTanks){
     completed.sauceTanks = sauceTanks;
     // sauceTank 호환 필드 (콤마 문자열)
     completed.sauceTank = sauceTanks.map(s=>s.tank).join(',');
   }
 
-  // pending에서 제거 → packing에 추가
+  // pending에서 제거
   L.packing_pending = L.packing_pending.filter(r=>r.id!==id);
-  L.packing.push(completed);
   saveL();
 
   // Firebase packing_pending 삭제
-  if(rec.fbId) fbDelete('packing_pending', rec.fbId);
+  if(rec.fbId) {
+    try { await fbDelete('packing_pending', rec.fbId); }
+    catch(e){ console.error('packing_pending 삭제 실패', e); }
+  }
 
-  // Firebase packing 저장
+  // Firebase packing 저장 → fbId 받은 후 메모리에 push
   const fbId = await fbSave('packing', completed);
-  if(fbId){
-    completed.fbId = fbId;
-    saveL();
-    toast(`${completed.machine||'설비'} 종료 저장됨 ✓`);
-  } else {
-    toast('저장 실패 - 로컬에만 저장됨','d');
+  if(fbId) completed.fbId = fbId;
+  L.packing.push(completed);
+  saveL();
+  if(fbId) toast(`${completed.machine||'설비'} 종료 저장됨 ✓`);
+  else toast('저장 실패 - 로컬에만 저장됨','d');
+
+  // ★ 수정 모드 종료 (이 record가 편집 중이었으면)
+  if(_pkEditingId === id){
+    _pkEditingId = null;
+    _restorePkStartCardUI();
+    const machRows = document.getElementById('pk_machRows');
+    if(machRows) machRows.innerHTML = '';
+    _pkRowIdx = 0;
+    document.getElementById('pk_startCard').style.display = 'none';
+    document.getElementById('pk_pendingCard').style.display = '';
   }
 
   renderPkPending();
