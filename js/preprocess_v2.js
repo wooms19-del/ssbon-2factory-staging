@@ -14,6 +14,16 @@ const PP2_TYPES = ['우둔', '홍두깨', '도가니', '아롱사태', '사태',
 const PP2_INIT_ROWS = 12;
 let _pp2RowIdx = 0;
 
+// 매칭 룰: thawing.end의 날짜 부분이 작업일과 같은가
+// 메모리: "Thawing/날짜 매칭은 thawing.date(입고일) 아닌 thawing.end(작업일) 기준"
+function pp2EndDateOf(t){
+  const e = t.end || '';
+  return e.slice(0, 10);  // "2026-05-12 05:00" → "2026-05-12", "" → ""
+}
+function pp2IsWorkingToday(t, today){
+  return pp2EndDateOf(t) === today;
+}
+
 async function loadOpenThawingAndRender(){ await pp2Render(); }
 
 async function pp2Render(){
@@ -78,7 +88,7 @@ async function pp2Render(){
 
 function pp2RenderRemain(){
   const today = (typeof tod==='function') ? tod() : new Date().toISOString().slice(0,10);
-  const thList = (L.thawing||[]).filter(t => t.date === today && (parseFloat(t.remainKg)||0) > 0.01);
+  const thList = (L.thawing||[]).filter(t => pp2IsWorkingToday(t, today) && (parseFloat(t.remainKg)||0) > 0.01);
   if(!thList.length) return '<div class="emp">방혈 완료된 원육 없음 (또는 모두 차감됨)</div>';
   const remainByType = {};
   thList.forEach(t => {
@@ -105,7 +115,7 @@ function pp2AddRow(data){
   const today = (typeof tod==='function') ? tod() : new Date().toISOString().slice(0,10);
   const availTypes = [...new Set(
     (L.thawing||[])
-      .filter(t => t.date === today && (parseFloat(t.remainKg)||0) > 0.01 && t.type)
+      .filter(t => pp2IsWorkingToday(t, today) && (parseFloat(t.remainKg)||0) > 0.01 && t.type)
       .map(t => t.type)
   )];
   // 수정 모드(data.type)에선 잔량 0이어도 그 부위는 포함
@@ -238,7 +248,7 @@ function pp2ValidateRow(d){
 function pp2FifoDeduct(type, totalKg){
   const today = (typeof tod==='function') ? tod() : new Date().toISOString().slice(0,10);
   const candidates = (L.thawing||[])
-    .filter(t => t.date === today && t.type === type && (parseFloat(t.remainKg)||0) > 0.01)
+    .filter(t => pp2IsWorkingToday(t, today) && t.type === type && (parseFloat(t.remainKg)||0) > 0.01)
     .sort((a,b) => {
       const aT = a.start || a._id || a.id || '';
       const bT = b.start || b._id || b.id || '';
@@ -387,7 +397,7 @@ function pp2RenderTodayList(){
   if(!list.length) return '<div class="emp">데이터 없음</div>';
   let totalKg = 0, totalWaste = 0;
   list.forEach(p => { totalKg += parseFloat(p.kg)||0; totalWaste += parseFloat(p.waste)||0; });
-  const thTotalToday = (L.thawing||[]).filter(t => t.date === today)
+  const thTotalToday = (L.thawing||[]).filter(t => pp2IsWorkingToday(t, today))
     .reduce((s,t) => s + (parseFloat(t.totalKg)||0), 0);
   const yieldText = thTotalToday > 0
     ? ` · 수율 ${(totalKg / thTotalToday * 100).toFixed(2)}%`
@@ -473,7 +483,7 @@ async function pp2RestoreTouches(rec){
 
 async function pp2FinishDay(){
   const today = (typeof tod==='function') ? tod() : new Date().toISOString().slice(0,10);
-  const remaining = (L.thawing||[]).filter(t => t.date === today && (parseFloat(t.remainKg)||0) > 0.01);
+  const remaining = (L.thawing||[]).filter(t => pp2IsWorkingToday(t, today) && (parseFloat(t.remainKg)||0) > 0.01);
   if(!remaining.length){ toast('남은 잔량 없음','i'); return; }
   const totalRem = remaining.reduce((s,t) => s + (parseFloat(t.remainKg)||0), 0);
   if(!confirm(
