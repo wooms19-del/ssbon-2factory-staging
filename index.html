@@ -10,6 +10,11 @@
   <meta name="application-name" content="순수본 2공장">
   <meta name="theme-color" content="#1a56db">
   <style>
+    .tt-pc{background:var(--color-background-secondary);border:0.5px solid var(--color-border-tertiary);border-radius:8px;padding:10px 12px;cursor:pointer;transition:border-color .15s}
+    .tt-pc.tt-on{border-color:#534AB7;background:var(--color-background-primary)}
+    .tt-fixed{border-color:#378ADD;background:var(--color-background-primary);cursor:default}
+    .tt-tab{padding:7px 16px;font-size:13px;cursor:pointer;border:0.5px solid transparent;border-radius:6px 6px 0 0;color:var(--color-text-secondary);background:transparent;display:inline-block}
+    .tt-tab.on{border-color:var(--color-border-tertiary);border-bottom-color:var(--color-background-primary);background:var(--color-background-primary);color:var(--color-text-primary);font-weight:500}
     /* 당김 새로고침 방지 */
     html, body { overscroll-behavior-y: contain; overscroll-behavior-x: none; }
     /* iOS 풀스크린 */
@@ -31,7 +36,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 
-<link rel="stylesheet" href="css/style.css?v=1">
+<link rel="stylesheet" href="css/style.css?v=1778077265">
 </head>
 <body>
 
@@ -74,6 +79,8 @@
     <div class="ti" onclick="showTab('d','monthly')">월별현황</div>
     <div class="ti" onclick="showTab('d','trace')">이력추적</div>
     <div class="ti" onclick="showTab('d','recipe')">레시피</div>
+    <div class="ti" onclick="showTab('d','timetable')">타임테이블</div>
+    <div class="ti" onclick="showTab('d','timetable_test')">타임테이블 (테스트)</div>
     <div class="ti" onclick="showTab('d','settings')">설정</div>
   </div>
 </div>
@@ -472,9 +479,9 @@
   </div>
   <div class="card">
     <div class="ct">공정별 현황</div>
-    <div style="overflow-x:auto"><table class="tbl" style="width:100%;table-layout:fixed">
+    <div style="overflow-x:auto"><table class="tbl" style="width:100%;min-width:760px;table-layout:fixed">
       <colgroup>
-        <col style="width:60px"><col style="width:130px"><col style="width:72px"><col style="width:72px"><col style="width:70px"><col style="width:72px"><col style="width:72px"><col style="width:65px"><col style="width:50px"><col style="width:85px">
+        <col style="width:7%"><col style="width:16%"><col style="width:9%"><col style="width:9%"><col style="width:9%"><col style="width:9%"><col style="width:9%"><col style="width:9%"><col style="width:7%"><col style="width:16%">
       </colgroup>
       <thead><tr>
         <th style="text-align:left">공정</th>
@@ -507,7 +514,17 @@
       <tbody id="pkTbl"></tbody>
     </table></div>
   </div>
-  <div class="card"><div class="ct">공정 타임라인</div><div class="tlw" id="tlWrap"><div class="emp">데이터 없음</div></div></div>
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <div class="ct" style="margin:0">공정 타임라인</div>
+      <div id="tlMode" style="display:flex;gap:4px;align-items:center">
+        <button type="button" onclick="setTlMode('integrated')" id="tlModeIntegrated" class="btn bo bsm" style="font-size:11px;padding:3px 9px">통합</button>
+        <button type="button" onclick="setTlMode('byCart')" id="tlModeByCart" class="btn bo bsm" style="font-size:11px;padding:3px 9px">카트별</button>
+        <button type="button" onclick="exportTimeline()" class="dnbtn" title="타임라인 엑셀 다운로드" style="font-size:11px;padding:3px 9px;background:#fff7e6;border:1px solid #ffb366;color:#e67e22;font-weight:600;border-radius:4px;margin-left:6px">📥 엑셀</button>
+      </div>
+    </div>
+    <div class="tlw" id="tlWrap"><div class="emp">데이터 없음</div></div>
+  </div>
   </div>
 </div>
 
@@ -545,21 +562,27 @@
   <!-- 수율 KPI 카드 -->
   <div id="mo_yield_kpi" style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:12px"></div>
 
-  <div class="card" style="margin-bottom:12px">
-    <div class="ct">제품별 생산 현황</div>
-    <div style="overflow-x:auto">
-      <table class="tbl" style="width:100%">
-        <thead><tr>
-          <th style="text-align:left;min-width:150px">제품명</th>
-          <th style="text-align:center">작업일</th>
-          <th style="text-align:center">내포장 EA</th>
-          <th style="text-align:center">파우치 사용량</th>
-          <th style="text-align:center">완제품 중량(KG)</th>
-          <th style="text-align:center">불량률</th>
-        </tr></thead>
-        <tbody id="mo_prod_tbl"></tbody>
-        <tfoot id="mo_prod_total"></tfoot>
-      </table>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+    <div class="card" style="margin-bottom:0">
+      <div class="ct">제품별 생산 현황</div>
+      <div style="overflow-x:auto">
+        <table class="tbl" style="width:100%">
+          <thead><tr>
+            <th style="text-align:left;min-width:150px">제품명</th>
+            <th style="text-align:center">작업일</th>
+            <th style="text-align:center">내포장 EA</th>
+            <th style="text-align:center">파우치 사용량</th>
+            <th style="text-align:center">완제품 중량(KG)</th>
+            <th style="text-align:center">불량률</th>
+          </tr></thead>
+          <tbody id="mo_prod_tbl"></tbody>
+          <tfoot id="mo_prod_total"></tfoot>
+        </table>
+      </div>
+    </div>
+    <div id="mo_prev_cmp" class="card" style="margin-bottom:0">
+      <div class="ct">전월 비교</div>
+      <div style="text-align:center;color:#94a3b8;font-size:13px;padding:2rem">데이터 로딩 중...</div>
     </div>
   </div>
 
@@ -569,12 +592,13 @@
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
         <div>
           <div style="font-size:10px;color:var(--g4);margin-bottom:1px">순수본 2공장</div>
-          <div class="ct" style="margin:0">일별 원육 사용량</div>
+          <div class="ct" style="margin:0" id="mo_rm_title">운영팀 일별 원육 사용량</div>
           <div style="font-size:11px;color:var(--g5);margin-top:2px">막대 = 그날 사용된 원육(kg)</div>
         </div>
         <button class="btn bo bsm" onclick="downloadRmChart()" style="font-size:11px">📥 저장</button>
       </div>
-      <div style="position:relative;height:240px"><canvas id="mo_rm_chart"></canvas></div>
+      <div id="mo_rm_tabs" style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap"></div>
+      <div style="position:relative;height:480px"><canvas id="mo_rm_chart"></canvas></div>
     </div>
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
@@ -591,29 +615,31 @@
         <button id="pkTab_detail" onclick="setPackingChartMode('detail')" style="padding:5px 14px;font-size:11px;border:none;background:#fff;color:#1e293b;border-radius:4px;cursor:pointer;font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,0.08)">상세</button>
       </div>
       <div id="mo_packing_legend" style="margin-bottom:6px;line-height:2"></div>
-      <div style="position:relative;height:280px"><canvas id="mo_bar_chart"></canvas></div>
+      <div style="position:relative;height:520px"><canvas id="mo_bar_chart"></canvas></div>
     </div>
     <div class="card">
-      <div style="display:flex;justify-content:space-between;align-items:center">
-        <div class="ct">불량률 추이</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div>
+          <div style="font-size:10px;color:var(--g4);margin-bottom:1px">순수본 2공장</div>
+          <div class="ct" style="margin:0" id="mo_def_title">운영팀 불량률 추이</div>
+        </div>
         <button class="btn bo bsm" onclick="downloadDefChart()" style="font-size:11px">📥 저장</button>
       </div>
-      <div style="position:relative;height:220px"><canvas id="mo_def_chart"></canvas></div>
+      <div style="position:relative;height:460px"><canvas id="mo_def_chart"></canvas></div>
     </div>
   </div>
 
-  <!-- 수율 추이 + 전월 비교 -->
-  <div style="display:grid;grid-template-columns:2fr 1fr;gap:12px;margin-top:12px">
+  <!-- 수율 추이 -->
+  <div style="display:grid;grid-template-columns:1fr;gap:12px;margin-top:12px">
     <div class="card">
-      <div style="display:flex;justify-content:space-between;align-items:center">
-        <div class="ct">원육수율 일별 추이</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div>
+          <div style="font-size:10px;color:var(--g4);margin-bottom:1px">순수본 2공장</div>
+          <div class="ct" style="margin:0" id="mo_yield_title">운영팀 원육수율 일별 추이</div>
+        </div>
         <button class="btn bo bsm" onclick="downloadYieldChart()" style="font-size:11px">📥 저장</button>
       </div>
-      <div style="position:relative;height:200px"><canvas id="mo_yield_chart"></canvas></div>
-    </div>
-    <div id="mo_prev_cmp" class="card">
-      <div class="ct">전월 비교</div>
-      <div style="text-align:center;color:#94a3b8;font-size:13px;padding:2rem">데이터 로딩 중...</div>
+      <div style="position:relative;height:440px"><canvas id="mo_yield_chart"></canvas></div>
     </div>
   </div>
 
@@ -686,6 +712,530 @@
 </div>
 
 
+
+
+<!-- ===== 타임테이블 ===== -->
+<!-- ── 타임테이블 ── -->
+<div class="pg" id="p-timetable">
+  <!-- 메인 -->
+  <div id="tt-main" style="display:block;padding:0 4px">
+    <!-- 입력 영역 (공통 컨트롤) -->
+    <div style="background:var(--color-background-secondary);border:0.5px solid var(--color-border-tertiary);border-radius:12px;padding:14px 16px;margin-bottom:14px">
+      <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;font-size:11.5px;color:var(--color-text-secondary)">
+        <label style="display:flex;flex-direction:column;gap:3px">
+          <span>📅 분석 기간</span>
+          <select id="tt-period" onchange="ttPeriodChange()" style="height:30px;font-size:12px;padding:0 8px;border:0.5px solid var(--color-border-secondary);border-radius:6px;background:var(--color-background-primary)">
+            <option value="all">전체</option>
+            <option value="last30" selected>최근 30일</option>
+            <option value="month">이번 달</option>
+            <option value="week">최근 7일</option>
+            <option value="today">오늘</option>
+          </select>
+        </label>
+
+        <label style="display:flex;flex-direction:column;gap:3px">
+          <span>📦 제품 분류</span>
+          <select id="tt-meat" onchange="ttPeriodChange()" style="height:30px;font-size:12px;padding:0 8px;border:0.5px solid var(--color-border-secondary);border-radius:6px;background:var(--color-background-primary)">
+            <option value="홍두깨">FC 제품 (홍두깨)</option>
+            <option value="우둔">비-FC (우둔)</option>
+            <option value="설도">비-FC (설도)</option>
+          </select>
+        </label>
+
+        <label style="display:flex;flex-direction:column;gap:3px">
+          <span>원육량 (kg)</span>
+          <input type="number" id="tt-kg" value="1600" min="0" max="6000" step="50" oninput="ttRender()" style="width:90px;height:30px;font-size:13px;padding:0 8px;border:0.5px solid var(--color-border-secondary);border-radius:6px">
+        </label>
+
+        <label style="display:flex;flex-direction:column;gap:3px">
+          <span>총 인원</span>
+          <input type="number" id="tt-total" value="28" min="5" max="50" oninput="ttRender()" style="width:60px;height:30px;font-size:13px;padding:0 8px;border:0.5px solid var(--color-border-secondary);border-radius:6px">
+        </label>
+
+        <div style="border-left:0.5px solid var(--color-border-secondary);height:36px;margin:0 4px;align-self:flex-end"></div>
+
+        <label style="display:flex;flex-direction:column;gap:3px">
+          <span>🌅 조출 시각</span>
+          <input type="time" id="tt-start" value="05:00" oninput="ttRender()" style="height:30px;font-size:13px;padding:0 6px;border:0.5px solid var(--color-border-secondary);border-radius:6px;width:96px">
+        </label>
+
+        <label style="display:flex;flex-direction:column;gap:3px">
+          <span>조출 인원</span>
+          <input type="number" id="tt-early" value="7" min="1" max="15" oninput="ttRender()" style="width:60px;height:30px;font-size:13px;padding:0 8px;border:0.5px solid var(--color-border-secondary);border-radius:6px">
+        </label>
+
+        <label style="display:flex;flex-direction:column;gap:3px">
+          <span>👔 관리자 출근</span>
+          <input type="time" id="tt-mgr-time" value="07:00" oninput="ttRender()" style="height:30px;font-size:13px;padding:0 6px;border:0.5px solid var(--color-border-secondary);border-radius:6px;width:96px">
+        </label>
+
+        <label style="display:flex;flex-direction:column;gap:3px">
+          <span>관리 인원</span>
+          <input type="number" id="tt-mgr" value="2" min="0" max="5" oninput="ttRender()" style="width:60px;height:30px;font-size:13px;padding:0 8px;border:0.5px solid var(--color-border-secondary);border-radius:6px">
+        </label>
+
+        <label style="display:flex;flex-direction:column;gap:3px">
+          <span>🇰🇷 한국인 합류</span>
+          <input type="time" id="tt-join" value="09:00" oninput="ttRender()" style="height:30px;font-size:13px;padding:0 6px;border:0.5px solid var(--color-border-secondary);border-radius:6px;width:96px">
+        </label>
+      </div>
+
+      <!-- 동시 작업 (선택) — 끄면 단일 원육 시뮬, 켜면 두 번째 원육 추가 -->
+      <div style="margin-top:14px;padding-top:12px;border-top:0.5px dashed var(--color-border-secondary)">
+        <label style="display:inline-flex;align-items:center;gap:8px;font-size:12px;color:var(--color-text-secondary);cursor:pointer;margin-bottom:0">
+          <input type="checkbox" id="tt-dual-enabled" onchange="ttToggleDual()" style="width:14px;height:14px;cursor:pointer">
+          <span style="font-weight:500">⚡ 동시 작업 (2제품 파이프라인)</span>
+        </label>
+        <div id="tt-dual-block" style="display:none;margin-top:10px;flex-wrap:wrap;gap:12px;align-items:flex-end;font-size:11.5px;color:var(--color-text-secondary)">
+          <label style="display:flex;flex-direction:column;gap:3px">
+            <span>📦 두 번째 제품</span>
+            <select id="tt-meat2" onchange="ttRender()" style="height:30px;font-size:12px;padding:0 8px;border:0.5px solid var(--color-border-secondary);border-radius:6px;background:var(--color-background-primary)">
+              <option value="trader">트레이더스 460g (380EA/대차, 120분)</option>
+              <option value="sig">시그니처 130g (1,024EA/대차, 120분)</option>
+              <option value="mini">미니 70g 5개입 (1,280EA/대차, 120분)</option>
+            </select>
+          </label>
+          <label style="display:flex;flex-direction:column;gap:3px">
+            <span>두 번째 원육량 (kg)</span>
+            <input type="number" id="tt-kg2" value="500" min="0" max="6000" step="50" oninput="ttRender()" style="width:90px;height:30px;font-size:13px;padding:0 8px;border:0.5px solid var(--color-border-secondary);border-radius:6px">
+          </label>
+          <label style="display:flex;flex-direction:column;gap:3px">
+            <span>⏱ 순서</span>
+            <select id="tt-order" onchange="ttRender()" style="height:30px;font-size:12px;padding:0 8px;border:0.5px solid var(--color-border-secondary);border-radius:6px;background:var(--color-background-primary)">
+              <option value="fc-first">FC 먼저 → 두 번째</option>
+              <option value="other-first">두 번째 먼저 → FC</option>
+            </select>
+          </label>
+          <label style="display:flex;flex-direction:column;gap:3px">
+            <span>내포장 라인 수</span>
+            <input type="number" id="tt-pk-lines" value="2" min="1" max="2" step="1" oninput="ttRender()" style="width:60px;height:30px;font-size:13px;padding:0 8px;border:0.5px solid var(--color-border-secondary);border-radius:6px">
+          </label>
+          <div style="font-size:10.5px;color:var(--color-text-tertiary);line-height:1.5;flex-basis:100%;margin-top:2px">
+            ※ 한 라인당 이송 작업자 2명 자동 차감. 가압탱크(5·6호) 비-FC 자숙(150분) 우선 점유.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 공정별 인원 + 생산성·수율 (자동값/수동 수정 가능) -->
+    <div style="background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:12px;padding:16px;margin-bottom:14px">
+      <div style="font-size:13px;font-weight:600;margin-bottom:10px">공정별 인원 · 생산성 · 수율</div>
+      <div style="font-size:11px;color:var(--color-text-tertiary);margin-bottom:12px">자동값(DB) 위에 직접 입력해 수정하면 그 값으로 시뮬레이션됩니다. ↺ 버튼으로 자동값 복원.</div>
+
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px">
+        <!-- 전처리 -->
+        <div style="background:var(--color-background-secondary);border-radius:8px;padding:10px 12px">
+          <div style="font-size:12px;font-weight:600;color:#185FA5;margin-bottom:8px">🔵 전처리</div>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <label style="font-size:11px;color:var(--color-text-secondary)">인원
+              <input type="number" id="tt-wk-pre" value="10" min="1" max="20" oninput="ttRender()" style="width:100%;height:28px;font-size:12px;padding:0 8px;border:0.5px solid var(--color-border-secondary);border-radius:5px">
+            </label>
+            <label style="font-size:11px;color:var(--color-text-secondary)">공정수율 (%)
+              <div style="display:flex;gap:4px;align-items:center">
+                <input type="number" id="tt-y-pre" value="89.3" step="0.1" oninput="ttMarkEdited(this)" style="flex:1;height:28px;font-size:12px;padding:0 8px;border:0.5px solid var(--color-border-secondary);border-radius:5px">
+                <button onclick="ttResetField('tt-y-pre','yPre')" title="자동값 복원" style="width:28px;height:28px;border:0.5px solid var(--color-border-secondary);border-radius:5px;background:transparent;cursor:pointer">↺</button>
+              </div>
+              <div id="tt-y-pre-auto" style="font-size:9.5px;color:var(--color-text-tertiary);margin-top:2px">자동: 89.3 (n=0)</div>
+            </label>
+            <label style="font-size:11px;color:var(--color-text-secondary)">생산성 (kg/인시)
+              <div style="display:flex;gap:4px;align-items:center">
+                <input type="number" id="tt-p-pre" value="48.2" step="0.1" oninput="ttMarkEdited(this)" style="flex:1;height:28px;font-size:12px;padding:0 8px;border:0.5px solid var(--color-border-secondary);border-radius:5px">
+                <button onclick="ttResetField('tt-p-pre','pPre')" title="자동값 복원" style="width:28px;height:28px;border:0.5px solid var(--color-border-secondary);border-radius:5px;background:transparent;cursor:pointer">↺</button>
+              </div>
+              <div id="tt-p-pre-auto" style="font-size:9.5px;color:var(--color-text-tertiary);margin-top:2px">자동: 48.2 (n=0)</div>
+            </label>
+          </div>
+        </div>
+
+        <!-- 파쇄 -->
+        <div style="background:var(--color-background-secondary);border-radius:8px;padding:10px 12px">
+          <div style="font-size:12px;font-weight:600;color:#BA7517;margin-bottom:8px">🟡 파쇄</div>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <div style="font-size:10.5px;color:var(--color-text-tertiary);line-height:1.5;background:#FFF7ED;padding:6px 8px;border-radius:5px">
+              ★ 인원 자동 계산<br>
+              <span id="tt-crush-peak-display" style="color:#BA7517;font-weight:600">풀가동: --명</span><br>
+              <span id="tt-crush-pre-display" style="color:#BA7517;font-weight:600">점심후: --명</span><br>
+              <span style="font-size:10px;color:var(--color-text-tertiary)">= 총원 - 내포장 - 이송 - 관리 - 제수</span>
+            </div>
+            <label style="font-size:11px;color:var(--color-text-secondary)">공정수율 (%)
+              <div style="display:flex;gap:4px;align-items:center">
+                <input type="number" id="tt-y-crush" value="96.1" step="0.1" oninput="ttMarkEdited(this)" style="flex:1;height:28px;font-size:12px;padding:0 8px;border:0.5px solid var(--color-border-secondary);border-radius:5px">
+                <button onclick="ttResetField('tt-y-crush','yCrush')" title="자동값 복원" style="width:28px;height:28px;border:0.5px solid var(--color-border-secondary);border-radius:5px;background:transparent;cursor:pointer">↺</button>
+              </div>
+              <div id="tt-y-crush-auto" style="font-size:9.5px;color:var(--color-text-tertiary);margin-top:2px">자동: 96.1 (n=0)</div>
+            </label>
+            <label style="font-size:11px;color:var(--color-text-secondary)">생산성 (kg/인시)
+              <div style="display:flex;gap:4px;align-items:center">
+                <input type="number" id="tt-p-crush" value="17.2" step="0.1" oninput="ttMarkEdited(this)" style="flex:1;height:28px;font-size:12px;padding:0 8px;border:0.5px solid var(--color-border-secondary);border-radius:5px">
+                <button onclick="ttResetField('tt-p-crush','pCrush')" title="자동값 복원" style="width:28px;height:28px;border:0.5px solid var(--color-border-secondary);border-radius:5px;background:transparent;cursor:pointer">↺</button>
+              </div>
+              <div id="tt-p-crush-auto" style="font-size:9.5px;color:var(--color-text-tertiary);margin-top:2px">자동: 17.2 (n=0)</div>
+            </label>
+          </div>
+        </div>
+
+        <!-- 제수 (전날 제품 외포장) -->
+        <div style="background:var(--color-background-secondary);border-radius:8px;padding:10px 12px">
+          <div style="font-size:12px;font-weight:600;color:#1D9E75;margin-bottom:8px">🟢 제수 (전날 제품)</div>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <label style="font-size:11px;color:var(--color-text-secondary)">고정 인원
+              <input type="number" id="tt-wk-leftover" value="0" min="0" max="20" oninput="ttRender()" style="width:100%;height:28px;font-size:12px;padding:0 8px;border:0.5px solid var(--color-border-secondary);border-radius:5px">
+            </label>
+            <div style="font-size:10px;color:var(--color-text-tertiary);line-height:1.4">
+              매일 별도 인원으로 진행되는 작업.<br>
+              파쇄 풀가동 인원에서 차감됨.
+            </div>
+          </div>
+        </div>
+
+        <!-- 내포장 -->
+        <div style="background:var(--color-background-secondary);border-radius:8px;padding:10px 12px">
+          <div style="font-size:12px;font-weight:600;color:#7F77DD;margin-bottom:8px">🟣 내포장</div>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <label style="font-size:11px;color:var(--color-text-secondary)">인원
+              <input type="number" id="tt-wk-pack" value="6" min="1" max="12" oninput="ttRender()" style="width:100%;height:28px;font-size:12px;padding:0 8px;border:0.5px solid var(--color-border-secondary);border-radius:5px">
+            </label>
+            <label style="font-size:11px;color:var(--color-text-secondary)">생산성 (EA/분)
+              <div style="display:flex;gap:4px;align-items:center">
+                <input type="number" id="tt-p-pack" value="8" step="0.5" oninput="ttMarkEdited(this)" style="flex:1;height:28px;font-size:12px;padding:0 8px;border:0.5px solid var(--color-border-secondary);border-radius:5px">
+                <button onclick="ttResetField('tt-p-pack','pPackEa')" title="자동값 복원" style="width:28px;height:28px;border:0.5px solid var(--color-border-secondary);border-radius:5px;background:transparent;cursor:pointer">↺</button>
+              </div>
+              <div id="tt-p-pack-auto" style="font-size:9.5px;color:var(--color-text-tertiary);margin-top:2px">자동: 8 (n=0)</div>
+            </label>
+          </div>
+        </div>
+
+        <!-- 이송·레토르트 -->
+        <div style="background:var(--color-background-secondary);border-radius:8px;padding:10px 12px">
+          <div style="font-size:12px;font-weight:600;color:#A32D2D;margin-bottom:8px">🔴 이송 · 레토르트</div>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <label style="font-size:11px;color:var(--color-text-secondary)">인원
+              <input type="number" id="tt-wk-trans" value="2" min="1" max="6" oninput="ttRender()" style="width:100%;height:28px;font-size:12px;padding:0 8px;border:0.5px solid var(--color-border-secondary);border-radius:5px">
+            </label>
+            <div style="font-size:10.5px;color:var(--color-text-tertiary);line-height:1.5;padding-top:4px">
+              자숙: 4h × 4탱크 (고정)<br>
+              레토르트: 2.5h × 회차 · 384EA<br>
+              대차 8개 한도 · 1대 운영
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 결과 영역 (보고서) -->
+    <div id="tt-result"></div>
+  </div>
+</div>
+
+<div class="pg" id="p-timetable_test">
+  <div style="background:#FEF3C7;border:1px solid #F59E0B;border-radius:8px;padding:8px 14px;margin-bottom:12px;font-size:12px;color:#92400E"><strong>🧪 테스트 탭</strong> — 안정화된 [타임테이블] 탭의 복제본. 여기서 새 기능 실험 중입니다.</div>
+  <!-- 메인 -->
+  <div id="ttt-main" style="display:block;padding:0 4px">
+    <!-- 입력 영역 (공통 컨트롤) -->
+    <div style="background:var(--color-background-secondary);border:0.5px solid var(--color-border-tertiary);border-radius:12px;padding:14px 16px;margin-bottom:14px">
+      <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;font-size:11.5px;color:var(--color-text-secondary)">
+        <label style="display:flex;flex-direction:column;gap:3px">
+          <span>📅 분석 기간</span>
+          <select id="ttt-period" onchange="tttPeriodChange()" style="height:30px;font-size:12px;padding:0 8px;border:0.5px solid var(--color-border-secondary);border-radius:6px;background:var(--color-background-primary)">
+            <option value="all">전체</option>
+            <option value="last30" selected>최근 30일</option>
+            <option value="month">이번 달</option>
+            <option value="week">최근 7일</option>
+            <option value="today">오늘</option>
+          </select>
+        </label>
+
+        <label style="display:flex;flex-direction:column;gap:3px">
+          <span>📦 제품 분류</span>
+          <select id="ttt-meat" onchange="tttPeriodChange()" style="height:30px;font-size:12px;padding:0 8px;border:0.5px solid var(--color-border-secondary);border-radius:6px;background:var(--color-background-primary)">
+            <option value="홍두깨">FC 제품 (홍두깨)</option>
+            <option value="우둔">비-FC (우둔)</option>
+            <option value="설도">비-FC (설도)</option>
+          </select>
+        </label>
+
+        <label style="display:flex;flex-direction:column;gap:3px">
+          <span>원육량 (kg)</span>
+          <input type="number" id="ttt-kg" value="1600" min="0" max="6000" step="50" oninput="tttRender()" style="width:90px;height:30px;font-size:13px;padding:0 8px;border:0.5px solid var(--color-border-secondary);border-radius:6px">
+        </label>
+
+        <label style="display:flex;flex-direction:column;gap:3px">
+          <span>총 인원</span>
+          <input type="number" id="ttt-total" value="28" min="5" max="50" oninput="tttRender()" style="width:60px;height:30px;font-size:13px;padding:0 8px;border:0.5px solid var(--color-border-secondary);border-radius:6px">
+        </label>
+
+        <div style="border-left:0.5px solid var(--color-border-secondary);height:36px;margin:0 4px;align-self:flex-end"></div>
+
+        <label style="display:flex;flex-direction:column;gap:3px">
+          <span>🌅 조출 시각</span>
+          <input type="time" id="ttt-start" value="05:00" oninput="tttRender()" style="height:30px;font-size:13px;padding:0 6px;border:0.5px solid var(--color-border-secondary);border-radius:6px;width:96px">
+        </label>
+
+        <label style="display:flex;flex-direction:column;gap:3px">
+          <span>조출 인원</span>
+          <input type="number" id="ttt-early" value="7" min="1" max="15" oninput="tttRender()" style="width:60px;height:30px;font-size:13px;padding:0 8px;border:0.5px solid var(--color-border-secondary);border-radius:6px">
+        </label>
+
+        <label style="display:flex;flex-direction:column;gap:3px">
+          <span>👔 관리자 출근</span>
+          <input type="time" id="ttt-mgr-time" value="07:00" oninput="tttRender()" style="height:30px;font-size:13px;padding:0 6px;border:0.5px solid var(--color-border-secondary);border-radius:6px;width:96px">
+        </label>
+
+        <label style="display:flex;flex-direction:column;gap:3px">
+          <span>관리 인원</span>
+          <input type="number" id="ttt-mgr" value="2" min="0" max="5" oninput="tttRender()" style="width:60px;height:30px;font-size:13px;padding:0 8px;border:0.5px solid var(--color-border-secondary);border-radius:6px">
+        </label>
+
+        <label style="display:flex;flex-direction:column;gap:3px">
+          <span>🇰🇷 한국인 합류</span>
+          <input type="time" id="ttt-join" value="09:00" oninput="tttRender()" style="height:30px;font-size:13px;padding:0 6px;border:0.5px solid var(--color-border-secondary);border-radius:6px;width:96px">
+        </label>
+      </div>
+
+      <!-- 동시 작업 (선택) — 끄면 단일 원육 시뮬, 켜면 두 번째 원육 추가 -->
+      <div style="margin-top:14px;padding-top:12px;border-top:0.5px dashed var(--color-border-secondary)">
+        <label style="display:inline-flex;align-items:center;gap:8px;font-size:12px;color:var(--color-text-secondary);cursor:pointer;margin-bottom:0">
+          <input type="checkbox" id="ttt-dual-enabled" onchange="tttToggleDual()" style="width:14px;height:14px;cursor:pointer">
+          <span style="font-weight:500">⚡ 동시 작업 (2제품 파이프라인)</span>
+        </label>
+        <div id="ttt-dual-block" style="display:none;margin-top:10px;flex-wrap:wrap;gap:12px;align-items:flex-end;font-size:11.5px;color:var(--color-text-secondary)">
+          <!-- FP (시그 등) 입력 -->
+          <div style="flex-basis:100%;font-size:12px;font-weight:600;color:#7F77DD;margin-bottom:2px">📦 FP (두 번째 제품)</div>
+          <label style="display:flex;flex-direction:column;gap:3px">
+            <span>원육 종류</span>
+            <select id="ttt-meattype2" onchange="tttAutoAnalyzeOther()" style="height:30px;font-size:12px;padding:0 8px;border:0.5px solid var(--color-border-secondary);border-radius:6px;background:var(--color-background-primary)">
+              <option value="우둔">우둔</option>
+              <option value="설도">설도</option>
+              <option value="코코">코코</option>
+              <option value="기타">기타</option>
+            </select>
+          </label>
+          <label style="display:flex;flex-direction:column;gap:3px">
+            <span>제품</span>
+            <select id="ttt-meat2" onchange="tttRender()" style="height:30px;font-size:12px;padding:0 8px;border:0.5px solid var(--color-border-secondary);border-radius:6px;background:var(--color-background-primary)">
+              <option value="sig">시그니처 130g (800EA/대차)</option>
+              <option value="trader">트레이더스 460g (380EA/대차)</option>
+              <option value="mini">미니 70g (700EA/대차)</option>
+            </select>
+          </label>
+          <label style="display:flex;flex-direction:column;gap:3px">
+            <span>원육량 (kg)</span>
+            <input type="number" id="ttt-kg2" value="500" min="0" max="6000" step="50" oninput="tttRender()" style="width:90px;height:30px;font-size:13px;padding:0 8px;border:0.5px solid var(--color-border-secondary);border-radius:6px">
+          </label>
+          <label style="display:flex;flex-direction:column;gap:3px">
+            <span>분석 기간</span>
+            <select id="ttt-period2" onchange="tttAutoAnalyzeOther()" style="height:30px;font-size:12px;padding:0 8px;border:0.5px solid var(--color-border-secondary);border-radius:6px;background:var(--color-background-primary)">
+              <option value="7">최근 7일</option>
+              <option value="30" selected>최근 30일</option>
+              <option value="90">최근 90일</option>
+            </select>
+          </label>
+          <div style="display:flex;flex-direction:column;gap:3px;font-size:11px;color:var(--color-text-tertiary)">
+            <span>FP 자동값 (DB 평균)</span>
+            <span id="ttt-fp-auto-summary">—</span>
+          </div>
+          <div style="flex-basis:100%;border-top:0.5px solid var(--color-border-tertiary);margin-top:4px;padding-top:8px;font-size:12px;font-weight:600;color:#185FA5">FC + FP 공통</div>
+          <label style="display:flex;flex-direction:column;gap:3px">
+            <span>⏱ 순서</span>
+            <select id="ttt-order" onchange="tttRender()" style="height:30px;font-size:12px;padding:0 8px;border:0.5px solid var(--color-border-secondary);border-radius:6px;background:var(--color-background-primary)">
+              <option value="fc-first">FC 먼저 → FP</option>
+              <option value="other-first">FP 먼저 → FC</option>
+            </select>
+          </label>
+          <label style="display:flex;flex-direction:column;gap:3px">
+            <span>내포장 라인 수</span>
+            <input type="number" id="ttt-pk-lines" value="2" min="1" max="2" step="1" oninput="tttRender()" style="width:60px;height:30px;font-size:13px;padding:0 8px;border:0.5px solid var(--color-border-secondary);border-radius:6px">
+          </label>
+          <div style="font-size:10.5px;color:var(--color-text-tertiary);line-height:1.5;flex-basis:100%;margin-top:2px">
+            ※ 한 라인당 이송 작업자 2명 자동 차감. 가압탱크(5·6호) 비-FC 자숙(150분) 우선 점유.
+          </div>
+
+          <!-- FP 공정별 인원·생산성·수율 카드 -->
+          <div style="flex-basis:100%;margin-top:10px;padding-top:10px;border-top:0.5px dashed var(--color-border-tertiary)">
+            <div style="font-size:12px;font-weight:600;color:#7F77DD;margin-bottom:8px">📦 FP 공정별 인원 · 생산성 · 수율</div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px">
+
+              <!-- FP 전처리 -->
+              <div style="background:var(--color-background-secondary);border-radius:8px;padding:10px 12px;border:1px solid #dde8f5">
+                <div style="font-size:12px;font-weight:600;color:#185FA5;margin-bottom:8px">🔵 전처리 (FP)</div>
+                <div style="display:flex;flex-direction:column;gap:8px">
+                  <label style="font-size:11px;color:var(--color-text-secondary)">인원
+                    <input type="number" id="ttt-fp-wk-pre" value="10" min="1" max="20" oninput="tttRender()" style="width:100%;height:28px;font-size:12px;padding:0 8px;border:0.5px solid var(--color-border-secondary);border-radius:5px">
+                  </label>
+                  <label style="font-size:11px;color:var(--color-text-secondary)">공정수율 (%)
+                    <div style="display:flex;gap:4px;align-items:center">
+                      <input type="number" id="ttt-fp-y-pre" value="89.3" step="0.1" oninput="tttRender()" style="flex:1;height:28px;font-size:12px;padding:0 8px;border:0.5px solid var(--color-border-secondary);border-radius:5px">
+                      <button onclick="tttFpResetField('ttt-fp-y-pre','yPre')" title="자동값 복원" style="width:28px;height:28px;border:0.5px solid var(--color-border-secondary);border-radius:5px;background:transparent;cursor:pointer">↺</button>
+                    </div>
+                    <div id="ttt-fp-y-pre-auto" style="font-size:9.5px;color:var(--color-text-tertiary);margin-top:2px">자동: —</div>
+                  </label>
+                  <label style="font-size:11px;color:var(--color-text-secondary)">생산성 (kg/인시)
+                    <div style="display:flex;gap:4px;align-items:center">
+                      <input type="number" id="ttt-fp-p-pre" value="48.2" step="0.1" oninput="tttRender()" style="flex:1;height:28px;font-size:12px;padding:0 8px;border:0.5px solid var(--color-border-secondary);border-radius:5px">
+                      <button onclick="tttFpResetField('ttt-fp-p-pre','pPre')" title="자동값 복원" style="width:28px;height:28px;border:0.5px solid var(--color-border-secondary);border-radius:5px;background:transparent;cursor:pointer">↺</button>
+                    </div>
+                    <div id="ttt-fp-p-pre-auto" style="font-size:9.5px;color:var(--color-text-tertiary);margin-top:2px">자동: —</div>
+                  </label>
+                </div>
+              </div>
+
+              <!-- FP 파쇄 -->
+              <div style="background:var(--color-background-secondary);border-radius:8px;padding:10px 12px;border:1px solid #fef3c7">
+                <div style="font-size:12px;font-weight:600;color:#BA7517;margin-bottom:8px">🟡 파쇄 (FP)</div>
+                <div style="display:flex;flex-direction:column;gap:8px">
+                  <div style="font-size:10.5px;color:var(--color-text-tertiary);line-height:1.5;background:#FFF7ED;padding:6px 8px;border-radius:5px">
+                    ★ 인원 자동 계산<br>
+                    <span style="font-size:10px">(총원 - 내포장 - 이송 - 관리 - 제수)</span>
+                  </div>
+                  <label style="font-size:11px;color:var(--color-text-secondary)">공정수율 (%)
+                    <div style="display:flex;gap:4px;align-items:center">
+                      <input type="number" id="ttt-fp-y-crush" value="96.1" step="0.1" oninput="tttRender()" style="flex:1;height:28px;font-size:12px;padding:0 8px;border:0.5px solid var(--color-border-secondary);border-radius:5px">
+                      <button onclick="tttFpResetField('ttt-fp-y-crush','yCrush')" title="자동값 복원" style="width:28px;height:28px;border:0.5px solid var(--color-border-secondary);border-radius:5px;background:transparent;cursor:pointer">↺</button>
+                    </div>
+                    <div id="ttt-fp-y-crush-auto" style="font-size:9.5px;color:var(--color-text-tertiary);margin-top:2px">자동: —</div>
+                  </label>
+                  <label style="font-size:11px;color:var(--color-text-secondary)">생산성 (kg/인시)
+                    <div style="display:flex;gap:4px;align-items:center">
+                      <input type="number" id="ttt-fp-p-crush" value="17.2" step="0.1" oninput="tttRender()" style="flex:1;height:28px;font-size:12px;padding:0 8px;border:0.5px solid var(--color-border-secondary);border-radius:5px">
+                      <button onclick="tttFpResetField('ttt-fp-p-crush','pCrush')" title="자동값 복원" style="width:28px;height:28px;border:0.5px solid var(--color-border-secondary);border-radius:5px;background:transparent;cursor:pointer">↺</button>
+                    </div>
+                    <div id="ttt-fp-p-crush-auto" style="font-size:9.5px;color:var(--color-text-tertiary);margin-top:2px">자동: —</div>
+                  </label>
+                </div>
+              </div>
+
+              <!-- FP 내포장 -->
+              <div style="background:var(--color-background-secondary);border-radius:8px;padding:10px 12px;border:1px solid #ede9fe">
+                <div style="font-size:12px;font-weight:600;color:#7F77DD;margin-bottom:8px">🟣 내포장 (FP)</div>
+                <div style="display:flex;flex-direction:column;gap:8px">
+                  <label style="font-size:11px;color:var(--color-text-secondary)">인원
+                    <input type="number" id="ttt-fp-wk-pack" value="6" min="1" max="12" oninput="tttRender()" style="width:100%;height:28px;font-size:12px;padding:0 8px;border:0.5px solid var(--color-border-secondary);border-radius:5px">
+                  </label>
+                  <label style="font-size:11px;color:var(--color-text-secondary)">생산성 (EA/분)
+                    <div style="display:flex;gap:4px;align-items:center">
+                      <input type="number" id="ttt-fp-p-pack" value="8" step="0.5" oninput="tttRender()" style="flex:1;height:28px;font-size:12px;padding:0 8px;border:0.5px solid var(--color-border-secondary);border-radius:5px">
+                      <button onclick="tttFpResetField('ttt-fp-p-pack','pPackEa')" title="자동값 복원" style="width:28px;height:28px;border:0.5px solid var(--color-border-secondary);border-radius:5px;background:transparent;cursor:pointer">↺</button>
+                    </div>
+                    <div id="ttt-fp-p-pack-auto" style="font-size:9.5px;color:var(--color-text-tertiary);margin-top:2px">자동: —</div>
+                  </label>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 공정별 인원 + 생산성·수율 (자동값/수동 수정 가능) -->
+    <div style="background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:12px;padding:16px;margin-bottom:14px">
+      <div style="font-size:13px;font-weight:600;margin-bottom:10px">공정별 인원 · 생산성 · 수율</div>
+      <div style="font-size:11px;color:var(--color-text-tertiary);margin-bottom:12px">자동값(DB) 위에 직접 입력해 수정하면 그 값으로 시뮬레이션됩니다. ↺ 버튼으로 자동값 복원.</div>
+
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px">
+        <!-- 전처리 -->
+        <div style="background:var(--color-background-secondary);border-radius:8px;padding:10px 12px">
+          <div style="font-size:12px;font-weight:600;color:#185FA5;margin-bottom:8px">🔵 전처리</div>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <label style="font-size:11px;color:var(--color-text-secondary)">인원
+              <input type="number" id="ttt-wk-pre" value="10" min="1" max="20" oninput="tttRender()" style="width:100%;height:28px;font-size:12px;padding:0 8px;border:0.5px solid var(--color-border-secondary);border-radius:5px">
+            </label>
+            <label style="font-size:11px;color:var(--color-text-secondary)">공정수율 (%)
+              <div style="display:flex;gap:4px;align-items:center">
+                <input type="number" id="ttt-y-pre" value="89.3" step="0.1" oninput="tttMarkEdited(this)" style="flex:1;height:28px;font-size:12px;padding:0 8px;border:0.5px solid var(--color-border-secondary);border-radius:5px">
+                <button onclick="tttResetField('tt-y-pre','yPre')" title="자동값 복원" style="width:28px;height:28px;border:0.5px solid var(--color-border-secondary);border-radius:5px;background:transparent;cursor:pointer">↺</button>
+              </div>
+              <div id="ttt-y-pre-auto" style="font-size:9.5px;color:var(--color-text-tertiary);margin-top:2px">자동: 89.3 (n=0)</div>
+            </label>
+            <label style="font-size:11px;color:var(--color-text-secondary)">생산성 (kg/인시)
+              <div style="display:flex;gap:4px;align-items:center">
+                <input type="number" id="ttt-p-pre" value="48.2" step="0.1" oninput="tttMarkEdited(this)" style="flex:1;height:28px;font-size:12px;padding:0 8px;border:0.5px solid var(--color-border-secondary);border-radius:5px">
+                <button onclick="tttResetField('tt-p-pre','pPre')" title="자동값 복원" style="width:28px;height:28px;border:0.5px solid var(--color-border-secondary);border-radius:5px;background:transparent;cursor:pointer">↺</button>
+              </div>
+              <div id="ttt-p-pre-auto" style="font-size:9.5px;color:var(--color-text-tertiary);margin-top:2px">자동: 48.2 (n=0)</div>
+            </label>
+          </div>
+        </div>
+
+        <!-- 파쇄 -->
+        <div style="background:var(--color-background-secondary);border-radius:8px;padding:10px 12px">
+          <div style="font-size:12px;font-weight:600;color:#BA7517;margin-bottom:8px">🟡 파쇄</div>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <div style="font-size:10.5px;color:var(--color-text-tertiary);line-height:1.5;background:#FFF7ED;padding:6px 8px;border-radius:5px">
+              ★ 인원 자동 계산<br>
+              <span id="ttt-crush-peak-display" style="color:#BA7517;font-weight:600">풀가동: --명</span><br>
+              <span id="ttt-crush-pre-display" style="color:#BA7517;font-weight:600">점심후: --명</span><br>
+              <span style="font-size:10px;color:var(--color-text-tertiary)">= 총원 - 내포장 - 이송 - 관리 - 제수</span>
+            </div>
+            <label style="font-size:11px;color:var(--color-text-secondary)">공정수율 (%)
+              <div style="display:flex;gap:4px;align-items:center">
+                <input type="number" id="ttt-y-crush" value="96.1" step="0.1" oninput="tttMarkEdited(this)" style="flex:1;height:28px;font-size:12px;padding:0 8px;border:0.5px solid var(--color-border-secondary);border-radius:5px">
+                <button onclick="tttResetField('tt-y-crush','yCrush')" title="자동값 복원" style="width:28px;height:28px;border:0.5px solid var(--color-border-secondary);border-radius:5px;background:transparent;cursor:pointer">↺</button>
+              </div>
+              <div id="ttt-y-crush-auto" style="font-size:9.5px;color:var(--color-text-tertiary);margin-top:2px">자동: 96.1 (n=0)</div>
+            </label>
+            <label style="font-size:11px;color:var(--color-text-secondary)">생산성 (kg/인시)
+              <div style="display:flex;gap:4px;align-items:center">
+                <input type="number" id="ttt-p-crush" value="17.2" step="0.1" oninput="tttMarkEdited(this)" style="flex:1;height:28px;font-size:12px;padding:0 8px;border:0.5px solid var(--color-border-secondary);border-radius:5px">
+                <button onclick="tttResetField('tt-p-crush','pCrush')" title="자동값 복원" style="width:28px;height:28px;border:0.5px solid var(--color-border-secondary);border-radius:5px;background:transparent;cursor:pointer">↺</button>
+              </div>
+              <div id="ttt-p-crush-auto" style="font-size:9.5px;color:var(--color-text-tertiary);margin-top:2px">자동: 17.2 (n=0)</div>
+            </label>
+          </div>
+        </div>
+
+        <!-- 제수 (전날 제품 외포장) -->
+        <div style="background:var(--color-background-secondary);border-radius:8px;padding:10px 12px">
+          <div style="font-size:12px;font-weight:600;color:#1D9E75;margin-bottom:8px">🟢 제수 (전날 제품)</div>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <label style="font-size:11px;color:var(--color-text-secondary)">고정 인원
+              <input type="number" id="ttt-wk-leftover" value="0" min="0" max="20" oninput="tttRender()" style="width:100%;height:28px;font-size:12px;padding:0 8px;border:0.5px solid var(--color-border-secondary);border-radius:5px">
+            </label>
+            <div style="font-size:10px;color:var(--color-text-tertiary);line-height:1.4">
+              매일 별도 인원으로 진행되는 작업.<br>
+              파쇄 풀가동 인원에서 차감됨.
+            </div>
+          </div>
+        </div>
+
+        <!-- 내포장 -->
+        <div style="background:var(--color-background-secondary);border-radius:8px;padding:10px 12px">
+          <div style="font-size:12px;font-weight:600;color:#7F77DD;margin-bottom:8px">🟣 내포장</div>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <label style="font-size:11px;color:var(--color-text-secondary)">인원
+              <input type="number" id="ttt-wk-pack" value="6" min="1" max="12" oninput="tttRender()" style="width:100%;height:28px;font-size:12px;padding:0 8px;border:0.5px solid var(--color-border-secondary);border-radius:5px">
+            </label>
+            <label style="font-size:11px;color:var(--color-text-secondary)">생산성 (EA/분)
+              <div style="display:flex;gap:4px;align-items:center">
+                <input type="number" id="ttt-p-pack" value="8" step="0.5" oninput="tttMarkEdited(this)" style="flex:1;height:28px;font-size:12px;padding:0 8px;border:0.5px solid var(--color-border-secondary);border-radius:5px">
+                <button onclick="tttResetField('tt-p-pack','pPackEa')" title="자동값 복원" style="width:28px;height:28px;border:0.5px solid var(--color-border-secondary);border-radius:5px;background:transparent;cursor:pointer">↺</button>
+              </div>
+              <div id="ttt-p-pack-auto" style="font-size:9.5px;color:var(--color-text-tertiary);margin-top:2px">자동: 8 (n=0)</div>
+            </label>
+          </div>
+        </div>
+
+        <!-- 이송·레토르트 -->
+        <div style="background:var(--color-background-secondary);border-radius:8px;padding:10px 12px">
+          <div style="font-size:12px;font-weight:600;color:#A32D2D;margin-bottom:8px">🔴 이송 · 레토르트</div>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <label style="font-size:11px;color:var(--color-text-secondary)">인원
+              <input type="number" id="ttt-wk-trans" value="2" min="1" max="6" oninput="tttRender()" style="width:100%;height:28px;font-size:12px;padding:0 8px;border:0.5px solid var(--color-border-secondary);border-radius:5px">
+            </label>
+            <div style="font-size:10.5px;color:var(--color-text-tertiary);line-height:1.5;padding-top:4px">
+              자숙: 4h × 4탱크 (고정)<br>
+              레토르트: 2.5h × 회차 · 384EA<br>
+              대차 8개 한도 · 1대 운영
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 결과 영역 (보고서) -->
+    <div id="ttt-result"></div>
+  </div>
+</div>
 
 
 <!-- ===== 설정 ===== -->
@@ -857,49 +1407,62 @@
     <div class="acc-body closed" id="acc-alarm">
       <div style="padding-top:1rem">
         <div style="font-size:11.5px;color:var(--g5);margin-bottom:12px;line-height:1.5">
-          공정별 원육수율이 평소 평균에서 ±N표준편차(σ) 만큼 벗어나면 알람이 울립니다.<br>
-          기본값은 <b>4월 데이터 30일치</b>로 자동 산출됨. 운영하면서 조정 가능.
+          공정별 평소 평균에서 <b>입력한 %P만큼 떨어지면</b> 알람이 울립니다.<br>
+          예: 평균 54.5% / 노란 -2 / 빨간 -3 → 노란 임계 52.5% / 빨간 임계 51.5%<br>
+          평균은 <b>최근 30일 데이터로 자동 계산</b>. 차감값은 운영하면서 조정하세요.
         </div>
         <table style="width:100%;border-collapse:collapse;font-size:12px">
           <thead><tr style="background:var(--g1)">
             <th style="text-align:left;padding:6px 8px;width:80px">공정</th>
             <th style="text-align:right;padding:6px 8px">평균(%)</th>
-            <th style="text-align:right;padding:6px 8px">편차σ(%)</th>
+            <th style="text-align:right;padding:6px 8px">노란 차감(%P)</th>
+            <th style="text-align:right;padding:6px 8px">빨간 차감(%P)</th>
             <th style="text-align:right;padding:6px 8px">노란 임계</th>
             <th style="text-align:right;padding:6px 8px">빨간 임계</th>
             <th style="text-align:center;padding:6px 8px;width:50px">사용</th>
           </tr></thead>
           <tbody>
             <tr>
+              <td style="padding:6px 8px;font-weight:600;color:#1D4ED8">전처리</td>
+              <td style="padding:6px 8px"><input class="fc" type="number" step="0.01" id="al_pp_mean" style="width:100%;text-align:right" value="0"></td>
+              <td style="padding:6px 8px"><input class="fc" type="number" step="0.1" id="al_pp_yel" style="width:100%;text-align:right" value="2"></td>
+              <td style="padding:6px 8px"><input class="fc" type="number" step="0.1" id="al_pp_red" style="width:100%;text-align:right" value="3"></td>
+              <td style="padding:6px 8px;text-align:right;color:#92400E;font-family:monospace" id="al_pp_y">—</td>
+              <td style="padding:6px 8px;text-align:right;color:#991B1B;font-family:monospace" id="al_pp_r">—</td>
+              <td style="padding:6px 8px;text-align:center"><input type="checkbox" id="al_pp_on" checked style="width:16px;height:16px"></td>
+            </tr>
+            <tr>
               <td style="padding:6px 8px;font-weight:600;color:#0D9488">자숙</td>
               <td style="padding:6px 8px"><input class="fc" type="number" step="0.01" id="al_ck_mean" style="width:100%;text-align:right" value="54.50"></td>
-              <td style="padding:6px 8px"><input class="fc" type="number" step="0.01" id="al_ck_std" style="width:100%;text-align:right" value="1.27"></td>
-              <td style="padding:6px 8px;text-align:right;color:#92400E;font-family:monospace" id="al_ck_y">51.97%↓</td>
-              <td style="padding:6px 8px;text-align:right;color:#991B1B;font-family:monospace" id="al_ck_r">50.71%↓</td>
+              <td style="padding:6px 8px"><input class="fc" type="number" step="0.1" id="al_ck_yel" style="width:100%;text-align:right" value="2"></td>
+              <td style="padding:6px 8px"><input class="fc" type="number" step="0.1" id="al_ck_red" style="width:100%;text-align:right" value="3"></td>
+              <td style="padding:6px 8px;text-align:right;color:#92400E;font-family:monospace" id="al_ck_y">—</td>
+              <td style="padding:6px 8px;text-align:right;color:#991B1B;font-family:monospace" id="al_ck_r">—</td>
               <td style="padding:6px 8px;text-align:center"><input type="checkbox" id="al_ck_on" checked style="width:16px;height:16px"></td>
             </tr>
             <tr>
               <td style="padding:6px 8px;font-weight:600;color:#B45309">파쇄</td>
               <td style="padding:6px 8px"><input class="fc" type="number" step="0.01" id="al_sh_mean" style="width:100%;text-align:right" value="50.83"></td>
-              <td style="padding:6px 8px"><input class="fc" type="number" step="0.01" id="al_sh_std" style="width:100%;text-align:right" value="2.77"></td>
-              <td style="padding:6px 8px;text-align:right;color:#92400E;font-family:monospace" id="al_sh_y">45.29%↓</td>
-              <td style="padding:6px 8px;text-align:right;color:#991B1B;font-family:monospace" id="al_sh_r">42.53%↓</td>
+              <td style="padding:6px 8px"><input class="fc" type="number" step="0.1" id="al_sh_yel" style="width:100%;text-align:right" value="2"></td>
+              <td style="padding:6px 8px"><input class="fc" type="number" step="0.1" id="al_sh_red" style="width:100%;text-align:right" value="3"></td>
+              <td style="padding:6px 8px;text-align:right;color:#92400E;font-family:monospace" id="al_sh_y">—</td>
+              <td style="padding:6px 8px;text-align:right;color:#991B1B;font-family:monospace" id="al_sh_r">—</td>
               <td style="padding:6px 8px;text-align:center"><input type="checkbox" id="al_sh_on" checked style="width:16px;height:16px"></td>
             </tr>
             <tr>
-              <td style="padding:6px 8px;font-weight:600;color:#B45309">포장</td>
+              <td style="padding:6px 8px;font-weight:600;color:#7C3AED">포장</td>
               <td style="padding:6px 8px"><input class="fc" type="number" step="0.01" id="al_pk_mean" style="width:100%;text-align:right" value="50.67"></td>
-              <td style="padding:6px 8px"><input class="fc" type="number" step="0.01" id="al_pk_std" style="width:100%;text-align:right" value="7.23"></td>
-              <td style="padding:6px 8px;text-align:right;color:#92400E;font-family:monospace" id="al_pk_y">36.20%↓</td>
-              <td style="padding:6px 8px;text-align:right;color:#991B1B;font-family:monospace" id="al_pk_r">28.97%↓</td>
+              <td style="padding:6px 8px"><input class="fc" type="number" step="0.1" id="al_pk_yel" style="width:100%;text-align:right" value="2"></td>
+              <td style="padding:6px 8px"><input class="fc" type="number" step="0.1" id="al_pk_red" style="width:100%;text-align:right" value="3"></td>
+              <td style="padding:6px 8px;text-align:right;color:#92400E;font-family:monospace" id="al_pk_y">—</td>
+              <td style="padding:6px 8px;text-align:right;color:#991B1B;font-family:monospace" id="al_pk_r">—</td>
               <td style="padding:6px 8px;text-align:center"><input type="checkbox" id="al_pk_on" checked style="width:16px;height:16px"></td>
             </tr>
           </tbody>
         </table>
         <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
           <button class="btn bs bsm" onclick="saveAlarmThresholds()">💾 저장</button>
-          <button class="btn bo bsm" onclick="resetAlarmThresholds()">⟲ 4월 기본값으로</button>
-          <button class="btn bo bsm" onclick="recalcAlarmFromData()">🔄 최근 30일로 자동계산</button>
+          <button class="btn bo bsm" onclick="recalcAlarmFromData()">🔄 평균 자동계산 (최근 30일)</button>
         </div>
         <div id="al_save_msg" style="margin-top:8px;font-size:11px;color:var(--s)"></div>
       </div>
@@ -930,6 +1493,30 @@
           <button class="btn bo bsm" onclick="aiKeyRefresh()">⟲ 상태 새로고침</button>
         </div>
         <div id="ai_key_msg" style="margin-top:8px;font-size:11px;color:var(--s)"></div>
+      </div>
+    </div>
+    <div class="dvd"></div>
+
+    <!-- 분석 목표 아코디언 -->
+    <div class="acc-hd" onclick="toggleAcc('acc-targets')">
+      <span class="ct" style="margin-bottom:0">🎯 분석 목표 <span style="font-size:11px;color:var(--g5);font-weight:400">(차트 기준선)</span></span>
+      <span class="acc-arrow">▼</span>
+    </div>
+    <div class="acc-body closed" id="acc-targets">
+      <div style="padding-top:1rem">
+        <div style="font-size:11.5px;color:var(--g5);margin-bottom:12px;line-height:1.5">
+          분석 차트의 목표선/위험선 기준값입니다.<br>
+          저장 시 모든 디바이스의 차트에 즉시 반영됩니다.
+        </div>
+        <div class="fg" style="margin-bottom:10px">
+          <div class="fgrp"><label class="fl">원육수율 목표 (%)</label><input class="fc" type="number" step="0.1" id="tg_yield_goal" placeholder="55"></div>
+          <div class="fgrp"><label class="fl">원육수율 위험 (%)</label><input class="fc" type="number" step="0.1" id="tg_yield_danger" placeholder="50"></div>
+          <div class="fgrp"><label class="fl">포장 불량률 목표 (%)</label><input class="fc" type="number" step="0.01" id="tg_def_goal" placeholder="2"></div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn bs bsm" onclick="saveTargets()">💾 저장</button>
+        </div>
+        <div id="tg_msg" style="margin-top:8px;font-size:11px;color:var(--s)"></div>
       </div>
     </div>
     <div class="dvd"></div>
@@ -1015,28 +1602,30 @@
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.7.4/kakao.min.js" integrity="sha384-DKYJZ8NLiK8MN4/C5P2dtSmLQ4KwPaoqAfyA/DfmEc1VDxu4yyC7wy6K1Hs90nka" crossorigin="anonymous"></script>
 <script>if(window.Kakao){Kakao.init('3c36e1a3bb9ea2d4445a5cd30dd906c1');}</script>
 <script src="js/common.js?v=1778547898"></script>
-<script src="js/barcode.js?v=1778044749"></script>
-<script src="js/thawing.js?v=1778044749"></script>
-<script src="js/preprocess.js?v=1778044749"></script>
-<script src="js/process_save.js?v=1778045090"></script>
-<script src="js/cooking.js?v=1778044749"></script>
-<script src="js/shredding.js?v=1778044749"></script>
-<script src="js/packing.js?v=1778044749"></script>
-<script src="js/csv_upload.js?v=1777999449"></script>
+<script src="js/barcode.js?v=1778129561"></script>
+<script src="js/thawing.js?v=1778129561"></script>
+<script src="js/preprocess.js?v=1778134100"></script>
+<script src="js/process_save.js?v=1778129561"></script>
+<script src="js/cooking.js?v=1778209050"></script>
+<script src="js/shredding.js?v=1778129561"></script>
+<script src="js/packing.js?v=1778145851"></script>
+<script src="js/csv_upload.js?v=1778129561"></script>
 <script src="js/daily_report.js?v=1778546951"></script>
-<script src="js/analysis.js?v=1778547898"></script>
-<script src="js/ai_analysis.js?v=1777999449"></script>
-<script src="js/dashboard.js?v=1777999449"></script>
-<script src="js/trace.js?v=1777999449"></script>
+<script src="js/analysis.js?v=1778550054"></script>
+<script src="js/ai_analysis.js?v=1778129561"></script>
+<script src="js/dashboard.js?v=1778129561"></script>
+<script src="js/trace.js?v=1778148449"></script>
 <script src="js/outerpacking.js?v=1778547898"></script>
-<script src="js/settings.js?v=1777999449"></script>
-<script src="js/kakao.js?v=1777999449"></script>
-<script src="js/app.js?v=1777999449"></script>
-<script src="js/schedule.js?v=1777999449"></script>
-<script src="js/attendance.js?v=1777999449"></script>
-<script src="js/timepicker.js?v=1777999449"></script>
-<script src="js/globals.js?v=1777999449"></script>
+<script src="js/settings.js?v=1778129561"></script>
+<script src="js/kakao.js?v=1778129561"></script>
+<script src="js/app.js?v=1778488027"></script>
+<script src="js/schedule.js?v=1778132322"></script>
+<script src="js/attendance.js?v=1778129561"></script>
+<script src="js/timepicker.js?v=1778129561"></script>
+<script src="js/globals.js?v=1778129561"></script>
 <script src="js/performance.js?v=1778547898"></script>
 <script src="js/monthly_production.js?v=1778547898"></script>
+<script src="js/timetable.js?v=1778495630"></script>
+<script src="js/timetable_test.js?v=1778506000"></script>
 </body>
 </html>

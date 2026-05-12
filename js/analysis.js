@@ -2592,6 +2592,187 @@ function renderTL(pp,ck,sh,pk){
 }
 
 // ============================================================
+// 타임라인 엑셀 다운로드
+// 현재 화면에 그려진 타임라인을 엑셀로 — 간트 차트 풍 (시간대 셀 색상)
+// ============================================================
+async function exportTimeline(){
+  if(!_tlData || !(_tlData.pp.length+_tlData.ck.length+_tlData.sh.length+_tlData.pk.length)){
+    if(typeof toast==='function') toast('타임라인 데이터가 없습니다','w'); else alert('타임라인 데이터가 없습니다');
+    return;
+  }
+  if(typeof toast==='function') toast('타임라인 엑셀 생성 중...','i');
+
+  const date = DDATE || (typeof tod==='function' ? tod() : new Date().toISOString().slice(0,10));
+  const {pp,ck,sh,pk} = _tlData;
+
+  const wb = XLSX.utils.book_new();
+
+  const COL_PP = 'BFDBFE';  // 전처리 파랑 (연한)
+  const COL_CK = 'BBF7D0';  // 자숙 초록
+  const COL_SH = 'FED7AA';  // 파쇄 주황
+  const COL_PK = 'E9D5FF';  // 포장 보라
+  const HDR_BG = 'B4C6E7';
+  const META_BG = 'D9E1F2';
+  const BORDER_THIN = { style:'thin', color:{rgb:'B0B0B0'} };
+  const BORDER_ALL = { top:BORDER_THIN, bottom:BORDER_THIN, left:BORDER_THIN, right:BORDER_THIN };
+  const FONT_DEFAULT = { name:'맑은 고딕', sz:10 };
+  const FONT_BOLD = { name:'맑은 고딕', sz:10, bold:true };
+  const FONT_TITLE = { name:'맑은 고딕', sz:16, bold:true };
+  const ALIGN_CENTER = { horizontal:'center', vertical:'center', wrapText:true };
+
+  function colLetter(col){ let s='',n=col; while(n>=0){ s=String.fromCharCode(65+(n%26))+s; n=Math.floor(n/26)-1; if(n<0)break; } return s; }
+  function cellRef(r,c){ return colLetter(c)+(r+1); }
+  function toMin(t){ if(!t) return null; const p=t.slice(0,5).split(':'); return +p[0]*60+(+p[1]||0); }
+  function hm(m){ return String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0'); }
+
+  // 시간 범위: 모든 start/end의 min~max를 30분 단위로 그리드
+  const all = [...pp,...ck,...sh,...pk];
+  const mins = all.flatMap(r=>[toMin(r.start),toMin(r.end)]).filter(v=>v!==null);
+  if(!mins.length){ if(typeof toast==='function') toast('시간 정보가 없습니다','w'); return; }
+  const SLOT = 30;  // 30분 단위
+  const gridStart = Math.floor(Math.min(...mins)/SLOT)*SLOT;
+  const gridEnd   = Math.ceil(Math.max(...mins)/SLOT)*SLOT;
+  const slotCnt   = Math.max(1, (gridEnd-gridStart)/SLOT);
+
+  // 헤더 라벨
+  const timeHeaders = [];
+  for(let i=0;i<slotCnt;i++) timeHeaders.push(hm(gridStart+i*SLOT));
+
+  const aoa = [];
+  const styles = {};
+  const merges = [];
+  let r = 0;
+
+  // ── 메타박스 ──
+  const sumKg = (arr) => arr.reduce((s,x)=>s+(parseFloat(x.kg)||parseFloat(x.totalKg)||0), 0);
+  const ppKg = sumKg(pp), ckKg = sumKg(ck), shKg = sumKg(sh);
+  const pkEa = pk.reduce((s,x)=>s+(parseFloat(x.ea)||0), 0);
+  // 부위/제품 종류
+  const types = [...new Set(pp.map(x=>x.type).filter(Boolean))];
+  const products = [...new Set(pk.map(x=>x.product).filter(Boolean))];
+
+  // 1번째 행: 제목 (좌측) + 작업일자 (우측)
+  // 좌측 7열 병합으로 제목, 우측 2열로 라벨/값
+  const metaRows = [
+    ['작업일자', date],
+    ['부위', types.join(', ') || '-'],
+    ['제품', products.join(', ') || '-'],
+    ['시간 범위', hm(gridStart)+' ~ '+hm(gridEnd)],
+  ];
+  const titleStartRow = r;
+  metaRows.forEach((mr, idx) => {
+    const row = new Array(2+slotCnt).fill('');
+    if(idx === 0) row[0] = '공정 타임라인 — '+date;
+    row[slotCnt] = mr[0];      // label (우측에서 두번째 칸)
+    row[slotCnt+1] = mr[1];    // value (마지막 칸)
+    aoa.push(row);
+
+    // 좌측 제목 박스 (0 ~ slotCnt-1까지)
+    for(let c=0;c<slotCnt;c++){
+      styles[cellRef(r,c)] = { font: idx===0 ? FONT_TITLE : FONT_DEFAULT, alignment: ALIGN_CENTER, border: BORDER_ALL };
+    }
+    // 메타 라벨/값
+    styles[cellRef(r,slotCnt)]   = { font: FONT_BOLD,    alignment: ALIGN_CENTER, fill:{fgColor:{rgb:META_BG}}, border: BORDER_ALL };
+    styles[cellRef(r,slotCnt+1)] = { font: FONT_DEFAULT, alignment: ALIGN_CENTER, border: BORDER_ALL };
+    r++;
+  });
+  const titleEndRow = r-1;
+  // 좌측 제목 통째로 병합
+  merges.push({ s:{r:titleStartRow,c:0}, e:{r:titleEndRow,c:slotCnt-1} });
+
+  // 빈 행
+  aoa.push(new Array(2+slotCnt).fill(''));
+  r++;
+
+  // ── 본문: 시간 헤더 행 ──
+  const headerRow = r;
+  const hdrRow = ['공정','요약', ...timeHeaders];
+  aoa.push(hdrRow);
+  for(let c=0;c<hdrRow.length;c++){
+    styles[cellRef(r,c)] = { font: FONT_BOLD, alignment: ALIGN_CENTER, fill:{fgColor:{rgb:HDR_BG}}, border: BORDER_ALL };
+  }
+  r++;
+
+  // ── 본문: 공정별 행 ──
+  function _fmtDur(mins){ if(mins<=0) return '-'; const h=Math.floor(mins/60),m=mins%60; return h>0?(m>0?`${h}h ${m}m`:`${h}h`):`${m}m`; }
+  function _summary(rows){
+    const vm = rows.flatMap(x=>{ const s=toMin(x.start),e=toMin(x.end); return (s===null||e===null)?[]:[{s,e}]; });
+    if(!vm.length) return '-';
+    const minS=Math.min(...vm.map(x=>x.s)), maxE=Math.max(...vm.map(x=>x.e));
+    const dur=vm.reduce((s,x)=>s+(x.e-x.s),0);
+    return `${hm(minS)}~${hm(maxE)}\n${rows.length}건 · ${_fmtDur(dur)}`;
+  }
+
+  const groups = [
+    { lbl:'전처리', col:COL_PP, rows: pp },
+    { lbl:'자숙',   col:COL_CK, rows: ck },
+    { lbl:'파쇄',   col:COL_SH, rows: sh },
+    { lbl:'포장',   col:COL_PK, rows: pk },
+  ];
+
+  groups.filter(g=>g.rows && g.rows.length).forEach(g => {
+    const row = new Array(2+slotCnt).fill('');
+    row[0] = g.lbl;
+    row[1] = _summary(g.rows);
+    aoa.push(row);
+
+    // 라벨/요약 스타일
+    styles[cellRef(r,0)] = { font: FONT_BOLD,    alignment: ALIGN_CENTER, fill:{fgColor:{rgb:META_BG}}, border: BORDER_ALL };
+    styles[cellRef(r,1)] = { font: FONT_DEFAULT, alignment: ALIGN_CENTER, border: BORDER_ALL };
+    // 슬롯 셀: 시간 점유 여부에 따라 색상
+    for(let i=0;i<slotCnt;i++){
+      const slotStart = gridStart + i*SLOT;
+      const slotEnd   = slotStart + SLOT;
+      // 이 슬롯과 겹치는 row 있는가?
+      const overlap = g.rows.some(x=>{
+        const s=toMin(x.start),e=toMin(x.end);
+        if(s===null||e===null) return false;
+        return s < slotEnd && e > slotStart;
+      });
+      const cellStyle = { font: FONT_DEFAULT, alignment: ALIGN_CENTER, border: BORDER_ALL };
+      if(overlap) cellStyle.fill = { fgColor:{rgb: g.col} };
+      styles[cellRef(r, 2+i)] = cellStyle;
+    }
+    r++;
+  });
+
+  // 시트 생성
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  // 컬럼 너비: 공정 8, 요약 16, 시간 슬롯 5
+  const cols = [{wch:8},{wch:18}];
+  for(let i=0;i<slotCnt;i++) cols.push({wch:5});
+  ws['!cols'] = cols;
+  ws['!merges'] = merges;
+  // 행 높이
+  const rowHeights = [];
+  for(let i=0;i<r;i++){
+    if(i<=titleEndRow) rowHeights.push({hpt: 22});
+    else if(i===headerRow) rowHeights.push({hpt: 24});
+    else rowHeights.push({hpt: 30});
+  }
+  ws['!rows'] = rowHeights;
+
+  Object.entries(styles).forEach(([addr,style])=>{
+    if(ws[addr]) ws[addr].s = style;
+    else ws[addr] = { v:'', s:style };
+  });
+
+  ws['!pageSetup'] = { orientation:'landscape', paperSize: 9, fitToWidth:1, fitToHeight:1 };
+  ws['!margins'] = { left:0.3, right:0.3, top:0.3, bottom:0.3, header:0.2, footer:0.2 };
+  ws['!printOptions'] = { horizontalCentered:true, verticalCentered:true };
+
+  XLSX.utils.book_append_sheet(wb, ws, '타임라인');
+
+  const fname = `공정타임라인_${date.replace(/-/g,'')}.xlsx`;
+  if(typeof _saveXlsx==='function'){
+    await _saveXlsx(wb, fname);
+  } else {
+    XLSX.writeFile(wb, fname);
+  }
+  if(typeof toast==='function') toast('타임라인 다운로드 완료 ✓','s');
+}
+
+// ============================================================
 // 트렌드
 // ============================================================
 var _trendChart=null;
