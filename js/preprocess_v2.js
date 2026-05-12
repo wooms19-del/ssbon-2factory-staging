@@ -50,7 +50,7 @@ async function pp2Render(){
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
         <div class="ct" style="margin:0">전처리 케이지 입력</div>
-        <div style="display:flex;gap:6px">
+        <div id="pp2_topbtns" style="display:flex;gap:6px">
           ${pp2HasFinishedToday() ? `<button class="btn bo bsm" style="color:#0891b2;border-color:#0891b2;font-weight:600" onclick="pp2UnfinishDay()">↩ 종료 취소</button>` : ''}
           <button class="btn bo bsm" style="color:var(--d);border-color:var(--d);font-weight:600" onclick="pp2FinishDay()">⏹ 오늘 전처리 종료</button>
         </div>
@@ -391,6 +391,14 @@ async function pp2Refresh(){
   if(remEl) remEl.innerHTML = pp2RenderRemain();
   const listEl = document.getElementById('pp2_list');
   if(listEl) listEl.innerHTML = pp2RenderTodayList();
+  // 헤더 종료/종료취소 버튼 갱신
+  const btnsEl = document.getElementById('pp2_topbtns');
+  if(btnsEl){
+    btnsEl.innerHTML = `
+      ${pp2HasFinishedToday() ? `<button class="btn bo bsm" style="color:#0891b2;border-color:#0891b2;font-weight:600" onclick="pp2UnfinishDay()">↩ 종료 취소</button>` : ''}
+      <button class="btn bo bsm" style="color:var(--d);border-color:var(--d);font-weight:600" onclick="pp2FinishDay()">⏹ 오늘 전처리 종료</button>
+    `;
+  }
 }
 
 function pp2RenderTodayList(){

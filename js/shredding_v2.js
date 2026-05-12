@@ -24,7 +24,7 @@ async function sh2Render(){
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
         <div class="ct" style="margin:0">파쇄 입력</div>
-        <div style="display:flex;gap:6px">
+        <div id="sh2_topbtns" style="display:flex;gap:6px">
           ${sh2HasFinishedToday() ? `<button class="btn bo bsm" style="color:#0891b2;border-color:#0891b2;font-weight:600" onclick="sh2UnfinishDay()">↩ 종료 취소</button>` : ''}
           <button class="btn bo bsm" style="color:var(--d);border-color:var(--d);font-weight:600" onclick="sh2FinishDay()">⏹ 오늘 파쇄 종료</button>
         </div>
@@ -394,6 +394,14 @@ async function sh2Refresh(){
   if(remEl) remEl.innerHTML = sh2RenderRemain();
   const listEl = document.getElementById('sh2_list');
   if(listEl) listEl.innerHTML = sh2RenderTodayList();
+  // 헤더 종료/종료취소 버튼 갱신
+  const btnsEl = document.getElementById('sh2_topbtns');
+  if(btnsEl){
+    btnsEl.innerHTML = `
+      ${sh2HasFinishedToday() ? `<button class="btn bo bsm" style="color:#0891b2;border-color:#0891b2;font-weight:600" onclick="sh2UnfinishDay()">↩ 종료 취소</button>` : ''}
+      <button class="btn bo bsm" style="color:var(--d);border-color:var(--d);font-weight:600" onclick="sh2FinishDay()">⏹ 오늘 파쇄 종료</button>
+    `;
+  }
 }
 
 // ============================================================
