@@ -195,10 +195,18 @@ function init(){
   renderThawList();
   loadSettings_();
   startAutoRefresh();
-  loadFromServer(tod()).then(()=>{
+  // ★ 페이지 시작 시 오늘+어제 둘 다 로드 (전처리/파쇄가 어제 thawing/cooking 필요)
+  const _today = tod();
+  const _ydDate = new Date(_today + 'T00:00:00');
+  _ydDate.setDate(_ydDate.getDate() - 1);
+  const _yd = _ydDate.getFullYear()+'-'+String(_ydDate.getMonth()+1).padStart(2,'0')+'-'+String(_ydDate.getDate()).padStart(2,'0');
+  Promise.all([loadFromServer(_today), loadFromServer(_yd)]).then(()=>{
     renderBC();
     renderThawWaiting();
     renderThawList();
+    // 현재 탭이 v2면 다시 렌더 (Firestore 로드 후)
+    if(MODE==='i' && ITAB==='preprocess' && typeof pp2Refresh==='function') pp2Refresh();
+    if(MODE==='i' && ITAB==='shredding' && typeof sh2Refresh==='function') sh2Refresh();
   });
 }
 function setModeAtt(){
