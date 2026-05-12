@@ -19,6 +19,10 @@ function onPpWagonChange(){ /* v2 미사용 */ }
 // 외부 호환 — globals.js line 50 ReferenceError 방지
 function getSelectedWagons(){ return []; }
 function updPpWagon(){ /* v2 미사용 */ }
+// 외부 호환 — app.js:101이 호출. v2에선 이 시점에 pp2Render 실행해서 새 UI로 그림
+function updateThawInfo(){
+  if(typeof pp2Render === 'function') pp2Render();
+}
 
 let _pp2RowIdx = 0;
 
