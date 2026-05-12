@@ -321,7 +321,7 @@ function addPkMachRow(){
       <select class="fc pk-row-stank" data-idx="${idx}" style="display:none">
         <option value="">선택</option>
       </select>
-      <div class="fgrp">
+      <div class="fgrp" id="pkRowSubBox_${idx}" style="display:none">
         <label class="fl">부재료명</label>
         <select class="fc pk-row-subnm" data-idx="${idx}">${subOpts}</select>
       </div>
@@ -825,6 +825,41 @@ function onPkRowProd(idx){
       const opt = [...subSel.options].find(o => o.value === p.subName || o.textContent === p.subName);
       if(opt) subSel.value = opt.value;
     }
+  }
+
+  // ★ 부재료 박스 표시/숨김 (옵션 C: 레시피 inner 우선, 제품명 폴백)
+  const subBox = document.getElementById('pkRowSubBox_'+idx);
+  if(subBox && p){
+    const submats = L.submats || [];
+    let neededSubmat = '';
+    // 1순위: 레시피의 inner에 submats 이름이 있는지
+    const rc = (L.recipes||{})[p.name];
+    if(rc && Array.isArray(rc.inner)){
+      const found = rc.inner.find(i => submats.includes(i.name));
+      if(found) neededSubmat = found.name;
+    }
+    // 2순위: 제품명에 submats 이름이 포함되어 있는지
+    if(!neededSubmat){
+      const matched = submats.find(s => p.name.includes(s));
+      if(matched) neededSubmat = matched;
+    }
+    if(neededSubmat){
+      subBox.style.display = '';
+      // 부재료 옵션을 그 부재료 1개로 제한
+      const subSel = row.querySelector('.pk-row-subnm');
+      if(subSel){
+        subSel.innerHTML = `<option value="${neededSubmat}">${neededSubmat}</option>`;
+        subSel.value = neededSubmat;
+      }
+    } else {
+      subBox.style.display = 'none';
+      // 부재료 값 비우기
+      const subSel = row.querySelector('.pk-row-subnm');
+      if(subSel) subSel.value = '';
+    }
+  } else if(subBox){
+    // 제품 미선택 시 숨김
+    subBox.style.display = 'none';
   }
 }
 
