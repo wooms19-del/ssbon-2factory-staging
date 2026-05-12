@@ -1192,7 +1192,20 @@ async function deletePkPending(id){
   }
   L.packing_pending = L.packing_pending.filter(r=>r.id!==id);
   saveL();
+  // ★ 수정 중이던 record를 삭제한 경우 — 수정 모드 UI 정리
+  if(_pkEditingId === id){
+    _pkEditingId = null;
+    if(typeof _restorePkStartCardUI === 'function') _restorePkStartCardUI();
+    const machRows = document.getElementById('pk_machRows');
+    if(machRows) machRows.innerHTML = '';
+    _pkRowIdx = 0;
+    document.getElementById('pk_startCard').style.display = 'none';
+  }
   renderPkPending();
+  // 진행중이 더 이상 없으면 진행중 카드 숨김
+  const hasPending = (L.packing_pending||[]).some(r => String(r.date||'').slice(0,10) === tod());
+  document.getElementById('pk_pendingCard').style.display = hasPending ? '' : 'none';
+  if(!hasPending) document.getElementById('pk_startCard').style.display = '';
   toast('포장 삭제됨','i');
 }
 

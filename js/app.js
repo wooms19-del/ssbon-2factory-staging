@@ -115,6 +115,9 @@ function showTab(mode,tab){
     Promise.all([loadFromServer(today), loadFromServer(yd3), loadOpenPacking()]).then(()=>{ if(typeof sh2Render==='function') sh2Render(); });
   } else if(tab==='packing'){
     if(!L.packing_pending) L.packing_pending = [];
+    // ★ 탭 진입 시 수정 모드 상태 초기화 (잔재 방지)
+    if(typeof _pkEditingId !== 'undefined') _pkEditingId = null;
+    if(typeof _restorePkStartCardUI === 'function') _restorePkStartCardUI();
     Promise.all([loadFromServer(today), loadOpenPacking()]).then(()=>{
       renderPkWagonList();
       renderPL('packing');
