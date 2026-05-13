@@ -767,6 +767,8 @@
     var __grpMap = {};
     rows.forEach(function(r){
       if(r.noMeat){ r._grpKey = null; return; }
+      // ★ 메인 행만 그룹화 (부위별 보조 행은 제외)
+      if(r._isMainRow === false) return;
       var key = r.date + '|' + (r.type || '');
       if(!__grpMap[key]) __grpMap[key] = [];
       r._grpKey = key;
