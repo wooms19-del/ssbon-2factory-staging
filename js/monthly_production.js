@@ -159,6 +159,7 @@
       + '#mpTbl tbody tr.row-pinned:not(.sumRow):not(.avgRow):not(.prevRow):not(.diffRow) td{background:#fde68a !important}'
       // 합계/평균 등 sticky 셀 배경 일치
       + '#mpTbl tr.sumRow td{background:#fef3c7;font-weight:700;color:#78350f;border-top:2px solid #92400e;padding:9px 8px}'
+      + '#mpTbl tr.subTotalRow td{background:#dbeafe;font-weight:700;color:#1e3a8a;border-top:2px solid #1d4ed8;padding:8px}'
       + '#mpTbl tr.avgRow td{background:#dcfce7;font-weight:600;color:#14532d;padding:9px 8px}'
       + '#mpTbl tr.prevRow td{background:#f1f5f9;color:#475569;padding:9px 8px}'
       + '#mpTbl tr.diffRow td{background:#fee2e2;font-style:normal;font-weight:600;padding:9px 8px;border-bottom:2px solid #b91c1c}'
@@ -990,21 +991,95 @@
     });
 
     // ★ 그룹 모드별 집계 (제품별 / 원육별 / 없음)
-    if(_mpGroupMode === 'product' || _mpGroupMode === 'part'){
+    if(_mpGroupMode === 'product'){
+      // ★ 제품별 = 합산하지 않음. 제품별로 일자 행 유지 + 끝에 서브토탈 추가
+      // 1) 제품별로 모으기
+      var byProd = {};
+      var prodOrder = [];
+      calcRows.forEach(function(r){
+        var key = r.product || '?';
+        if(!byProd[key]){ byProd[key] = []; prodOrder.push(key); }
+        byProd[key].push(r);
+      });
+      // 2) 각 제품 행 + 서브토탈 행 만들기
+      var newRows = [];
+      prodOrder.forEach(function(prod){
+        var list = byProd[prod];
+        // 일자순 정렬
+        list.sort(function(a,b){
+          return String(a.date||'').localeCompare(String(b.date||''));
+        });
+        list.forEach(function(r){ newRows.push(r); });
+        // 서브토탈 계산
+        var sub = {
+          product: prod,
+          type: '',
+          date: '',
+          dayNo: '',
+          isSubTotal: true,
+          _subTotalProd: prod,
+          rmKg:0, ppKg:0, ppHours:0, ppPersonHours:0,
+          ckKg:0, ckHours:0, ckPersonHours:0,
+          shKg:0, shHours:0, shPersonHours:0,
+          pkEa:0, pkHours:0, pkPersonHours:0,
+          meatKg:0, prodKg:0,
+          pouchUsed:0, sauceKgUsed:0, subKgUsed:0, boxUsed:0,
+          kgea: list[0] ? list[0].kgea : 0,
+          kgTot: list[0] ? list[0].kgTot : 0,
+          _workDays: new Set()
+        };
+        list.forEach(function(r){
+          sub.rmKg += r.rmKg||0;
+          sub.ppKg += r.ppKg||0; sub.ppHours += r.ppHours||0; sub.ppPersonHours += r.ppPersonHours||0;
+          sub.ckKg += r.ckKg||0; sub.ckHours += r.ckHours||0; sub.ckPersonHours += r.ckPersonHours||0;
+          sub.shKg += r.shKg||0; sub.shHours += r.shHours||0; sub.shPersonHours += r.shPersonHours||0;
+          sub.pkEa += r.pkEa||0; sub.pkHours += r.pkHours||0; sub.pkPersonHours += r.pkPersonHours||0;
+          sub.meatKg += r.meatKg||0; sub.prodKg += r.prodKg||0;
+          sub.pouchUsed += r.pouchUsed||0;
+          sub.sauceKgUsed += r.sauceKgUsed||0;
+          sub.subKgUsed += r.subKgUsed||0;
+          sub.boxUsed += r.boxUsed||0;
+          if(r.date) sub._workDays.add(r.date);
+        });
+        sub.date = sub._workDays.size + '일';
+        delete sub._workDays;
+        var rm = sub.rmKg;
+        var ppT = sub.ppPersonHours, ckT = sub.ckPersonHours, shT = sub.shPersonHours, pkT = sub.pkPersonHours;
+        sub.rmKg = _r2(rm);
+        sub.ppKg = _r2(sub.ppKg); sub.ckKg = _r2(sub.ckKg); sub.shKg = _r2(sub.shKg);
+        sub.meatKg = _r2(sub.meatKg); sub.prodKg = _r2(sub.prodKg);
+        sub.prodPp = rm&&ppT?_r2(rm/ppT):0;
+        sub.prodCk = rm&&ckT?_r2(rm/ckT):0;
+        sub.prodSh = rm&&shT?_r2(rm/shT):0;
+        sub.prodPk = rm&&pkT?_r2(rm/pkT):0;
+        sub.prodAll = rm&&(ppT+ckT+shT+pkT)?_r2(rm/(ppT+ckT+shT+pkT)):0;
+        sub.yieldRmPp = rm?_r2(sub.ppKg/rm*100)/100:0;
+        sub.yieldRmCk = rm?_r2(sub.ckKg/rm*100)/100:0;
+        sub.yieldRmSh = rm?_r2(sub.shKg/rm*100)/100:0;
+        sub.yieldRmPk = rm?_r2(sub.meatKg/rm*100)/100:0;
+        sub.yieldPp = rm?_r2(sub.ppKg/rm*100)/100:0;
+        sub.yieldCk = sub.ppKg?_r2(sub.ckKg/sub.ppKg*100)/100:0;
+        sub.yieldSh = sub.ckKg?_r2(sub.shKg/sub.ckKg*100)/100:0;
+        sub.yieldPk = sub.shKg?_r2(sub.meatKg/sub.shKg*100)/100:0;
+        newRows.push(sub);
+      });
+      calcRows = newRows;
+      // ★ 필터 적용
+      if(_mpGroupFilter.size > 0){
+        calcRows = calcRows.filter(function(r){
+          return _mpGroupFilter.has(r.product);
+        });
+      }
+    } else if(_mpGroupMode === 'part'){
       var grouped = {};
       var groupOrder = [];
       calcRows.forEach(function(r){
-        var key;
-        if(_mpGroupMode === 'product'){
-          key = r.product || '?';
-        } else {
-          key = r.type || (r.isNoMeat?'무육':'?');
-        }
+        var key = r.type || (r.isNoMeat?'무육':'?');
         if(!grouped[key]){
           grouped[key] = {
-            product: (_mpGroupMode === 'product') ? key : '',
-            type: (_mpGroupMode === 'part') ? key : '',
-            typeList: (_mpGroupMode === 'part') ? [key] : [],
+            product: '',
+            type: key,
+            typeList: [key],
             isNoMeat: (key==='무육'),
             date: '',
             dayNo: '',
@@ -1065,7 +1140,7 @@
       // ★ 필터 적용 — 빈 Set이면 전체 통과, 아니면 선택된 것만
       if(_mpGroupFilter.size > 0){
         calcRows = calcRows.filter(function(r){
-          var key = (_mpGroupMode === 'product') ? r.product : (r.type || (r.isNoMeat?'무육':''));
+          var key = r.type || (r.isNoMeat?'무육':'');
           return _mpGroupFilter.has(key);
         });
         // dayNo 재배열
@@ -1176,7 +1251,8 @@
       var cnt = dateCntMap[r.date] || 1;
       var grpCnt = r._grpSize || 1;
       var isGrpFirst = r._grpFirst !== false;
-      return '<tr>'+visibleCols.map(function(c,_i_){
+      var trClass = r.isSubTotal ? ' class="subTotalRow"' : '';
+      return '<tr'+trClass+'>'+visibleCols.map(function(c,_i_){
         var v = r[c[0]];
         // dayNo, date: 그날 첫 행에만 rowspan 출력. 둘째 부위 행부터는 td 생략
         if(c[0]==='dayNo'){
