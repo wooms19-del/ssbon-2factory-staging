@@ -2581,11 +2581,43 @@ function renderTL(pp,ck,sh,pk){
       return `<div class="tlr tlrInt"><div class="tll">${g.lbl}</div><div class="tlt">${bars}</div>${summary}</div>`;
     }).join('');
   } else {
-    // 카트별 = 기존 동작 (각 row 1줄)
-    bodyHtml = all.map(r=>{
-      const bar=_bar(r);
-      if(!bar) return '';
-      return `<div class="tlr"><div class="tll">${r.lbl}</div><div class="tlt">${bar}</div></div>`;
+    // 카트별 = 같은 공정끼리 묶고, 시간 겹치는 record만 새 row 분리
+    const groups = [
+      {lbl:'전처리', col:'#1a56db', rows: pp},
+      {lbl:'자숙',   col:'#0e9f6e', rows: ck},
+      {lbl:'파쇄',   col:'#c27803', rows: sh},
+      {lbl:'포장',   col:'#7e3af2', rows: pk}
+    ];
+    // 시간 겹침 검사 → record를 row(레인)에 배치
+    const _assignLanes = (rows) => {
+      // [{s,e,rec}] 시작시간 오름차순 정렬
+      const items = rows.map(r=>({s:toMin(r.start), e:toMin(r.end), rec:r}))
+                        .filter(x=>x.s!==null && x.e!==null)
+                        .sort((a,b)=>a.s-b.s);
+      const lanes = []; // 각 lane은 [{s,e,rec}, ...]
+      items.forEach(it=>{
+        // 비어있는(=마지막 e <= it.s) 레인 찾기
+        let placed = false;
+        for(const lane of lanes){
+          const last = lane[lane.length-1];
+          if(last.e <= it.s){
+            lane.push(it);
+            placed = true;
+            break;
+          }
+        }
+        if(!placed) lanes.push([it]);
+      });
+      return lanes;
+    };
+    bodyHtml = groups.filter(g=>g.rows && g.rows.length).map(g=>{
+      const lanes = _assignLanes(g.rows);
+      return lanes.map((lane, idx)=>{
+        const bars = lane.map(it => _bar({...it.rec, lbl:g.lbl, col:g.col})).join('');
+        // 첫 레인만 라벨 표시, 이하는 라벨 빈칸 (한 공정 한 라벨처럼 보이게)
+        const lbl = idx===0 ? g.lbl : '';
+        return `<div class="tlr"><div class="tll">${lbl}</div><div class="tlt">${bars}</div></div>`;
+      }).join('');
     }).join('');
   }
 
