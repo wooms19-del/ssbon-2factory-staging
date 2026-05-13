@@ -20,15 +20,17 @@ async function renderStock(){
   pg.innerHTML = '<div style="padding:20px;text-align:center;color:#6b7280">불러오는 중…</div>';
 
   // ★ 시작일 고정: 2026-05-01 (이 시점부터 입고/출고 누적해서 잔여 계산)
-  //   이전 thawing은 재고 계산에서 제외 (시스템 도입 전)
-  var fromStr = '2026-05-01';
+  //   thawing 출고는 end 기준이라, start가 4/30이고 end가 5/1인 케이스 포함하려고
+  //   thawing은 4/29부터 fetch (출고 판정은 _renderStockShell에서 end 기준으로)
+  var stockInFrom = '2026-05-01';
+  var thawingFrom = '2026-04-29';
   var today = new Date();
   var toStr = today.getFullYear()+'-'+String(today.getMonth()+1).padStart(2,'0')+'-'+String(today.getDate()).padStart(2,'0');
 
   try {
     var R = await Promise.all([
-      fbGetRange('stockIn', fromStr, toStr),
-      fbGetRange('thawing', fromStr, toStr)
+      fbGetRange('stockIn', stockInFrom, toStr),
+      fbGetRange('thawing', thawingFrom, toStr)
     ]);
     _stockData.stockIn = R[0] || [];
     _stockData.thawing = R[1] || [];
@@ -44,16 +46,41 @@ function _renderStockShell(){
   var pg = document.getElementById('p-stock');
   if(!pg) return;
 
-  // 부위별 누적 계산
+  // ★ thawing 박스 차감 시점 = 실제 생산일 = end의 날짜 부분
+  //   end가 'YYYY-MM-DD HH:MM' → 앞 10자
+  //   end가 'HH:MM'만 있으면 (옛 데이터) → date + 1일 (메모리 룰: thawing은 다음날 종료)
+  //   end 비어있으면 → date 그대로
+  function _outDate(r){
+    var end = String(r.end||'');
+    var date = String(r.date||'').slice(0,10);
+    if(end.length >= 10 && end.charAt(4)==='-'){
+      return end.slice(0,10);
+    }
+    if(end && end.length <= 8 && end.indexOf(':') > 0){
+      // 'HH:MM' 형식 → date+1일
+      if(date && date.length === 10){
+        var p = date.split('-').map(Number);
+        var d = new Date(p[0], p[1]-1, p[2]+1);
+        return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+      }
+    }
+    return date;
+  }
+
+  // 부위별 누적 계산 (5/1 시작점 적용)
+  var START_DATE = '2026-05-01';
   var inByType = {};   // {부위: 박스 합}
   var outByType = {};  // {부위: 박스 합}
   _stockData.stockIn.forEach(function(r){
     var t = (r.type||'').trim(); if(!t) return;
+    var d = String(r.date||'').slice(0,10);
+    if(d < START_DATE) return;
     inByType[t] = (inByType[t]||0) + (parseInt(r.boxes,10)||0);
   });
   _stockData.thawing.forEach(function(r){
+    var outDate = _outDate(r);
+    if(outDate < START_DATE) return;
     // thawing.type은 콤마 구분 가능 (예: "우둔,홍두깨") 박스도 합산값
-    // 단순화: 첫 type만 사용. 추후 정교화 필요 시 별도 확장.
     var types = (r.type||'').split(',').map(function(s){return s.trim();}).filter(Boolean);
     var boxes = parseInt(r.boxes,10)||0;
     if(types.length === 0) return;
