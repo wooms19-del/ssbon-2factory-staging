@@ -1284,25 +1284,31 @@ function startEditPkPending(id){
     }
     // 와건별 kg 분배 채우기 (wagonDist/cartDist) — togglePkWagon이 row 추가했으니 그 안의 kg input 갱신
     // ★ 토글 click이 비동기로 row 만들기 때문에, .pk-wd-row 등장할 때까지 폴링 (최대 1.5초)
+    console.log('[수정] rec.wagonDist=', rec.wagonDist, 'cartDist=', rec.cartDist);
     function _fillDist(distObj, kindAttr){
       if(!distObj) return;
       const entries = Object.entries(distObj);
+      console.log('[수정] _fillDist 시작 kind=', kindAttr, '대상=', entries);
       let tries = 0;
       const maxTries = 30; // 50ms * 30 = 1.5초
       const timer = setInterval(()=>{
         tries++;
         let allFilled = true;
+        let foundCount = 0;
         entries.forEach(([w,kg])=>{
           const wdRow = r2.querySelector(`.pk-wd-row[data-w="${w}"][data-kind="${kindAttr}"]`);
           if(wdRow){
+            foundCount++;
             const kgInp = wdRow.querySelector('.pk-wd-kg');
             if(kgInp && !kgInp.value) kgInp.value = kg;
           } else {
             allFilled = false;
           }
         });
+        if(tries===1 || tries%5===0) console.log(`[수정] tries=${tries} 찾음=${foundCount}/${entries.length}`);
         if(allFilled || tries >= maxTries){
           clearInterval(timer);
+          console.log(`[수정] _fillDist 종료 kind=${kindAttr} tries=${tries} 찾음=${foundCount}/${entries.length}`);
           if(typeof pkWagonSumChange==='function') pkWagonSumChange(idx);
         }
       }, 50);
