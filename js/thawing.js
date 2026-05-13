@@ -163,13 +163,12 @@ function updateTwSummary(){
   const parts=[];
   inputs.forEach(inp=>{
     const cnt=parseInt(inp.value)||0;
-    const max=parseInt(inp.dataset.max)||0;
-    const totalKgAll=parseFloat(inp.dataset.totalkg)||0;
     if(cnt>0){
       parts.push(inp.dataset.part+' '+cnt+'박스');
       totalBoxes+=cnt;
-      // 비례 계산: 전체 중량 * (선택박스/전체박스)
-      const partKg = cnt===max ? totalKgAll : r2(totalKgAll * cnt / max);
+      // ★ 실제 박스별 무게 합 사용 (찍은 순서대로 cnt개)
+      const weights=JSON.parse(inp.dataset.weights||'[]');
+      const partKg = r2(weights.slice(0,cnt).reduce((s,w)=>s+(parseFloat(w)||0),0));
       totalKg=r2(totalKg + partKg);
     }
   });
@@ -196,13 +195,12 @@ async function startThawing(){
     const max=parseInt(inp.dataset.max)||0;
     if(cnt>max){toast(`${inp.dataset.part}: 최대 ${max}박스`,'d');hasError=true;return;}
     totalBoxes+=cnt;
-    const tkAll=parseFloat(inp.dataset.totalkg)||0;
-    const maxB=parseInt(inp.dataset.max)||1;
-    // 선택된 바코드들의 실제 중량 합으로 계산
+    // ★ 실제 박스별 무게 합 사용 (찍은 순서대로 cnt개) — 비례 계산 금지
     const allCodes=JSON.parse(inp.dataset.barcodes||'[]');
+    const allWeights=JSON.parse(inp.dataset.weights||'[]');
     const selectedCodes=allCodes.slice(0,cnt);
-    // 전체 합계 기준 비례 계산으로 일관성 보장
-    const partKg2 = cnt===maxB ? tkAll : r2(tkAll * cnt / maxB);
+    const selectedWeights=allWeights.slice(0,cnt);
+    const partKg2 = r2(selectedWeights.reduce((s,w)=>s+(parseFloat(w)||0),0));
     totalKg=r2(totalKg+partKg2);
     typeArr.push(inp.dataset.part);
     importCodes.push(...selectedCodes);
