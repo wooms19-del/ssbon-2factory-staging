@@ -2581,10 +2581,20 @@ function renderTL(pp,ck,sh,pk){
       if(validMins.length){
         const minS = Math.min(...validMins.map(x=>x.s));
         const maxE = Math.max(...validMins.map(x=>x.e));
-        const totalDur = validMins.reduce((sum,x)=>sum+(x.e-x.s),0);
+        // 겹치는 구간 병합 → 실제 작업 시간 계산
+        const sorted = [...validMins].sort((a,b)=>a.s-b.s);
+        const merged = [];
+        for(const cur of sorted){
+          if(merged.length && cur.s <= merged[merged.length-1].e){
+            merged[merged.length-1].e = Math.max(merged[merged.length-1].e, cur.e);
+          } else {
+            merged.push({s:cur.s, e:cur.e});
+          }
+        }
+        const totalDur = merged.reduce((sum,x)=>sum+(x.e-x.s),0);
         const _hm = m => `${String(Math.floor(m/60)).padStart(2,'0')}:${String(m%60).padStart(2,'0')}`;
         const summaryText = `${_hm(minS)} ~ ${_hm(maxE)} &middot; ${g.rows.length}건 &middot; ${_fmtDur(totalDur)}`;
-        // 막대 시작 위치(%) 계산 — 막대 영역 안의 막대 시작점에 정렬
+        // 막대 시작 위치(%) 계산
         const leftPct = r2((minS-headStart)/range*100);
         const widthPct = r2((maxE-minS)/range*100);
         summaryHtml = `<div class="tlSumRow"><div class="tlSumSpacer"></div><div class="tlSumTrack"><div class="tlSumBelow" style="left:${leftPct}%;min-width:${Math.max(widthPct,15)}%">${summaryText}</div></div></div>`;
