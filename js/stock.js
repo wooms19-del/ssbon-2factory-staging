@@ -49,6 +49,10 @@ function _renderStockShell(){
   // ★ date 룰 통일: thawing.date = 종료일 (= 실제 제품 만들어지는 날 = 박스 출고일)
   //   별도 보정 로직 불필요. r.date 그대로 사용.
 
+  // ★ 5/1 기초 재고 (화면에는 안 보이고 잔여 계산에만 반영)
+  //   다음 월 첫날 이월값은 자동 누적 (5/1 이후 모든 입고+기초 - 모든 사용)
+  var INITIAL = { '우둔': 247, '홍두깨': 1024, '설도': 0 };
+
   // 부위별 누적 계산 (5/1 시작점 적용)
   var START_DATE = '2026-05-01';
   var inByType = {};   // {부위: 박스 합}
@@ -73,14 +77,15 @@ function _renderStockShell(){
     });
   });
 
-  // 모든 부위 합집합
-  var allTypes = Array.from(new Set([].concat(Object.keys(inByType), Object.keys(outByType)))).sort();
+  // 모든 부위 합집합 (INITIAL 키도 포함)
+  var allTypes = Array.from(new Set([].concat(Object.keys(INITIAL), Object.keys(inByType), Object.keys(outByType)))).sort();
 
-  // 현재 잔여
+  // 현재 잔여 = 기초 + 입고 - 사용
   var remainHtml = allTypes.map(function(t){
+    var init = INITIAL[t]||0;
     var ins = inByType[t]||0;
     var outs = outByType[t]||0;
-    var rem = ins - outs;
+    var rem = init + ins - outs;  // ★ 기초 재고 반영
     var color = rem < 50 ? '#dc2626' : rem < 200 ? '#f59e0b' : '#16a34a';
     return '<div style="flex:1;min-width:140px;padding:14px 16px;background:#fff;border:1px solid #e5e7eb;border-radius:8px;box-shadow:0 1px 2px rgba(0,0,0,0.04)">'
       + '<div style="font-size:13px;color:#6b7280;font-weight:600;margin-bottom:6px">'+t+'</div>'
