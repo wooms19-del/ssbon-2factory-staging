@@ -1750,24 +1750,20 @@ async function chDay(d){
     var dt=new Date(DDATE+'T00:00:00');  // 로컬 자정으로 파싱
     var todayStr = _ld(new Date());
 
-    // 데이터 존재 여부는 서버 기준 — 어떤 공정이든 1건이라도 있으면 그 날로 이동
-    var COLS=['packing','shredding','cooking','preprocess','thawing','outerpacking','sauce'];
-
+    // packing 있는 날 = 생산일. 서버에서 직접 확인 (L 캐시 의존 안 함)
     for(var i=0;i<60;i++){
       dt.setDate(dt.getDate()+d);
       var ds = _ld(dt);
       // 미래 차단
       if(ds > todayStr){ toast('오늘 이후 날짜입니다','d'); return; }
-      // 오늘은 데이터 0건이어도 통과
+      // 오늘은 packing 0건이어도 통과 (작업 중일 수 있음)
       if(ds === todayStr){ DDATE=ds; renderDaily(); return; }
-      // 서버 조회 — 빠른 컬렉션부터 순차, 1건 발견 시 즉시 이동
+      // 서버에서 packing 조회 — 1건이라도 있으면 생산일로 간주
       var has=false;
-      for(var ci=0; ci<COLS.length; ci++){
-        try{
-          var recs = await fbGetByDate(COLS[ci], ds);
-          if(recs && recs.length){ has=true; break; }
-        }catch(e){ /* 무시하고 다음 컬렉션 */ }
-      }
+      try{
+        var recs = await fbGetByDate('packing', ds);
+        if(recs && recs.length) has=true;
+      }catch(e){ /* 조회 실패 시 그 날 스킵 */ }
       if(has){ DDATE=ds; renderDaily(); return; }
     }
     toast('해당 방향에 데이터가 없습니다','d');
