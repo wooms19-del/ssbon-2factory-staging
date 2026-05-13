@@ -2509,7 +2509,13 @@ function renderTL(pp,ck,sh,pk){
   if(!el) return;
   const all=[...pp.map(r=>({...r,lbl:'전처리',col:'#1a56db'})),...ck.map(r=>({...r,lbl:'자숙',col:'#0e9f6e'})),...sh.map(r=>({...r,lbl:'파쇄',col:'#c27803'})),...pk.map(r=>({...r,lbl:'포장',col:'#7e3af2'}))];
   if(!all.length){el.innerHTML='<div class="emp">데이터 없음</div>';return;}
-  const toMin=t=>{if(!t)return null;const p=t.slice(0,5).split(':');return+p[0]*60+(+p[1]||0);};
+  const toMin=t=>{
+    if(!t)return null;
+    // datetime 형식 'YYYY-MM-DD HH:MM' 이면 시간 부분만 추출
+    const s = t.length>=16 ? t.slice(11,16) : t.slice(0,5);
+    const p = s.split(':');
+    return +p[0]*60+(+p[1]||0);
+  };
   const mins=all.flatMap(r=>[toMin(r.start),toMin(r.end)]).filter(v=>v!==null);
   const minT=Math.min(...mins), maxT=Math.max(...mins);
   const headStart=Math.floor(minT/60)*60;
@@ -2532,7 +2538,8 @@ function renderTL(pp,ck,sh,pk){
     const s=toMin(r.start),e=toMin(r.end);
     if(s===null||e===null) return '';
     const left=r2((s-headStart)/range*100), width=r2((e-s)/range*100);
-    const ts=r.start?r.start.slice(0,5):'', te=r.end?r.end.slice(0,5):'';
+    const _hm = t => t && t.length>=16 ? t.slice(11,16) : (t ? t.slice(0,5) : '');
+    const ts=_hm(r.start), te=_hm(r.end);
     // 통합 모드 = 막대 안 텍스트 X (hover로만), 카트별 = 기존 텍스트
     const inner = (_tlMode==='integrated') ? '' : `${ts}-${te}`;
     const titleParts=[r.lbl, `${ts}~${te}`];
