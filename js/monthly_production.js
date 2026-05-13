@@ -160,6 +160,9 @@
       // 합계/평균 등 sticky 셀 배경 일치
       + '#mpTbl tr.sumRow td{background:#fef3c7;font-weight:700;color:#78350f;border-top:2px solid #92400e;padding:9px 8px}'
       + '#mpTbl tr.subTotalRow td{background:#dbeafe;font-weight:700;color:#1e3a8a;border-top:2px solid #1d4ed8;padding:8px}'
+      + '#mpTbl tr.sharedRow{cursor:help}'
+      + '#mpTbl tr.sharedRow td{background:inherit !important}'
+      + '#mpTbl tr.sharedRow:hover td{filter:brightness(0.95)}'
       + '#mpTbl tr.avgRow td{background:#dcfce7;font-weight:600;color:#14532d;padding:9px 8px}'
       + '#mpTbl tr.prevRow td{background:#f1f5f9;color:#475569;padding:9px 8px}'
       + '#mpTbl tr.diffRow td{background:#fee2e2;font-style:normal;font-weight:600;padding:9px 8px;border-bottom:2px solid #b91c1c}'
@@ -815,8 +818,11 @@
             r.shPersonHours = _r2(shItem.personHours * ratio);
             r.shWorkers = shItem.hours>0 ? r1(shItem.personHours/shItem.hours) : 0;
             r._grpMeatKg = grpMeatKg;
-            // ★ 공유 마커 (화면에서 같은 배경색)
+            // ★ 공유 마커 (화면에서 같은 배경색 + 툴팁)
             r._sharedKey = r.date + '|' + (r.type||'');
+            r._sharedTotal = rmTotal;
+            r._sharedProds = grp.map(function(x){return x.product;});
+            r._sharedType = t;
           } else if(i === 0){
             r.rmKg = _r2(rmTotal);
             r.ppKg = _r2(ppItem.kg);
@@ -1269,6 +1275,15 @@
       var grpCnt = r._grpSize || 1;
       var isGrpFirst = r._grpFirst !== false;
       var trClass = r.isSubTotal ? ' class="subTotalRow"' : '';
+      // ★ 공유 행 시각적 마커 (같은 일자+부위에 여러 제품일 때)
+      var trAttr = '';
+      if(!r.isSubTotal && r._sharedKey && r._sharedProds && r._sharedProds.length > 1){
+        // 공유 키를 해시해서 색상 살짝 변경 (같은 키 = 같은 색)
+        var hash = 0;
+        for(var ci=0; ci<r._sharedKey.length; ci++){ hash = (hash*31 + r._sharedKey.charCodeAt(ci)) & 0xffffff; }
+        var hue = hash % 360;
+        trAttr = ' class="sharedRow" style="background:hsl('+hue+',70%,95%)" title="'+r._sharedType+' '+(r._sharedTotal||0).toFixed(2)+'kg 공유 → '+r._sharedProds.join(', ')+'"';
+      }
       // ★ 서브토탈 행: 왼쪽 3컬럼(생산일수/일자/제품명) colspan으로 합쳐 라벨로 표시
       if(r.isSubTotal){
         var head = '<td colspan="3" class="sum-label" style="text-align:center">'+(r._subTotalProd||r.product||'')+' 소계 ('+(r.date||'')+')</td>';
@@ -1287,7 +1302,7 @@
         }).join('');
         return '<tr'+trClass+'>'+head+rest+'</tr>';
       }
-      return '<tr'+trClass+'>'+visibleCols.map(function(c,_i_){
+      return '<tr'+(trAttr||trClass)+'>'+visibleCols.map(function(c,_i_){
         var v = r[c[0]];
         // dayNo, date: 그날 첫 행에만 rowspan 출력. 둘째 부위 행부터는 td 생략
         if(c[0]==='dayNo'){
