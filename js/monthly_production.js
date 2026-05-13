@@ -856,6 +856,9 @@
             r.shPersonHours = _r2(shItem.personHours);
             r.shWorkers = shItem.hours>0 ? r1(shItem.personHours/shItem.hours) : 0;
             r._grpMeatKg = grpMeatKg;
+            // ★ 생산성 포장/전체 병합 표시용 — 첫 행에 그룹 포장 인시 합 세팅
+            // (자기 행 pkPersonHours만 쓰면 시그니처만의 시간으로 나뉘어 과대 표시됨)
+            r.pkPersonHours = _r2(grpPkPH);
           } else {
             __PART_KEYS.forEach(function(k){ r[k] = 0; });
           }
