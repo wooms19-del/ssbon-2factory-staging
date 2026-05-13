@@ -1291,7 +1291,7 @@
       'rmKg':1,'ppKg':1,'ppHours':1,'ppWorkers':1,'ppPersonHours':1,
       'ckKg':1,'ckHours':1,'ckWorkers':1,'ckPersonHours':1,
       'shKg':1,'shHours':1,'shWorkers':1,'shPersonHours':1,
-      'prodPp':1,'prodCk':1,'prodSh':1,
+      'prodPp':1,'prodCk':1,'prodSh':1,'prodPk':1,'prodAll':1,
       'yieldRmPp':1,'yieldRmCk':1,'yieldRmSh':1,'yieldRmPk':1,
       'yieldPp':1,'yieldCk':1,'yieldSh':1,'yieldPk':1
     };
