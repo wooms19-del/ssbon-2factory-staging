@@ -20,7 +20,13 @@ var db = firebase.firestore();
 // ============================================================
 function opEa(r){
   if(!r) return 0;
-  return (parseInt(r.outerEa)||0) + (parseInt(r.remainEa)||0);
+  var oe = parseInt(r.outerEa)||0;
+  // ★ 잔량 EA(remainEa)는 2026-05-01부터 적용 (4월 이전은 outerEa만)
+  var date = String(r.date||'').slice(0,10);
+  if(date && date >= '2026-05-01'){
+    return oe + (parseInt(r.remainEa)||0);
+  }
+  return oe;
 }
 
 // ============================================================
