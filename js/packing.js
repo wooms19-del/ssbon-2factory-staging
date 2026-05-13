@@ -1283,30 +1283,32 @@ function startEditPkPending(id){
       });
     }
     // 와건별 kg 분배 채우기 (wagonDist/cartDist) — togglePkWagon이 row 추가했으니 그 안의 kg input 갱신
-    if(rec.wagonDist){
-      setTimeout(()=>{
-        Object.entries(rec.wagonDist).forEach(([w,kg])=>{
-          const wdRow = r2.querySelector(`.pk-wd-row[data-w="${w}"][data-kind="wagon"]`);
+    // ★ 토글 click이 비동기로 row 만들기 때문에, .pk-wd-row 등장할 때까지 폴링 (최대 1.5초)
+    function _fillDist(distObj, kindAttr){
+      if(!distObj) return;
+      const entries = Object.entries(distObj);
+      let tries = 0;
+      const maxTries = 30; // 50ms * 30 = 1.5초
+      const timer = setInterval(()=>{
+        tries++;
+        let allFilled = true;
+        entries.forEach(([w,kg])=>{
+          const wdRow = r2.querySelector(`.pk-wd-row[data-w="${w}"][data-kind="${kindAttr}"]`);
           if(wdRow){
             const kgInp = wdRow.querySelector('.pk-wd-kg');
-            if(kgInp) kgInp.value = kg;
+            if(kgInp && !kgInp.value) kgInp.value = kg;
+          } else {
+            allFilled = false;
           }
         });
-        if(typeof pkWagonSumChange==='function') pkWagonSumChange(idx);
-      }, 100);
+        if(allFilled || tries >= maxTries){
+          clearInterval(timer);
+          if(typeof pkWagonSumChange==='function') pkWagonSumChange(idx);
+        }
+      }, 50);
     }
-    if(rec.cartDist){
-      setTimeout(()=>{
-        Object.entries(rec.cartDist).forEach(([c,kg])=>{
-          const wdRow = r2.querySelector(`.pk-wd-row[data-w="${c}"][data-kind="cart"]`);
-          if(wdRow){
-            const kgInp = wdRow.querySelector('.pk-wd-kg');
-            if(kgInp) kgInp.value = kg;
-          }
-        });
-        if(typeof pkWagonSumChange==='function') pkWagonSumChange(idx);
-      }, 100);
-    }
+    _fillDist(rec.wagonDist, 'wagon');
+    _fillDist(rec.cartDist, 'cart');
   }, 50);
   // 시작 카드로 스크롤
   document.getElementById('pk_startCard').scrollIntoView({behavior:'smooth', block:'start'});
