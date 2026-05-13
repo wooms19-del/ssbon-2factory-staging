@@ -796,6 +796,9 @@
           //   filter가 비어있으면(전체 보기) 기존처럼 첫 행에 풀로 + 나머지 0
           var splitMode = (_mpGroupMode === 'product' && _mpGroupFilter.size > 0);
           if(splitMode){
+            // ★ 각 행이 자기 td 출력하도록 rowspan 효과 끔
+            r._grpSize = 1;
+            r._grpFirst = true;
             // 각 행의 완제품 고기 비율로 분배
             var ratio = grpMeatKg > 0 ? ((r.pkEa||0)*(r.kgea||0))/grpMeatKg : 1/grp.length;
             r.rmKg = _r2(rmTotal * ratio);
