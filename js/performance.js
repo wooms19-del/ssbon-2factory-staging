@@ -552,7 +552,9 @@ function _perfBuildRows(th, pp, ck, sh, pk, op, sc){
         bx[p] = (bx[p]||0) + (parseInt(r.boxes)||0);
         kg[p] = (kg[p]||0) + (parseFloat(r.totalKg)||0);
       });
-      var poolKey = 'PKTYPE-'+date+'-'+product+'-'+Array.from(pkTypes).sort().join(',');
+      // ★ poolKey: product 제외 = 같은 (date, type) 쓰는 제품들 같은 풀로 묶임
+      //   → 그룹 첫 행에만 박스/kg 표시, 나머지는 0 (월간생산량과 동일 룰)
+      var poolKey = 'PKTYPE-'+date+'-'+Array.from(pkTypes).sort().join(',');
       return {bx:bx, kg:kg, poolKey:poolKey, status:'PK_TYPE'};
     }
 
