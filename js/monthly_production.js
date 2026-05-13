@@ -675,6 +675,7 @@
         rows.push({
           date: dt, dayNo: dayNo[dt], dateRowIdx: idx,
           product: p.product,
+          _isMainRow: true,  // ★ 메인 행 (서브토탈/합계 대상)
           rmKg: _r2(alloc.rmKg),
           ppKg: _r2(alloc.ppKg), ppHours: _r2(alloc.ppHours), ppWorkers: r1(alloc.ppWorkers), ppPersonHours: _r2(alloc.ppPersonHours),
           ckKg: _r2(alloc.ckKg), ckHours: _r2(alloc.ckHours), ckWorkers: r1(alloc.ckWorkers), ckPersonHours: _r2(alloc.ckPersonHours),
@@ -722,6 +723,8 @@
         rows.push({
           date: dt, dayNo: dayNo[dt], dateRowIdx: idx2,
           product: p.product,
+          _isMainRow: false,  // ★ 부위별 보조 행 (서브토탈/합계에서 제외)
+          _isPartRow: true,
           rmKg: _r2(src.rmKg),
           ppKg: _r2(src.pp.kg),
           ppHours: _r2(src.pp.hours),
@@ -1009,8 +1012,11 @@
         list.sort(function(a,b){
           return String(a.date||'').localeCompare(String(b.date||''));
         });
-        list.forEach(function(r){ newRows.push(r); });
-        // 서브토탈 계산
+        // ★ 일자별 메인 행만 표시 (부위별 보조 행은 숨김)
+        var displayList = list.filter(function(r){ return r._isMainRow !== false; });
+        displayList.forEach(function(r){ newRows.push(r); });
+        // ★ 서브토탈 계산 — 메인 행만 합산 (부위별 보조 행 제외, 이중 집계 방지)
+        var sumList = list.filter(function(r){ return r._isMainRow !== false; });
         var sub = {
           product: prod,
           type: '',
@@ -1024,11 +1030,11 @@
           pkEa:0, pkHours:0, pkPersonHours:0,
           meatKg:0, prodKg:0,
           pouchUsed:0, sauceKgUsed:0, subKgUsed:0, boxUsed:0,
-          kgea: list[0] ? list[0].kgea : 0,
-          kgTot: list[0] ? list[0].kgTot : 0,
+          kgea: sumList[0] ? sumList[0].kgea : 0,
+          kgTot: sumList[0] ? sumList[0].kgTot : 0,
           _workDays: new Set()
         };
-        list.forEach(function(r){
+        sumList.forEach(function(r){
           sub.rmKg += r.rmKg||0;
           sub.ppKg += r.ppKg||0; sub.ppHours += r.ppHours||0; sub.ppPersonHours += r.ppPersonHours||0;
           sub.ckKg += r.ckKg||0; sub.ckHours += r.ckHours||0; sub.ckPersonHours += r.ckPersonHours||0;
