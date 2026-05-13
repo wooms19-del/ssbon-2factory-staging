@@ -14,6 +14,7 @@
   /* ===== 상태 ===== */
   var _mpYm = null;
   var _mpData = null;
+  var _mpRaw = null; // raw 데이터 캐시 (mode 변경 시 재처리용)
   // 화면이 마지막으로 렌더한 데이터 (다운로드에서 동일하게 사용)
   var _lastRendered = null;  // {calcRows, visibleCols, sum, dayCount}
   var _mpPrevData = null;
@@ -226,6 +227,11 @@
   function mpSetGroupMode(val){
     _mpGroupMode = val;
     _mpGroupFilter = new Set();  // 모드 바뀌면 필터 리셋 (전체 선택)
+    // ★ mode 변경 시 분배 로직이 다시 돌아야 함 (raw 캐시로 _mpProcess 재실행)
+    if(_mpRaw){
+      _mpData     = _mpProcess(_mpRaw[0],_mpRaw[1],_mpRaw[2],_mpRaw[3],_mpRaw[4],_mpRaw[5]);
+      _mpPrevData = _mpProcess(_mpRaw[6],_mpRaw[7],_mpRaw[8],_mpRaw[9],_mpRaw[10],_mpRaw[11]);
+    }
     _mpRenderShell();
     if(_mpData) _mpRender();
   }
@@ -316,6 +322,7 @@
           fbGetRange('cooking',      pFrom,    pTo)
         ]);
 
+        _mpRaw = R;  // raw 데이터 캐시 — mode 변경 시 _mpProcess 재실행용
         _mpData     = _mpProcess(R[0],R[1],R[2],R[3],R[4],R[5]);
         _mpPrevData = _mpProcess(R[6],R[7],R[8],R[9],R[10],R[11]);
         _mpRender();
@@ -545,10 +552,6 @@
       p.type = typeList[0] || null;
       p.typeList = typeList;
       p.isNoMeat = isNoMeat;
-      // ─── DEBUG 04-13 ───
-      if(p.date==='2026-04-13' && (p.product.indexOf('트레이더스')>=0||p.product.indexOf('시그니처')>=0)){
-        console.log('[DEBUG#1 byDP]', p.product, 'type=', p.type, 'typeList=', JSON.stringify(p.typeList), 'types=', JSON.stringify(p.types), 'eaDisp=', p.eaDisp, 'isNoMeat=', p.isNoMeat);
-      }
     });
 
     // 각 packing 행에 부위 매칭된 데이터 할당 (필요시 비율 분배)
@@ -609,10 +612,6 @@
 
       Object.keys(byType).forEach(function(t){
         var group = byType[t];
-        // ─── DEBUG 04-13 ───
-        if(d==='2026-04-13'){
-          console.log('[DEBUG#2 byType] date=', d, 'type=', t, 'group.length=', group.length, 'products=', group.map(function(x){return x.product+'(ea='+x.eaDisp+')';}).join(' | '));
-        }
         // 부위 데이터
         var src = (t==='_') ? _dataAll(d) : _dataByType(d, t);
         // 부위 데이터가 비어있으면 (type 명시했으나 그 부위 thawing 0) → 그날 전체 사용
@@ -646,11 +645,6 @@
           };
         });
       });
-    });
-
-    // ─── DEBUG 04-13 allocMap ───
-    ['2026-04-13|시그니처 장조림 130g','2026-04-13|트레이더스 장조림 460g'].forEach(function(k){
-      console.log('[DEBUG#3 allocMap]', k, '→', JSON.stringify(allocMap[k]||'NULL'));
     });
 
     var keys = Object.keys(byDP).sort();
@@ -794,10 +788,6 @@
       var grp = __grpMap[key];
       var parts = key.split('|');
       var d = parts[0], t = parts[1];
-      // ─── DEBUG 04-13 grp ───
-      if(d==='2026-04-13'){
-        console.log('[DEBUG#4 grp] key=', key, 'grp.length=', grp.length, 'products=', grp.map(function(x){return x.product+'(rmKg전:'+(x.rmKg||0)+')';}).join(' | '), 'mode=', _mpGroupMode);
-      }
       // 부위 전체 데이터 (분배 무시, 직접 조회)
       var rmTotal = thByDateType[d+'|'+t] || 0;
       var ppItem  = ppByDT[d+'|'+t] || {kg:0, hours:0, personHours:0};
@@ -815,10 +805,6 @@
           // ★ 그룹 모드(제품별) → 행마다 비율 분배 (필터 유무 무관)
           //   '없음' 모드일 때만 기존 풀+0 표시
           var splitMode = (_mpGroupMode === 'product');
-          // ─── DEBUG 04-13 splitMode ───
-          if(d==='2026-04-13'){
-            console.log('[DEBUG#5 splitMode] product=', r.product, 'splitMode=', splitMode, 'i=', i, 'rmTotal=', rmTotal, 'grpMeatKg=', grpMeatKg);
-          }
           if(splitMode){
             // ★ 각 행이 자기 td 출력하도록 rowspan 효과 끔
             r._grpSize = 1;
