@@ -39,7 +39,6 @@ async function sh2Render(){
               <th style="padding:10px 4px;border:1px solid #b91c1c;width:90px;font-size:13px">시작</th>
               <th style="padding:10px 4px;border:1px solid #b91c1c;width:90px;font-size:13px">종료</th>
               <th style="padding:10px 4px;border:1px solid #b91c1c;width:130px;font-size:13px">산출 KG</th>
-              <th style="padding:10px 4px;border:1px solid #b91c1c;width:120px;font-size:13px">비가식부</th>
               <th style="padding:10px 4px;border:1px solid #b91c1c;width:80px;font-size:13px">인원</th>
               <th style="padding:10px 4px;border:1px solid #b91c1c;width:80px;font-size:13px">작업시간</th>
               <th style="padding:10px 4px;border:1px solid #b91c1c;width:44px;font-size:13px"></th>
@@ -50,7 +49,11 @@ async function sh2Render(){
       </div>
       <div style="display:flex;gap:8px;margin-top:10px">
         <button class="btn bo bsm" onclick="sh2AddRow()" style="flex:1;padding:8px">+ 행 추가</button>
-        <button class="btn bp bblk" onclick="sh2SaveAll()" style="flex:2;padding:8px">전체 저장</button>
+      </div>
+      <!-- ★ 부위별 비가식부 입력 카드 (테이블에 부위 등장 시 자동 생성) -->
+      <div id="sh2_wasteByType" style="margin-top:14px"></div>
+      <div style="margin-top:10px">
+        <button class="btn bp bblk" onclick="sh2SaveAll()" style="width:100%;padding:8px">전체 저장</button>
       </div>
       <div style="font-size:11px;color:var(--g5);margin-top:6px;text-align:center">
         ※ 입력 후 [전체 저장] 버튼을 눌러야 저장됨.
@@ -120,16 +123,31 @@ function sh2GetWagonAvail(){
 
 function sh2RenderRemain(){
   const avail = sh2GetWagonAvail();
-  // ★ 입력 중(미저장)인 행의 (kg+waste)를 와건별로 빼기
-  const previewByWagon = {};  // {와건번호: 빼야할 kg}
+  // ★ 부위별 비가식부 (카드에서 가져옴)
+  const wasteByType = sh2DistributeWaste();
+  // ★ 부위별 산출 KG 합 (분배용)
+  const kgByType = {};
   const tbody = document.getElementById('sh2_tbody');
+  if(tbody){
+    [...tbody.querySelectorAll('tr')].forEach(tr => {
+      if(tr.dataset.saved === '1') return;
+      const type = (tr.querySelector('.sh2-type')||{}).value || '';
+      const kg = parseFloat((tr.querySelector('.sh2-kg')||{}).value) || 0;
+      if(type && kg > 0) kgByType[type] = (kgByType[type] || 0) + kg;
+    });
+  }
+  // ★ 입력 중(미저장)인 행의 (kg+분배waste)를 와건별로 빼기
+  const previewByWagon = {};  // {와건번호: 빼야할 kg}
   if(tbody){
     [...tbody.querySelectorAll('tr')].forEach(tr => {
       if(tr.dataset.saved === '1') return;
       const type = (tr.querySelector('.sh2-type')||{}).value || '';
       const wagonOut = (tr.querySelector('.sh2-wagon-out')||{}).value.trim();
       const kg = parseFloat((tr.querySelector('.sh2-kg')||{}).value) || 0;
-      const waste = parseFloat((tr.querySelector('.sh2-waste')||{}).value) || 0;
+      // ★ 부위별 비가식부를 산출 KG 비례로 분배
+      const typeTotalKg = kgByType[type] || 0;
+      const typeTotalWaste = wasteByType[type] || 0;
+      const waste = (typeTotalKg > 0 && typeTotalWaste > 0) ? (typeTotalWaste * kg / typeTotalKg) : 0;
       const total = kg + waste;
       if(!type || total <= 0) return;
       // FIFO 시뮬레이션: 부위에 해당하는 와건들에서 순서대로 빼기
@@ -256,11 +274,6 @@ function sh2AddRow(data){
              onchange="sh2OnCellChange(${idx})">
     </td>
     <td style="border:1px solid #ddd;padding:0">
-      <input class="sh2-waste" type="number" step="0.01" placeholder="0.00" value="${data.waste||''}"
-             style="width:100%;height:42px;border:none;padding:0 8px;background:transparent;font-size:14px;text-align:right"
-             onchange="sh2OnCellChange(${idx})">
-    </td>
-    <td style="border:1px solid #ddd;padding:0">
       <input class="sh2-workers" type="number" placeholder="0" value="${data.workers||''}"
              style="width:100%;height:42px;border:none;padding:0 8px;background:transparent;font-size:14px;text-align:center"
              onchange="sh2OnCellChange(${idx})">
@@ -289,6 +302,8 @@ async function sh2RemoveRow(idx){
   // 잔량 카드 갱신
   const remEl = document.getElementById('sh2_remain');
   if(remEl) remEl.innerHTML = sh2RenderRemain();
+  // ★ 부위별 비가식부 카드 갱신
+  sh2RenderWasteByType();
 }
 
 function sh2ReindexRows(){
@@ -311,6 +326,8 @@ function sh2OnCellChange(idx){
   // ★ 잔량 카드 실시간 미리보기 차감
   const remEl = document.getElementById('sh2_remain');
   if(remEl) remEl.innerHTML = sh2RenderRemain();
+  // ★ 부위별 비가식부 카드 자동 갱신
+  sh2RenderWasteByType();
 }
 
 function sh2CalcDur(start, end){
@@ -329,11 +346,67 @@ function sh2GetRowData(idx){
     type: tr.querySelector('.sh2-type').value || '',
     wagonOut: tr.querySelector('.sh2-wagon-out').value.trim(),
     kg: parseFloat(tr.querySelector('.sh2-kg').value) || 0,
-    waste: parseFloat(tr.querySelector('.sh2-waste').value) || 0,
+    waste: 0,  // ★ 비가식부는 부위별 카드에서 분배 (sh2SaveAll에서 채움)
     workers: parseInt(tr.querySelector('.sh2-workers').value) || 0,
     start: tr.querySelector('.sh2-start').value.trim(),
     end: tr.querySelector('.sh2-end').value.trim(),
   };
+}
+
+// ★ 부위별 비가식부 카드 렌더링 (테이블 행의 부위 보고 자동 생성)
+function sh2RenderWasteByType(){
+  const el = document.getElementById('sh2_wasteByType');
+  if(!el) return;
+  // 현재 테이블에 입력된 부위 + 산출 KG 합 계산
+  const tbody = document.getElementById('sh2_tbody');
+  if(!tbody) { el.innerHTML = ''; return; }
+  const typeMap = {}; // {부위: 총kg}
+  [...tbody.querySelectorAll('tr')].forEach(tr => {
+    const type = (tr.querySelector('.sh2-type')||{}).value || '';
+    const kg = parseFloat((tr.querySelector('.sh2-kg')||{}).value) || 0;
+    if(type && kg > 0){
+      typeMap[type] = (typeMap[type] || 0) + kg;
+    }
+  });
+  const types = Object.keys(typeMap);
+  if(!types.length){
+    el.innerHTML = '<div style="font-size:11px;color:var(--g4);text-align:center;padding:8px">※ 부위와 산출 KG 입력 시 부위별 비가식부 입력란이 표시됩니다</div>';
+    return;
+  }
+  // 기존 입력값 보존
+  const prev = {};
+  el.querySelectorAll('.sh2-waste-type').forEach(inp => {
+    prev[inp.dataset.type] = inp.value;
+  });
+  el.innerHTML = `
+    <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:10px 12px">
+      <div style="font-size:12px;font-weight:700;color:#991b1b;margin-bottom:8px">🍖 부위별 비가식부 입력</div>
+      ${types.map(t => `
+        <div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-top:1px solid #fee2e2">
+          <span style="font-size:13px;font-weight:600;min-width:80px;color:#7f1d1d">${t}</span>
+          <span style="font-size:11px;color:#9ca3af;flex:1">산출 ${typeMap[t].toFixed(2)}kg</span>
+          <input class="sh2-waste-type" type="number" step="0.01" placeholder="0.00"
+                 data-type="${t}" value="${prev[t]||''}"
+                 oninput="(function(){var r=document.getElementById('sh2_remain');if(r)r.innerHTML=sh2RenderRemain()})()"
+                 style="width:100px;height:36px;padding:0 8px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;text-align:right">
+          <span style="font-size:11px;color:#6b7280">kg</span>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+// ★ 부위별 비가식부 → 각 행의 waste로 분배 (행별 산출 KG 비례)
+function sh2DistributeWaste(){
+  const el = document.getElementById('sh2_wasteByType');
+  if(!el) return {};
+  const wasteByType = {};
+  el.querySelectorAll('.sh2-waste-type').forEach(inp => {
+    const t = inp.dataset.type;
+    const w = parseFloat(inp.value) || 0;
+    if(t && w > 0) wasteByType[t] = w;
+  });
+  return wasteByType;
 }
 
 function sh2ValidateRow(d){
@@ -411,10 +484,10 @@ function sh2BuildRecord(d, touches){
 // ============================================================
 // 저장 (단일)
 // ============================================================
-async function sh2SaveOne(idx){
+async function sh2SaveOne(idx, dOverride){
   const tr = document.getElementById('sh2Tr_'+idx);
   if(!tr || tr.dataset.saved) return;
-  const d = sh2GetRowData(idx);
+  const d = dOverride || sh2GetRowData(idx);
   if(!d) return;
   const err = sh2ValidateRow(d);
   if(err){ toast(`${err} 입력 필요`,'d'); return; }
@@ -455,16 +528,41 @@ async function sh2SaveAll(){
   if(!tbody) return;
   const rows = [...tbody.querySelectorAll('tr')].filter(tr => !tr.dataset.saved);
   if(!rows.length){ toast('저장할 행 없음','i'); return; }
-  let saved = 0;
+  // ★ 부위별 비가식부 수집
+  const wasteByType = sh2DistributeWaste();
+  // ★ 유효한 행들의 부위별 산출 KG 합 계산 (분배용)
+  const kgByType = {};
+  const validRows = [];
   for(const tr of rows){
     const idx = parseInt(tr.dataset.idx);
     const d = sh2GetRowData(idx);
     if(!d.type && !d.wagonOut && !d.kg) continue;
     if(sh2ValidateRow(d)) continue;
-    await sh2SaveOne(idx);
+    kgByType[d.type] = (kgByType[d.type] || 0) + d.kg;
+    validRows.push({tr, idx, d});
+  }
+  // ★ 행별 waste 분배: 산출 KG 비례
+  validRows.forEach(r => {
+    const totalTypeKg = kgByType[r.d.type] || 0;
+    const totalWaste = wasteByType[r.d.type] || 0;
+    if(totalTypeKg > 0 && totalWaste > 0){
+      // 비례 분배: 이 행의 kg / 부위 전체 kg * 부위 비가식부 총합
+      r.d.waste = parseFloat((totalWaste * r.d.kg / totalTypeKg).toFixed(2));
+    } else {
+      r.d.waste = 0;
+    }
+  });
+  let saved = 0;
+  for(const r of validRows){
+    await sh2SaveOne(r.idx, r.d);  // ★ 분배된 d를 직접 전달
     saved++;
   }
   if(!saved) toast('저장된 행 없음 (필수칸 미입력)','i');
+  else {
+    // 저장 완료 후 부위별 비가식부 입력값 초기화
+    const el = document.getElementById('sh2_wasteByType');
+    if(el) el.querySelectorAll('.sh2-waste-type').forEach(inp => inp.value = '');
+  }
 }
 
 async function sh2Refresh(){
