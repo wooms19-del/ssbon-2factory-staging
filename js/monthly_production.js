@@ -545,6 +545,10 @@
       p.type = typeList[0] || null;
       p.typeList = typeList;
       p.isNoMeat = isNoMeat;
+      // ─── DEBUG 04-13 ───
+      if(p.date==='2026-04-13' && (p.product.indexOf('트레이더스')>=0||p.product.indexOf('시그니처')>=0)){
+        console.log('[DEBUG#1 byDP]', p.product, 'type=', p.type, 'typeList=', JSON.stringify(p.typeList), 'types=', JSON.stringify(p.types), 'eaDisp=', p.eaDisp, 'isNoMeat=', p.isNoMeat);
+      }
     });
 
     // 각 packing 행에 부위 매칭된 데이터 할당 (필요시 비율 분배)
@@ -605,6 +609,10 @@
 
       Object.keys(byType).forEach(function(t){
         var group = byType[t];
+        // ─── DEBUG 04-13 ───
+        if(d==='2026-04-13'){
+          console.log('[DEBUG#2 byType] date=', d, 'type=', t, 'group.length=', group.length, 'products=', group.map(function(x){return x.product+'(ea='+x.eaDisp+')';}).join(' | '));
+        }
         // 부위 데이터
         var src = (t==='_') ? _dataAll(d) : _dataByType(d, t);
         // 부위 데이터가 비어있으면 (type 명시했으나 그 부위 thawing 0) → 그날 전체 사용
@@ -638,6 +646,11 @@
           };
         });
       });
+    });
+
+    // ─── DEBUG 04-13 allocMap ───
+    ['2026-04-13|시그니처 장조림 130g','2026-04-13|트레이더스 장조림 460g'].forEach(function(k){
+      console.log('[DEBUG#3 allocMap]', k, '→', JSON.stringify(allocMap[k]||'NULL'));
     });
 
     var keys = Object.keys(byDP).sort();
@@ -781,6 +794,10 @@
       var grp = __grpMap[key];
       var parts = key.split('|');
       var d = parts[0], t = parts[1];
+      // ─── DEBUG 04-13 grp ───
+      if(d==='2026-04-13'){
+        console.log('[DEBUG#4 grp] key=', key, 'grp.length=', grp.length, 'products=', grp.map(function(x){return x.product+'(rmKg전:'+(x.rmKg||0)+')';}).join(' | '), 'mode=', _mpGroupMode);
+      }
       // 부위 전체 데이터 (분배 무시, 직접 조회)
       var rmTotal = thByDateType[d+'|'+t] || 0;
       var ppItem  = ppByDT[d+'|'+t] || {kg:0, hours:0, personHours:0};
@@ -798,6 +815,10 @@
           // ★ 그룹 모드(제품별) → 행마다 비율 분배 (필터 유무 무관)
           //   '없음' 모드일 때만 기존 풀+0 표시
           var splitMode = (_mpGroupMode === 'product');
+          // ─── DEBUG 04-13 splitMode ───
+          if(d==='2026-04-13'){
+            console.log('[DEBUG#5 splitMode] product=', r.product, 'splitMode=', splitMode, 'i=', i, 'rmTotal=', rmTotal, 'grpMeatKg=', grpMeatKg);
+          }
           if(splitMode){
             // ★ 각 행이 자기 td 출력하도록 rowspan 효과 끔
             r._grpSize = 1;
