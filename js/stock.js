@@ -19,11 +19,11 @@ async function renderStock(){
   if(!pg){ _stockLoading=false; return; }
   pg.innerHTML = '<div style="padding:20px;text-align:center;color:#6b7280">불러오는 중…</div>';
 
-  // 충분히 긴 기간 (1년 6개월) — 누적 정확성
+  // ★ 시작일 고정: 2026-05-01 (이 시점부터 입고/출고 누적해서 잔여 계산)
+  //   이전 thawing은 재고 계산에서 제외 (시스템 도입 전)
+  var fromStr = '2026-05-01';
   var today = new Date();
-  var from = new Date(today.getFullYear()-1, today.getMonth()-6, 1);
-  var fromStr = from.toISOString().slice(0,10);
-  var toStr = today.toISOString().slice(0,10);
+  var toStr = today.getFullYear()+'-'+String(today.getMonth()+1).padStart(2,'0')+'-'+String(today.getDate()).padStart(2,'0');
 
   try {
     var R = await Promise.all([
@@ -86,14 +86,13 @@ function _renderStockShell(){
     return String(b.date||'').localeCompare(String(a.date||''));
   }).map(function(r){
     var fbId = r.fbId || r.id || '';
-    var note = r.note ? ' · '+String(r.note).replace(/'/g,"&#39;") : '';
     return '<tr>'
-      + '<td style="padding:8px 12px;border-bottom:1px solid #f3f4f6;font-weight:600">'+(r.date||'-')+'</td>'
-      + '<td style="padding:8px 12px;border-bottom:1px solid #f3f4f6">'+(r.type||'-')+'</td>'
-      + '<td style="padding:8px 12px;border-bottom:1px solid #f3f4f6;text-align:right;font-weight:600">'+(parseInt(r.boxes,10)||0).toLocaleString()+'박스</td>'
-      + '<td style="padding:8px 12px;border-bottom:1px solid #f3f4f6;color:#6b7280;font-size:12px">'+(r.note||'')+'</td>'
-      + '<td style="padding:8px 12px;border-bottom:1px solid #f3f4f6;text-align:center">'
-      +   '<button class="btn bo bsm" onclick="stockEdit(\''+fbId+'\')" style="margin-right:4px">수정</button>'
+      + '<td style="padding:8px 16px;border-bottom:1px solid #f3f4f6;font-weight:600">'+(r.date||'-')+'</td>'
+      + '<td style="padding:8px 16px;border-bottom:1px solid #f3f4f6;text-align:center">'+(r.type||'-')+'</td>'
+      + '<td style="padding:8px 24px 8px 16px;border-bottom:1px solid #f3f4f6;text-align:right;font-weight:600">'+(parseInt(r.boxes,10)||0).toLocaleString()+'</td>'
+      + '<td style="padding:8px 16px;border-bottom:1px solid #f3f4f6;color:#6b7280;font-size:12px">'+(r.note||'')+'</td>'
+      + '<td style="padding:8px 16px;border-bottom:1px solid #f3f4f6;text-align:center">'
+      +   '<button class="btn bo bsm" onclick="stockEdit(\''+fbId+'\')" style="margin-right:6px">수정</button>'
       +   '<button class="btn bd bsm" onclick="stockDelete(\''+fbId+'\')">삭제</button>'
       + '</td></tr>';
   }).join('');
@@ -112,15 +111,21 @@ function _renderStockShell(){
     // 입고 입력 폼
     +   '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:16px;margin-bottom:24px">'
     +     '<div style="font-size:14px;font-weight:700;color:#1e293b;margin-bottom:12px">➕ 입고 추가</div>'
-    +     '<div style="display:grid;grid-template-columns:140px 160px 110px 1fr auto;gap:10px;align-items:end">'
+    +     '<div style="display:flex;gap:10px;align-items:end;flex-wrap:wrap">'
     +       '<div><div style="font-size:11px;color:#6b7280;margin-bottom:4px">입고일</div>'
-    +         '<input type="date" id="stIn_date" value="'+_stockToday()+'" class="fc" style="padding:7px 10px;width:100%;box-sizing:border-box;height:36px"></div>'
+    +         '<input type="date" id="stIn_date" value="'+_stockToday()+'" class="fc" style="padding:7px 10px;width:140px;box-sizing:border-box;height:36px"></div>'
     +       '<div><div style="font-size:11px;color:#6b7280;margin-bottom:4px">부위</div>'
-    +         '<input type="text" id="stIn_type" placeholder="우둔/홍두깨/설도..." class="fc" style="padding:7px 10px;width:100%;box-sizing:border-box;height:36px"></div>'
+    +         '<div style="display:flex;gap:4px;align-items:center">'
+    +           '<button type="button" onclick="_stockPickType(\'우둔\')" id="stIn_btn_우둔" class="btn bo bsm" style="height:36px;padding:0 12px">우둔</button>'
+    +           '<button type="button" onclick="_stockPickType(\'홍두깨\')" id="stIn_btn_홍두깨" class="btn bo bsm" style="height:36px;padding:0 12px">홍두깨</button>'
+    +           '<button type="button" onclick="_stockPickType(\'설도\')" id="stIn_btn_설도" class="btn bo bsm" style="height:36px;padding:0 12px">설도</button>'
+    +           '<input type="text" id="stIn_type" placeholder="직접입력" class="fc" style="padding:7px 10px;width:100px;box-sizing:border-box;height:36px">'
+    +         '</div>'
+    +       '</div>'
     +       '<div><div style="font-size:11px;color:#6b7280;margin-bottom:4px">박스 수</div>'
-    +         '<input type="number" id="stIn_boxes" placeholder="0" class="fc" style="padding:7px 10px;width:100%;box-sizing:border-box;height:36px;text-align:right"></div>'
-    +       '<div><div style="font-size:11px;color:#6b7280;margin-bottom:4px">메모(원산지/로트 등)</div>'
-    +         '<input type="text" id="stIn_note" placeholder="(선택)" class="fc" style="padding:7px 10px;width:100%;box-sizing:border-box;height:36px"></div>'
+    +         '<input type="number" id="stIn_boxes" placeholder="0" class="fc" style="padding:7px 10px;width:100px;box-sizing:border-box;height:36px;text-align:right"></div>'
+    +       '<div style="min-width:200px;max-width:280px"><div style="font-size:11px;color:#6b7280;margin-bottom:4px">메모 (선택)</div>'
+    +         '<input type="text" id="stIn_note" placeholder="원산지/로트 등" class="fc" style="padding:7px 10px;width:100%;box-sizing:border-box;height:36px"></div>'
     +       '<button class="btn bp" onclick="stockAdd()" style="padding:0 20px;height:36px;white-space:nowrap">저장</button>'
     +     '</div>'
     +     '<div style="font-size:11px;color:#9ca3af;margin-top:10px">※ 초기 재고도 "입고"로 입력하세요. 예) 2026-05-01 우둔 247박스 (메모: 초기재고)</div>'
@@ -131,18 +136,18 @@ function _renderStockShell(){
     +     '<div style="padding:14px 16px;border-bottom:1px solid #e5e7eb;font-size:14px;font-weight:700;color:#1e293b">📋 입고 이력</div>'
     +     '<table style="width:100%;border-collapse:collapse;font-size:13px;table-layout:fixed">'
     +       '<colgroup>'
+    +         '<col style="width:140px">'
     +         '<col style="width:120px">'
-    +         '<col style="width:120px">'
-    +         '<col style="width:120px">'
+    +         '<col style="width:140px">'
     +         '<col>'
-    +         '<col style="width:160px">'
+    +         '<col style="width:170px">'
     +       '</colgroup>'
     +       '<thead><tr style="background:#f9fafb">'
-    +         '<th style="padding:10px 12px;text-align:left;font-weight:600;color:#475569;border-bottom:1px solid #e5e7eb">입고일</th>'
-    +         '<th style="padding:10px 12px;text-align:left;font-weight:600;color:#475569;border-bottom:1px solid #e5e7eb">부위</th>'
-    +         '<th style="padding:10px 12px;text-align:right;font-weight:600;color:#475569;border-bottom:1px solid #e5e7eb">박스</th>'
-    +         '<th style="padding:10px 12px;text-align:left;font-weight:600;color:#475569;border-bottom:1px solid #e5e7eb">메모</th>'
-    +         '<th style="padding:10px 12px;text-align:center;font-weight:600;color:#475569;border-bottom:1px solid #e5e7eb">관리</th>'
+    +         '<th style="padding:10px 16px;text-align:left;font-weight:600;color:#475569;border-bottom:1px solid #e5e7eb">입고일</th>'
+    +         '<th style="padding:10px 16px;text-align:center;font-weight:600;color:#475569;border-bottom:1px solid #e5e7eb">부위</th>'
+    +         '<th style="padding:10px 24px 10px 16px;text-align:right;font-weight:600;color:#475569;border-bottom:1px solid #e5e7eb">박스</th>'
+    +         '<th style="padding:10px 16px;text-align:left;font-weight:600;color:#475569;border-bottom:1px solid #e5e7eb">메모</th>'
+    +         '<th style="padding:10px 16px;text-align:center;font-weight:600;color:#475569;border-bottom:1px solid #e5e7eb">관리</th>'
     +       '</tr></thead>'
     +       '<tbody>'+historyHtml+'</tbody>'
     +     '</table>'
@@ -241,8 +246,14 @@ async function stockDelete(fbId){
   }
 }
 
+function _stockPickType(t){
+  var inp = document.getElementById('stIn_type');
+  if(inp) inp.value = t;
+}
+
 // globals
 window.renderStock = renderStock;
 window.stockAdd = stockAdd;
 window.stockEdit = stockEdit;
 window.stockDelete = stockDelete;
+window._stockPickType = _stockPickType;
