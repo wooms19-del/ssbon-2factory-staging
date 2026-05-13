@@ -46,26 +46,8 @@ function _renderStockShell(){
   var pg = document.getElementById('p-stock');
   if(!pg) return;
 
-  // ★ thawing 박스 차감 시점 = 실제 생산일 = end의 날짜 부분
-  //   end가 'YYYY-MM-DD HH:MM' → 앞 10자
-  //   end가 'HH:MM'만 있으면 (옛 데이터) → date + 1일 (메모리 룰: thawing은 다음날 종료)
-  //   end 비어있으면 → date 그대로
-  function _outDate(r){
-    var end = String(r.end||'');
-    var date = String(r.date||'').slice(0,10);
-    if(end.length >= 10 && end.charAt(4)==='-'){
-      return end.slice(0,10);
-    }
-    if(end && end.length <= 8 && end.indexOf(':') > 0){
-      // 'HH:MM' 형식 → date+1일
-      if(date && date.length === 10){
-        var p = date.split('-').map(Number);
-        var d = new Date(p[0], p[1]-1, p[2]+1);
-        return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
-      }
-    }
-    return date;
-  }
+  // ★ date 룰 통일: thawing.date = 종료일 (= 실제 제품 만들어지는 날 = 박스 출고일)
+  //   별도 보정 로직 불필요. r.date 그대로 사용.
 
   // 부위별 누적 계산 (5/1 시작점 적용)
   var START_DATE = '2026-05-01';
@@ -78,7 +60,7 @@ function _renderStockShell(){
     inByType[t] = (inByType[t]||0) + (parseInt(r.boxes,10)||0);
   });
   _stockData.thawing.forEach(function(r){
-    var outDate = _outDate(r);
+    var outDate = String(r.date||'').slice(0,10);  // date = 종료일 = 출고일
     if(outDate < START_DATE) return;
     // thawing.type은 콤마 구분 가능 (예: "우둔,홍두깨") 박스도 합산값
     var types = (r.type||'').split(',').map(function(s){return s.trim();}).filter(Boolean);

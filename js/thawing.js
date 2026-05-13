@@ -6,38 +6,41 @@ async function renderThawWaiting(){
   const nowMin=(()=>{const n=new Date();return n.getHours()*60+n.getMinutes();})();
   const toMin=t=>{if(!t)return 9999;const p=t.slice(0,5).split(':');return+p[0]*60+(+p[1]||0);};
 
-  // 방혈 대기: 오늘(시간조건있음) + 어제(시간조건없음 - 이미 해동완료)
+  // 방혈 대기: 오늘 종료(어제 시작) + 내일 종료(오늘 시작)
+  // date 룰 변경: date=종료일이라 yesterday 대신 tomorrow를 fetch (thawing)
+  // yesterday는 barcode용으로 별도 보존 (barcode.date=스캔일이라 어제도 표시)
+  const tomorrow=addDays(today,1);
   const yesterday=getYesterday_();
 
-  // ★ Firebase fresh fetch: thawing + barcode (오늘+어제) 모두 (다른 디바이스/마이그레이션 반영)
+  // ★ Firebase fresh fetch: thawing + barcode 모두 (다른 디바이스/마이그레이션 반영)
   // 실패 시 L.thawing/L.barcodes 기존 캐시로 fallback (오프라인 동작 유지)
   let todayThArr = [], ystThArr = [];
   let todayBcArr = [], ystBcArr = [];
   try {
     [todayThArr, ystThArr, todayBcArr, ystBcArr] = await Promise.all([
       fbGetByDate('thawing', today),
-      fbGetByDate('thawing', yesterday),
+      fbGetByDate('thawing', tomorrow),
       fbGetByDate('barcode', today),
-      fbGetByDate('barcode', yesterday)
+      fbGetByDate('barcode', tomorrow)
     ]);
-    // L.thawing의 today/yesterday 데이터 fresh로 교체 (다른 날짜는 그대로)
+    // L.thawing의 today/tomorrow 데이터 fresh로 교체 (다른 날짜는 그대로)
     L.thawing = [
       ...L.thawing.filter(t => {
         const d = String(t.date||'').slice(0,10);
-        return d !== today && d !== yesterday;
+        return d !== today && d !== tomorrow;
       }),
       ...todayThArr,
       ...ystThArr
     ];
-    // L.barcodes도 today/yesterday fresh 교체 (pending — fbId 없는 record는 보존)
+    // L.barcodes도 today/tomorrow fresh 교체 (pending — fbId 없는 record는 보존)
     const pendingBc = L.barcodes.filter(b => {
       const d = String(b.date||'').slice(0,10);
-      return !b.fbId && (d === today || d === yesterday);
+      return !b.fbId && (d === today || d === tomorrow);
     });
     L.barcodes = [
       ...L.barcodes.filter(b => {
         const d = String(b.date||'').slice(0,10);
-        return d !== today && d !== yesterday;
+        return d !== today && d !== tomorrow;
       }),
       ...todayBcArr,
       ...ystBcArr,
@@ -215,7 +218,7 @@ async function startThawing(){
   document.getElementById('tw_summary').innerHTML='';
 
   const rec = {
-    id:gid(), date:tod(), cart:cartNo, type,
+    id:gid(), date:addDays(tod(),1), cart:cartNo, type,
     start:tod()+' '+startTime, end:'',
     boxes:totalBoxes, totalKg, remainKg:totalKg,
     importCodes
