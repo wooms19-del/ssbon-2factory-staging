@@ -135,9 +135,12 @@ select.fc{cursor:pointer;padding-right:32px;background-image:url("data:image/svg
 .tlt{flex:1;height:26px;background:var(--g1);border-radius:4px;position:relative;overflow:hidden}
 .tlb{position:absolute;height:100%;border-radius:4px;display:flex;align-items:center;padding:0 6px;font-size:10px;font-weight:700;color:#fff;white-space:nowrap;overflow:hidden;cursor:pointer;transition:filter .15s,transform .15s}
 .tlb:hover{filter:brightness(1.15);box-shadow:0 0 0 2px rgba(0,0,0,.18);z-index:2}
-.tlrIntBlock{margin-bottom:14px}
-.tlrIntBlock .tlr{margin-bottom:3px}
-.tlSumBelow{font-size:11px;color:var(--g5);margin-left:56px;padding-left:4px;letter-spacing:.2px}
+.tlrIntBlock{margin-bottom:18px}
+.tlrIntBlock .tlr{margin-bottom:4px}
+.tlSumRow{display:flex;align-items:center;gap:6px}
+.tlSumSpacer{width:50px;flex-shrink:0}
+.tlSumTrack{flex:1;position:relative;height:18px}
+.tlSumBelow{position:absolute;top:0;font-size:12px;color:var(--g6);font-weight:500;white-space:nowrap;padding-left:2px}
 
 /* 이력추적 */
 .trstep{display:flex;gap:12px;margin-bottom:12px}

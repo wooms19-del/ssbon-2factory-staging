@@ -2577,15 +2577,19 @@ function renderTL(pp,ck,sh,pk){
         const s=toMin(r.start), e=toMin(r.end);
         return (s===null||e===null) ? [] : [{s,e}];
       });
-      let summaryText = '';
+      let summaryHtml = '';
       if(validMins.length){
         const minS = Math.min(...validMins.map(x=>x.s));
         const maxE = Math.max(...validMins.map(x=>x.e));
         const totalDur = validMins.reduce((sum,x)=>sum+(x.e-x.s),0);
         const _hm = m => `${String(Math.floor(m/60)).padStart(2,'0')}:${String(m%60).padStart(2,'0')}`;
-        summaryText = `${_hm(minS)} ~ ${_hm(maxE)} &middot; ${g.rows.length}건 &middot; ${_fmtDur(totalDur)}`;
+        const summaryText = `${_hm(minS)} ~ ${_hm(maxE)} &middot; ${g.rows.length}건 &middot; ${_fmtDur(totalDur)}`;
+        // 막대 시작 위치(%) 계산 — 막대 영역 안의 막대 시작점에 정렬
+        const leftPct = r2((minS-headStart)/range*100);
+        const widthPct = r2((maxE-minS)/range*100);
+        summaryHtml = `<div class="tlSumRow"><div class="tlSumSpacer"></div><div class="tlSumTrack"><div class="tlSumBelow" style="left:${leftPct}%;min-width:${Math.max(widthPct,15)}%">${summaryText}</div></div></div>`;
       }
-      return `<div class="tlrIntBlock"><div class="tlr"><div class="tll">${g.lbl}</div><div class="tlt">${bars}</div></div>${summaryText?`<div class="tlSumBelow">${summaryText}</div>`:''}</div>`;
+      return `<div class="tlrIntBlock"><div class="tlr"><div class="tll">${g.lbl}</div><div class="tlt">${bars}</div></div>${summaryHtml}</div>`;
     }).join('');
   } else {
     // 카트별 = 같은 공정끼리 묶고, 시간 겹치는 record만 새 row 분리
