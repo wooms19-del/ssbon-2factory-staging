@@ -168,7 +168,9 @@
       + '#mpTbl tr.prevRow td{background:#f1f5f9;color:#475569;padding:9px 8px}'
       + '#mpTbl tr.diffRow td{background:#fee2e2;font-style:normal;font-weight:600;padding:9px 8px;border-bottom:2px solid #b91c1c}'
       // 합계/평균 행은 colspan="3" 한 셀이 3컬럼 차지 → 그 셀에 sum-label 클래스로 sticky
-      + '#mpTbl tr.sumRow td.sum-label,#mpTbl tr.avgRow td.sum-label,#mpTbl tr.prevRow td.sum-label,#mpTbl tr.diffRow td.sum-label{position:sticky;left:0;z-index:5;box-shadow:4px 0 6px -3px rgba(0,0,0,0.12)}'
+      + '#mpTbl tr.sumRow td.sum-label,#mpTbl tr.avgRow td.sum-label,#mpTbl tr.prevRow td.sum-label,#mpTbl tr.diffRow td.sum-label,#mpTbl tr.subTotalRow td.sum-label{position:sticky;left:0;z-index:5;box-shadow:4px 0 6px -3px rgba(0,0,0,0.12)}'
+      // 서브토탈 sticky 셀 배경 일치 (subTotalRow 배경색과 동일)
+      + '#mpTbl tr.subTotalRow td.sum-label{background:#dbeafe}'
       + '#mpTbl td.product{font-weight:500;color:#1e40af}'
       + '#mpTbl td.dateCell{font-weight:600;color:#1e293b}'
       + '#mpTbl td.dayNoCell{color:#6b7280;font-size:11.5px}'
