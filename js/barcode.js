@@ -166,10 +166,18 @@ function procBC(code){
 
   L.barcodes.push(rec); saveL();
   renderBC();
-  if(judge.status==='적합')
+  if(judge.status==='적합'){
     setBcAl(`✅ 적합 — ${imp.part} / ${tr.origin} / ${imp.weightKg}kg · 해동종료 ${rfEnd}`,'s');
-  else
+    // 박스 안에 마지막 스캔 정보 영구 표시 (다음 스캔 전까지)
+    document.getElementById('bcHint').textContent=`✅ ${imp.part} · ${tr.origin} · ${imp.weightKg}kg`;
+    document.getElementById('bcHint').className='bc-hint';
+    document.getElementById('bcSub').textContent=`해동기 ${st.slice(0,5)} → 종료 ${rfEnd} · 소비기한 ${imp.expiryDate||'-'}`;
+  } else {
     setBcAl(`❌ 부적합 — ${judge.reason}`,'d');
+    document.getElementById('bcHint').textContent=`❌ 부적합 — ${imp.part||'?'} · ${tr.origin||'?'}`;
+    document.getElementById('bcHint').className='bc-hint';
+    document.getElementById('bcSub').textContent=judge.reason;
+  }
 
   // Firebase 저장 + 구글시트 백업 (동시, 비동기)
   fbSave('barcode', rec).then(fbId => {
@@ -249,7 +257,13 @@ async function renderBC(){
   document.getElementById('bcBd').textContent=items.filter(b=>b.status==='부적합').length;
   const el=document.getElementById('bcList');
   if(!items.length){el.innerHTML='<div class="emp">스캔 데이터 없음</div>';renderBcSummaryCard();return;}
-  el.innerHTML=[...items].reverse().map(b=>`
+  // 최신 스캔이 맨 위 (rfStart DESC) — 같은 시각이면 id로 보조 정렬
+  const sorted=[...items].sort((a,b)=>{
+    const ta=(a.rfStart||''), tb=(b.rfStart||'');
+    if(ta!==tb) return tb.localeCompare(ta);
+    return String(b.id||'').localeCompare(String(a.id||''));
+  });
+  el.innerHTML=sorted.map(b=>`
     <div class="bcitem ${b.status==='적합'?'gd':'bd'}">
       <span class="bcst ${b.status==='적합'?'sg':'sb'}">${b.status}</span>
       <div class="bcinfo">
