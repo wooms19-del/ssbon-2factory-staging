@@ -824,7 +824,9 @@
             r.shHours = _r2(shItem.hours * ratio);
             r.shPersonHours = _r2(shItem.personHours * ratio);
             r.shWorkers = shItem.hours>0 ? r1(shItem.personHours/shItem.hours) : 0;
-            r._grpMeatKg = grpMeatKg;
+            // ★ splitMode에서는 yield 계산도 분배 기준 — 자기 행 meatKg만 사용
+            // (옛: r._grpMeatKg = grpMeatKg → 그룹 합산값이라 분배된 rm 대비 비율이 폭발함)
+            r._grpMeatKg = (r.pkEa||0) * (r.kgea||0);
             // ★ 공유 마커 (화면에서 같은 배경색 + 툴팁)
             r._sharedKey = r.date + '|' + (r.type||'');
             r._sharedTotal = rmTotal;
