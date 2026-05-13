@@ -1016,7 +1016,13 @@
         });
         // ★ 일자별 메인 행만 표시 (부위별 보조 행은 숨김)
         var displayList = list.filter(function(r){ return r._isMainRow !== false; });
-        displayList.forEach(function(r){ newRows.push(r); });
+        displayList.forEach(function(r){
+          // ★ 제품별 모드에서는 일자/부위 rowspan 효과 끄기 — 모든 행에 td 출력
+          r.dateRowIdx = 0;
+          r._grpSize = 1;
+          r._grpFirst = true;
+          newRows.push(r);
+        });
         // ★ 서브토탈 계산 — 메인 행만 합산 (부위별 보조 행 제외, 이중 집계 방지)
         var sumList = list.filter(function(r){ return r._isMainRow !== false; });
         var sub = {
