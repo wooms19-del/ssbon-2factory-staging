@@ -1269,6 +1269,24 @@
       var grpCnt = r._grpSize || 1;
       var isGrpFirst = r._grpFirst !== false;
       var trClass = r.isSubTotal ? ' class="subTotalRow"' : '';
+      // ★ 서브토탈 행: 왼쪽 3컬럼(생산일수/일자/제품명) colspan으로 합쳐 라벨로 표시
+      if(r.isSubTotal){
+        var head = '<td colspan="3" class="sum-label" style="text-align:center">'+(r._subTotalProd||r.product||'')+' 소계 ('+(r.date||'')+')</td>';
+        var rest = visibleCols.slice(3).map(function(c,_i_){
+          var v = r[c[0]];
+          if(__PART_COLS[c[0]]){
+            if(typeof v==='number') return '<td class="'+_grpCls(c, _i_+3)+'">'+fmtCell(v, c)+'</td>';
+            return '<td class="'+_grpCls(c, _i_+3)+'">'+(v==null?'-':v)+'</td>';
+          }
+          if(c[0]==='pkEa'){
+            var s = v ? Math.round(v).toLocaleString() : '-';
+            return '<td class="'+_grpCls(c, _i_+3)+'">'+s+'</td>';
+          }
+          if(typeof v==='number') return '<td class="'+_grpCls(c, _i_+3)+'">'+fmtCell(v, c)+'</td>';
+          return '<td class="'+_grpCls(c, _i_+3)+'">'+(v==null?'-':v)+'</td>';
+        }).join('');
+        return '<tr'+trClass+'>'+head+rest+'</tr>';
+      }
       return '<tr'+trClass+'>'+visibleCols.map(function(c,_i_){
         var v = r[c[0]];
         // dayNo, date: 그날 첫 행에만 rowspan 출력. 둘째 부위 행부터는 td 생략
