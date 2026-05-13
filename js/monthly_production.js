@@ -86,20 +86,27 @@
     var pnav=document.getElementById('pnav');
     if(pnav){
       pnav.querySelectorAll('.ti').forEach(function(t,i){
-        t.classList.toggle('on', (i===0&&name==='daily') || (i===1&&name==='monthly'));
+        t.classList.toggle('on', (i===0&&name==='daily') || (i===1&&name==='monthly') || (i===2&&name==='stock'));
       });
     }
     var perfPg = document.getElementById('p-performance');
     var moPg   = document.getElementById('p-monthly-prod');
+    var stPg   = document.getElementById('p-stock');
+    // 모두 끄고
+    if(perfPg) perfPg.classList.remove('on');
+    if(moPg)   moPg.classList.remove('on');
+    if(stPg)   stPg.classList.remove('on');
+    // 선택된 거 켜기
     if(name==='daily'){
       if(perfPg) perfPg.classList.add('on');
-      if(moPg)   moPg.classList.remove('on');
-    } else {
-      if(perfPg) perfPg.classList.remove('on');
-      if(moPg)   moPg.classList.add('on');
+    } else if(name==='monthly'){
+      if(moPg) moPg.classList.add('on');
       if(!_mpYm) _mpYm = _ymToday();
       _mpRenderShell();
       _mpReload();
+    } else if(name==='stock'){
+      if(stPg) stPg.classList.add('on');
+      if(typeof renderStock === 'function') renderStock();
     }
     var ms=document.getElementById('mscroll'); if(ms) ms.scrollTop=0;
   }
