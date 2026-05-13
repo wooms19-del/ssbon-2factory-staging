@@ -2572,20 +2572,20 @@ function renderTL(pp,ck,sh,pk){
     };
     bodyHtml = groups.filter(g=>g.rows && g.rows.length).map(g=>{
       const bars = g.rows.map(r=>_bar({...r, lbl:g.lbl, col:g.col})).join('');
-      // 우측 요약 계산
+      // 요약 계산
       const validMins = g.rows.flatMap(r=>{
         const s=toMin(r.start), e=toMin(r.end);
         return (s===null||e===null) ? [] : [{s,e}];
       });
-      let summary = '';
+      let summaryText = '';
       if(validMins.length){
         const minS = Math.min(...validMins.map(x=>x.s));
         const maxE = Math.max(...validMins.map(x=>x.e));
         const totalDur = validMins.reduce((sum,x)=>sum+(x.e-x.s),0);
         const _hm = m => `${String(Math.floor(m/60)).padStart(2,'0')}:${String(m%60).padStart(2,'0')}`;
-        summary = `<div class="tlSum"><div class="tlSumTime">${_hm(minS)} ~ ${_hm(maxE)}</div><div class="tlSumMeta">${g.rows.length}건 · ${_fmtDur(totalDur)}</div></div>`;
+        summaryText = `${_hm(minS)} ~ ${_hm(maxE)} &middot; ${g.rows.length}건 &middot; ${_fmtDur(totalDur)}`;
       }
-      return `<div class="tlr tlrInt"><div class="tll">${g.lbl}</div><div class="tlt">${bars}</div>${summary}</div>`;
+      return `<div class="tlrIntBlock"><div class="tlr"><div class="tll">${g.lbl}</div><div class="tlt">${bars}</div></div>${summaryText?`<div class="tlSumBelow">${summaryText}</div>`:''}</div>`;
     }).join('');
   } else {
     // 카트별 = 같은 공정끼리 묶고, 시간 겹치는 record만 새 row 분리
