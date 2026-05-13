@@ -797,6 +797,8 @@
       var grpMeatKg = grp.reduce(function(s,r){
         return s + (r.pkEa||0) * (r.kgea||0);
       }, 0);
+      // 그룹 합산 포장 인시 (생산성 포장/전체 그룹 기준 계산용)
+      var grpPkPH = grp.reduce(function(s,r){ return s + (r.pkPersonHours||0); }, 0);
       grp.forEach(function(r, i){
         r._grpSize  = grp.length;
         r._grpFirst = (i===0);
@@ -827,6 +829,13 @@
             // ★ splitMode에서는 yield 계산도 분배 기준 — 자기 행 meatKg만 사용
             // (옛: r._grpMeatKg = grpMeatKg → 그룹 합산값이라 분배된 rm 대비 비율이 폭발함)
             r._grpMeatKg = (r.pkEa||0) * (r.kgea||0);
+            // ★ 생산성 5개 그룹 합산값 (calcRows에서 사용)
+            // 그룹의 원료가 같으니 생산성도 그룹 단위로 동일하게 표시되도록
+            r._grpRmTotal = rmTotal;          // 그룹 원육 합 (분배 전 전체)
+            r._grpPpPH = ppItem.personHours;  // 그룹 전처리 인시 합
+            r._grpCkPH = ckItem.personHours;  // 그룹 자숙 인시 합
+            r._grpShPH = shItem.personHours;  // 그룹 파쇄 인시 합
+            r._grpPkPH = grpPkPH;             // 그룹 포장 인시 합 (제품들 합산)
             // ★ 공유 마커 (화면에서 같은 배경색 + 툴팁)
             r._sharedKey = r.date + '|' + (r.type||'');
             r._sharedTotal = rmTotal;
@@ -986,10 +995,13 @@
     });
 
     var calcRows = rows0.map(function(r){
-      var ppT = r.ppPersonHours || 0;
-      var ckT = r.ckPersonHours || 0;
-      var shT = r.shPersonHours || 0;
-      var pkT = r.pkPersonHours || 0;
+      // ★ 그룹(공유 원육) 케이스: 그룹 합산 기준으로 생산성 계산 (두 행 동일 값)
+      // 그룹 아니면 자기 행 값 사용 (기존 동작 유지)
+      var ppT = (r._grpPpPH !== undefined) ? r._grpPpPH : (r.ppPersonHours || 0);
+      var ckT = (r._grpCkPH !== undefined) ? r._grpCkPH : (r.ckPersonHours || 0);
+      var shT = (r._grpShPH !== undefined) ? r._grpShPH : (r.shPersonHours || 0);
+      var pkT = (r._grpPkPH !== undefined) ? r._grpPkPH : (r.pkPersonHours || 0);
+      var rmForProd = (r._grpRmTotal !== undefined) ? r._grpRmTotal : (r.rmKg || 0);
       var meatKg = r.pkEa * (r.kgea||0);
       var prodKg = r.pkEa * (r.kgTot||0);
       var rm = r.rmKg;
@@ -997,11 +1009,11 @@
       var grpMeat = r._grpMeatKg || meatKg;
       return Object.assign({}, r, {
         meatKg:_r2(meatKg), prodKg:_r2(prodKg),
-        prodPp: rm&&ppT?_r2(rm/ppT):0,
-        prodCk: rm&&ckT?_r2(rm/ckT):0,
-        prodSh: rm&&shT?_r2(rm/shT):0,
-        prodPk: rm&&pkT?_r2(rm/pkT):0,
-        prodAll: rm&&(ppT+ckT+shT+pkT)?_r2(rm/(ppT+ckT+shT+pkT)):0,
+        prodPp: rmForProd&&ppT?_r2(rmForProd/ppT):0,
+        prodCk: rmForProd&&ckT?_r2(rmForProd/ckT):0,
+        prodSh: rmForProd&&shT?_r2(rmForProd/shT):0,
+        prodPk: rmForProd&&pkT?_r2(rmForProd/pkT):0,
+        prodAll: rmForProd&&(ppT+ckT+shT+pkT)?_r2(rmForProd/(ppT+ckT+shT+pkT)):0,
         yieldRmPp: rm?_r2(r.ppKg/rm*100)/100:0,
         yieldRmCk: rm?_r2(r.ckKg/rm*100)/100:0,
         yieldRmSh: rm?_r2(r.shKg/rm*100)/100:0,
