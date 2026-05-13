@@ -786,7 +786,29 @@
         r._grpFirst = (i===0);
         r._grpRowIdx = i;
         if(grp.length > 1){
-          if(i === 0){
+          // ★ 그룹 모드(제품별) + 필터 활성 시 → 행마다 비율 분배 (병합 X)
+          //   filter가 비어있으면(전체 보기) 기존처럼 첫 행에 풀로 + 나머지 0
+          var splitMode = (_mpGroupMode === 'product' && _mpGroupFilter.size > 0);
+          if(splitMode){
+            // 각 행의 완제품 고기 비율로 분배
+            var ratio = grpMeatKg > 0 ? ((r.pkEa||0)*(r.kgea||0))/grpMeatKg : 1/grp.length;
+            r.rmKg = _r2(rmTotal * ratio);
+            r.ppKg = _r2(ppItem.kg * ratio);
+            r.ppHours = _r2(ppItem.hours * ratio);
+            r.ppPersonHours = _r2(ppItem.personHours * ratio);
+            r.ppWorkers = ppItem.hours>0 ? r1(ppItem.personHours/ppItem.hours) : 0;
+            r.ckKg = _r2(ckItem.kg * ratio);
+            r.ckHours = _r2(ckItem.hours * ratio);
+            r.ckPersonHours = _r2(ckItem.personHours * ratio);
+            r.ckWorkers = ckItem.hours>0 ? r1(ckItem.personHours/ckItem.hours) : 0;
+            r.shKg = _r2(shItem.kg * ratio);
+            r.shHours = _r2(shItem.hours * ratio);
+            r.shPersonHours = _r2(shItem.personHours * ratio);
+            r.shWorkers = shItem.hours>0 ? r1(shItem.personHours/shItem.hours) : 0;
+            r._grpMeatKg = grpMeatKg;
+            // ★ 공유 마커 (화면에서 같은 배경색)
+            r._sharedKey = r.date + '|' + (r.type||'');
+          } else if(i === 0){
             r.rmKg = _r2(rmTotal);
             r.ppKg = _r2(ppItem.kg);
             r.ppHours = _r2(ppItem.hours);
