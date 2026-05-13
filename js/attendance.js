@@ -571,6 +571,7 @@ function _renderAttMonthly(){
     html+='<th colspan="2" style="padding:6px 4px;font-size:11px;font-weight:600;text-align:center;border:0.5px solid var(--g2);color:'+c+';background:'+(isToday?'#e3f2fd':'var(--g1)')+'">'+
       (dt.getMonth()+1)+'/'+dt.getDate()+'('+dow[dt.getDay()]+')</th>';
   });
+  html+='<th rowspan="2" style="padding:6px 8px;font-size:11px;font-weight:700;text-align:center;border:0.5px solid var(--g2);background:var(--g1);min-width:60px">주 합계</th>';
   html+='</tr><tr style="background:var(--g1)">';
   html+='<th style="border:0.5px solid var(--g2);position:sticky;left:0;background:var(--g1)"></th>';
   dates.forEach(function(){
@@ -580,6 +581,7 @@ function _renderAttMonthly(){
   html+='</tr></thead><tbody>';
   _attEmps.forEach(function(emp){
     html+='<tr><td style="padding:6px 10px;font-size:12px;font-weight:500;border:0.5px solid var(--g2);white-space:nowrap;position:sticky;left:0;background:var(--bg)">'+emp.name+'</td>';
+    var weekHours=0;
     dates.forEach(function(dt){
       var ds=_attFmtDate2(dt);
       var raw=localStorage.getItem(_attDateKey(ds));
@@ -604,10 +606,15 @@ function _renderAttMonthly(){
       } else {
         var tagLabel=tags.length?tags.map(function(t){return ATT_SL[t]||t;}).join('+'):'';
         var badge=tagLabel?'<div style="font-size:9px;color:#1a56db">'+tagLabel+'</div>':'';
+        var hrs=_calcWorkHoursByTime(inT,outT,tags);
+        weekHours+=hrs;
+        var hrsTxt=hrs>0?'<div style="font-size:9px;color:#1565c0;font-weight:600">'+hrs.toFixed(1)+'h</div>':'';
         html+='<td style="padding:3px 2px;text-align:center;font-size:11px;background:'+bg+';border:0.5px solid var(--g2);cursor:pointer;min-width:48px" onclick="attWeekCellEdit(\''+escapedDs+'\',\''+escapedName+'\')">'+badge+'<b>'+inT+'</b></td>';
-        html+='<td style="padding:3px 2px;text-align:center;font-size:11px;background:'+bg+';border:0.5px solid var(--g2);cursor:pointer;min-width:48px" onclick="attWeekCellEdit(\''+escapedDs+'\',\''+escapedName+'\')"><b>'+outT+'</b></td>';
+        html+='<td style="padding:3px 2px;text-align:center;font-size:11px;background:'+bg+';border:0.5px solid var(--g2);cursor:pointer;min-width:48px" onclick="attWeekCellEdit(\''+escapedDs+'\',\''+escapedName+'\')"><b>'+outT+'</b>'+hrsTxt+'</td>';
       }
     });
+    var whTxt=weekHours>0?weekHours.toFixed(1)+'h':'-';
+    html+='<td style="padding:4px 8px;text-align:center;font-size:12px;font-weight:700;color:#1565c0;border:0.5px solid var(--g2);background:var(--g1)">'+whTxt+'</td>';
     html+='</tr>';
   });
   html+='</tbody>';
@@ -706,6 +713,28 @@ function _calcWorkHours(tags){
   var base=hasHalf?4:9;
   if(hasQtr)base-=2; // 반반차 = 2시간 추가 휴가
   return Math.max(0,base);
+}
+
+// 시각 기반 실근무시간 계산 (월별 조회 표시용)
+// - 결근/연차: 0h
+// - 정상: (퇴근-출근) - 1시간(점심)
+// - 반차: 위에서 -4시간
+// - 반반차: 위에서 -2시간
+function _calcWorkHoursByTime(inTime, outTime, tags){
+  if(!tags) tags=[];
+  if(tags.indexOf('annual')>=0||tags.indexOf('absent')>=0) return 0;
+  function _toMin(t){
+    if(!t||t.indexOf(':')<0) return null;
+    var p=t.split(':'); var h=parseInt(p[0]); var m=parseInt(p[1]);
+    if(isNaN(h)||isNaN(m)) return null;
+    return h*60+m;
+  }
+  var inM=_toMin(inTime), outM=_toMin(outTime);
+  if(inM===null||outM===null||outM<=inM) return 0;
+  var hours=(outM-inM)/60 - 1; // 점심 1시간 제외
+  if(tags.indexOf('half-am')>=0||tags.indexOf('half-pm')>=0) hours-=4;
+  if(tags.indexOf('quarter')>=0) hours-=2;
+  return Math.max(0, hours);
 }
 
 // ─────────────────────────────────────────────────────────
