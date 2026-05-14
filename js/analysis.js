@@ -769,7 +769,7 @@ function _moRenderRows(selProds) {
         cells+=`<td rowspan="${cnt}" style="${vm}${PC}${bg}text-align:center;color:#64748b;border-right:1px solid #e2e8f0;border-bottom:2px solid #cbd5e1">${editCapa}</td>`;
         cells+=`<td rowspan="${cnt}" style="${vm}${P}${bg}text-align:left;font-size:12px;color:#64748b;border-bottom:2px solid #cbd5e1;white-space:pre-wrap">${editNote}</td>`;
       }
-      html.push(`<tr>${cells}</tr>`);
+      html.push(`<tr data-mo-date="${date}">${cells}</tr>`);
     });
     dayNo++;
   });
@@ -786,6 +786,31 @@ function _moRenderRows(selProds) {
     <td style="padding:10px 8px;text-align:center;border-left:1px solid #334155;color:#fcd34d">${totYld}</td>
     <td colspan="2" style="border-left:1px solid #334155"></td>
   </tr>`;
+
+  // ★ 호버 효과 (같은 date의 모든 tr 동시에 강조 - 셀 배경 보존)
+  // 원래 td 배경을 미리 저장 (cells 인라인 style의 background 보존)
+  tbody.querySelectorAll('tr[data-mo-date]').forEach(tr => {
+    tr.addEventListener('mouseenter', function(){
+      const d = this.dataset.moDate;
+      if(!d) return;
+      tbody.querySelectorAll(`tr[data-mo-date="${d}"]`).forEach(r => {
+        r.querySelectorAll('td').forEach(td => {
+          // 원래 배경 저장 (최초 1회)
+          if(!td.dataset._origBg) td.dataset._origBg = td.style.background || 'none';
+          td.style.background = '#fef9c3';
+        });
+      });
+    });
+    tr.addEventListener('mouseleave', function(){
+      const d = this.dataset.moDate;
+      if(!d) return;
+      tbody.querySelectorAll(`tr[data-mo-date="${d}"]`).forEach(r => {
+        r.querySelectorAll('td').forEach(td => {
+          td.style.background = (td.dataset._origBg === 'none') ? '' : td.dataset._origBg;
+        });
+      });
+    });
+  });
 
   // 인라인 편집 이벤트 재바인딩
   tbody.querySelectorAll('.mo-edit').forEach(el=>{
