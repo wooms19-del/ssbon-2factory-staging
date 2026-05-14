@@ -777,7 +777,7 @@ async function _sendChatMsg() {
   sendBtn.textContent = '답변 중...';
 
   // 로딩 메시지 표시
-  _aiChatHistory.push({role:'assistant', text:'⏳ 답변 생성 중...', createdAt: new Date(), _pending:true});
+  _aiChatHistory.push({role:'assistant', text:'⏳ 데이터 수집 + 답변 생성 중...', createdAt: new Date(), _pending:true});
   _renderChatLog();
 
   try {
@@ -795,27 +795,37 @@ async function _sendChatMsg() {
       return;
     }
     const knowledgeBase = await _aiGetKnowledgeBase();
+
+    // ★ 회사 데이터 자동 fetch (최근 60일 = 이번달 + 저번달 커버)
+    const dataSummary = await _aiFetchRecentDataSummary(60);
     
     // 대화 컨텍스트: 최근 10턴
-    const recent = _aiChatHistory.filter(m => !m._pending).slice(-11, -1);  // 방금 추가한 pending 제외
+    const recent = _aiChatHistory.filter(m => !m._pending).slice(-11, -1);
     const conversationContext = recent.map(m => 
       (m.role==='user'?'사용자: ':'AI: ') + m.text
     ).join('\n\n');
 
-    const systemPrompt = `당신은 순수본 2공장의 식품생산관리 AI 어시스턴트입니다.
-아래 도메인 지식을 토대로 사용자 질문에 정확하고 구체적으로 답변하세요.
+    const today = (typeof tod === 'function') ? tod() : new Date().toISOString().slice(0,10);
+    const systemPrompt = `당신은 순수본 2공장의 식품생산관리 AI 어시스턴트입니다. 오늘 날짜는 ${today}입니다.
+아래 도메인 지식과 실제 회사 공정 데이터를 토대로 사용자 질문에 정확하고 구체적으로 답변하세요.
 
 [지침]
-- 도메인 지식과 데이터를 토대로 정확하게 답변
-- 모르는 것은 "데이터가 없어 답변 불가" 명시
+- 도메인 지식과 실제 데이터를 토대로 정확하게 답변
+- 데이터를 직접 인용하여 수치 근거 제시
+- 모르는 것은 "데이터가 없어 답변 불가" 명시 (단, 데이터가 있는데 못 찾았으면 안됨)
 - "모니터링 하세요" 같은 추상적 답변 금지
 - 수치 + 정상 범위 비교
 - 상류 공정 영향 가능성 분석
 - 3가지 구체적 액션 제안 (해당 시)
 - 한국어로 답변
 - 마크다운 X, 일반 텍스트
+- "이번달", "저번달" = 오늘 기준 ${today.slice(0,7)}월, 그 전월
+- "최근 N일" 같은 표현은 오늘에서 역산해서 정확한 날짜로 환산해 답변
 
-${knowledgeBase ? '[도메인 지식]\n' + knowledgeBase + '\n\n' : ''}`;
+${knowledgeBase ? '[도메인 지식]\n' + knowledgeBase + '\n\n' : ''}
+[실제 회사 공정 데이터 — 최근 60일]
+${dataSummary}
+`;
 
     const fullPrompt = systemPrompt + '\n\n' + 
       (conversationContext ? '[이전 대화]\n' + conversationContext + '\n\n' : '') +
@@ -861,6 +871,153 @@ ${knowledgeBase ? '[도메인 지식]\n' + knowledgeBase + '\n\n' : ''}`;
   }
 }
 window._sendChatMsg = _sendChatMsg;
+
+// 최근 N일 회사 공정 데이터 fetch + 요약 (한 번에 60일 가져오기는 무거우므로 캐싱)
+let _aiDataSummaryCache = null;
+let _aiDataSummaryCacheAt = 0;
+const _AI_DATA_CACHE_MS = 5 * 60 * 1000;  // 5분 캐시
+
+async function _aiFetchRecentDataSummary(daysBack) {
+  // 캐시 유효 시 재사용
+  if(_aiDataSummaryCache && (Date.now() - _aiDataSummaryCacheAt) < _AI_DATA_CACHE_MS) {
+    return _aiDataSummaryCache;
+  }
+  try {
+    const today = (typeof tod === 'function') ? tod() : new Date().toISOString().slice(0,10);
+    const from = (typeof addDays === 'function') ? addDays(today, -daysBack) : today;
+    const collections = ['thawing','preprocess','cooking','shredding','packing','outerpacking'];
+    const allData = {};
+    for(const col of collections) {
+      allData[col] = [];
+      let cur = from;
+      while(cur <= today) {
+        try {
+          const recs = await fbGetByDate(col, cur);
+          allData[col].push(...recs);
+        } catch(e) { /* skip */ }
+        cur = addDays(cur, 1);
+      }
+    }
+    // 일별 요약 생성 (raw 데이터 통째로 보내면 너무 큼)
+    const summary = _aiSummarizeForChat(allData, from, today);
+    _aiDataSummaryCache = summary;
+    _aiDataSummaryCacheAt = Date.now();
+    return summary;
+  } catch(e) {
+    console.warn('[chat] data fetch fail:', e);
+    return '(데이터 조회 실패)';
+  }
+}
+
+// 데이터 → 텍스트 요약 (날짜별 핵심 수치만)
+function _aiSummarizeForChat(d, from, to) {
+  const lines = [];
+  lines.push(`조회 기간: ${from} ~ ${to}`);
+  lines.push('');
+  
+  // 일별 핵심 지표
+  const byDate = {};  // {date: {thawing:{boxes,kg,carts:[]}, preprocess:{inKg,outKg}, packing:[{product,ea,def}]}}
+  
+  d.thawing.forEach(r => {
+    const k = (r.date||'').slice(0,10);
+    if(!byDate[k]) byDate[k] = {};
+    if(!byDate[k].thawing) byDate[k].thawing = {boxes:0, kg:0, types:{}};
+    byDate[k].thawing.boxes += parseInt(r.boxes,10)||0;
+    byDate[k].thawing.kg += parseFloat(r.totalKg)||0;
+    const t = (r.type||'').trim();
+    if(t) byDate[k].thawing.types[t] = (byDate[k].thawing.types[t]||0) + (parseInt(r.boxes,10)||0);
+  });
+  d.preprocess.forEach(r => {
+    const k = (r.date||'').slice(0,10);
+    if(!byDate[k]) byDate[k] = {};
+    if(!byDate[k].preprocess) byDate[k].preprocess = {inKg:0, outKg:0, inedible:0};
+    byDate[k].preprocess.inKg += parseFloat(r.inKg)||0;
+    byDate[k].preprocess.outKg += parseFloat(r.outKg)||0;
+    byDate[k].preprocess.inedible += parseFloat(r.inedible)||0;
+  });
+  d.cooking.forEach(r => {
+    const k = (r.date||'').slice(0,10);
+    if(!byDate[k]) byDate[k] = {};
+    if(!byDate[k].cooking) byDate[k].cooking = {inKg:0, outKg:0};
+    byDate[k].cooking.inKg += parseFloat(r.inKg)||0;
+    byDate[k].cooking.outKg += parseFloat(r.outKg)||0;
+  });
+  d.shredding.forEach(r => {
+    const k = (r.date||'').slice(0,10);
+    if(!byDate[k]) byDate[k] = {};
+    if(!byDate[k].shredding) byDate[k].shredding = {inKg:0, outKg:0, inedible:0};
+    byDate[k].shredding.inKg += parseFloat(r.inKg)||0;
+    byDate[k].shredding.outKg += parseFloat(r.outKg)||0;
+    byDate[k].shredding.inedible += parseFloat(r.inedible)||0;
+  });
+  d.packing.forEach(r => {
+    const k = (r.date||'').slice(0,10);
+    if(!byDate[k]) byDate[k] = {};
+    if(!byDate[k].packing) byDate[k].packing = [];
+    byDate[k].packing.push({
+      product: r.product||'',
+      ea: parseInt(r.ea,10)||0,
+      defPouch: parseInt(r.defPouch,10)||0
+    });
+  });
+  d.outerpacking.forEach(r => {
+    const k = (r.date||'').slice(0,10);
+    if(!byDate[k]) byDate[k] = {};
+    if(!byDate[k].outerpacking) byDate[k].outerpacking = {boxes:0};
+    byDate[k].outerpacking.boxes += parseFloat(r.outBoxes)||0;
+  });
+  
+  const dates = Object.keys(byDate).filter(k => k>=from && k<=to).sort();
+  lines.push(`총 작업일수: ${dates.length}일`);
+  lines.push('');
+  lines.push('[일자별 요약]');
+  
+  dates.forEach(date => {
+    const x = byDate[date];
+    let line = `${date}: `;
+    const parts = [];
+    if(x.thawing) {
+      const types = Object.entries(x.thawing.types).map(([t,b])=>`${t}${b}박스`).join('/');
+      parts.push(`방혈(${x.thawing.boxes}박스/${x.thawing.kg.toFixed(0)}kg${types?', '+types:''})`);
+    }
+    if(x.preprocess) {
+      const yieldPct = x.preprocess.inKg>0 ? ((x.preprocess.outKg/x.preprocess.inKg)*100).toFixed(1) : '-';
+      parts.push(`전처리(${x.preprocess.inKg.toFixed(0)}→${x.preprocess.outKg.toFixed(0)}kg수율${yieldPct}%${x.preprocess.inedible?',비가식'+x.preprocess.inedible.toFixed(1)+'kg':''})`);
+    }
+    if(x.cooking) {
+      parts.push(`자숙(${x.cooking.inKg.toFixed(0)}→${x.cooking.outKg.toFixed(0)}kg)`);
+    }
+    if(x.shredding) {
+      parts.push(`파쇄(${x.shredding.inKg.toFixed(0)}→${x.shredding.outKg.toFixed(0)}kg${x.shredding.inedible?',비가식'+x.shredding.inedible.toFixed(1)+'kg':''})`);
+    }
+    if(x.packing && x.packing.length){
+      const ps = x.packing.map(p=>`${p.product}${p.ea}EA${p.defPouch?'/불량'+p.defPouch:''}`).join(',');
+      parts.push(`포장(${ps})`);
+    }
+    if(x.outerpacking) parts.push(`외포장(${x.outerpacking.boxes.toFixed(0)}박스)`);
+    lines.push(line + parts.join(' / '));
+  });
+  
+  // 월별 집계
+  const monthly = {};
+  dates.forEach(date => {
+    const ym = date.slice(0,7);
+    if(!monthly[ym]) monthly[ym] = {days:0, thawingBoxes:0, thawingKg:0, packingEa:0, defPouch:0};
+    monthly[ym].days += 1;
+    const x = byDate[date];
+    if(x.thawing){ monthly[ym].thawingBoxes += x.thawing.boxes; monthly[ym].thawingKg += x.thawing.kg; }
+    if(x.packing) x.packing.forEach(p => { monthly[ym].packingEa += p.ea; monthly[ym].defPouch += p.defPouch; });
+  });
+  lines.push('');
+  lines.push('[월별 집계]');
+  Object.keys(monthly).sort().forEach(ym => {
+    const m = monthly[ym];
+    const defRate = m.packingEa>0 ? ((m.defPouch/m.packingEa)*100).toFixed(2) : '0';
+    lines.push(`${ym}: 작업${m.days}일, 방혈${m.thawingBoxes}박스/${m.thawingKg.toFixed(0)}kg, 포장${m.packingEa.toLocaleString()}EA(불량${m.defPouch}/${defRate}%)`);
+  });
+  
+  return lines.join('\n');
+}
 
 async function _clearChat() {
   if(!confirm('대화 이력을 모두 삭제하시겠습니까? (Firestore에서도 삭제)')) return;
