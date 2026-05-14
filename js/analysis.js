@@ -21,6 +21,41 @@ function chMonth(dir) {
 let _moMetaCache = {};
 
 // ── 월간 메타(작업인원/Capa/메모) firestore 동기화 헬퍼 ─────────────────────
+
+// ── 출퇴근 데이터 fetch (월간) ─────────────────────
+// attendance/{date} 문서 → records 맵 → tags에 'checkin' 포함된 사람 수 카운트
+async function _moFetchAttendance(from, to){
+  const result = {};  // {date: count}
+  try {
+    if(typeof db === 'undefined' || !db) return result;
+    // from~to 사이 모든 날짜 fetch (각 날짜가 docId)
+    const dates = [];
+    let cur = from;
+    while(cur <= to){
+      dates.push(cur);
+      const [y,m,d] = cur.split('-').map(Number);
+      const dt = new Date(y, m-1, d+1);
+      cur = dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0');
+    }
+    // 병렬 fetch (한 달이면 31개, Firestore 부담 OK)
+    const snaps = await Promise.all(dates.map(d =>
+      db.collection('attendance').doc(d).get().catch(()=>null)
+    ));
+    snaps.forEach((snap, i) => {
+      if(!snap || !snap.exists) return;
+      const data = snap.data() || {};
+      const records = data.records || {};
+      let count = 0;
+      Object.values(records).forEach(rec => {
+        const tags = (rec && rec.tags) || [];
+        if(Array.isArray(tags) && tags.indexOf('checkin') !== -1) count++;
+      });
+      if(count > 0) result[dates[i]] = count;
+    });
+  } catch(e){ console.warn('[attendance] fetch fail:', e); }
+  return result;
+}
+
 //
 // 컬렉션: monthlyMeta, 문서ID: ym (예: '2026-04')
 // 데이터 형태: { "2026-04-01": { workers, capa, note }, ... }
@@ -97,15 +132,18 @@ async function renderMonthly() {
   setText('monthLbl', ym.slice(0,4)+'년 '+months[parseInt(ym.slice(5))-1]);
 
   const prevFrom=(()=>{const [y,m,dd]=from.split('-').map(Number);const dt=new Date(y,m-1,dd-1);return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;})();
-  let [pk, op, ppMonth, thMonth, shMonth, ckMonth, pendingPk] = await Promise.all([
+  let [pk, op, ppMonth, thMonth, shMonth, ckMonth, pendingPk, attendanceData] = await Promise.all([
     fbGetRange('packing', from, effectiveTo),
     fbGetRange('outerpacking', from, effectiveTo),
     fbGetRange('preprocess', from, effectiveTo),
     fbGetRange('thawing', prevFrom, effectiveTo),
     fbGetRange('shredding', from, effectiveTo),
     fbGetRange('cooking', from, effectiveTo),
-    fbGetRange('packing_pending', from, effectiveTo).catch(()=>[])
+    fbGetRange('packing_pending', from, effectiveTo).catch(()=>[]),
+    _moFetchAttendance(from, effectiveTo)
   ]);
+  // attendance 결과 → {date: 출근자수} 맵
+  const _attendanceCountByDate = attendanceData || {};
 
   // ★ 진행중 설비 있는 날짜는 차트/KPI에서 제외 (부분 데이터로 수율 왜곡 방지)
   const _pendingDates = new Set();
@@ -433,8 +471,8 @@ async function renderMonthlyReport(pk, from, effectiveTo, ppMonth, thMonth, opDa
     const yldTxt   = dayYld==null?'color:#aaa;':dayYld>=55?'color:#047857;':dayYld>=52?'color:#1d4ed8;':dayYld>=50?'color:#c2410c;':'color:#b91c1c;';
     const yldBg    = dayYld==null?bg:dayYld>=55?'background:#ecfdf5;':dayYld>=52?'background:#eff6ff;':dayYld>=50?'background:#fff7ed;':'background:#fef2f2;';
 
-    // 작업인원
-    const autoW    = dayRows.reduce((mx,r)=>Math.max(mx,r.workers||0),0);
+    // 작업인원 — attendance(출퇴근) 출근자 자동 카운트, meta.workers는 수동 override
+    const autoW    = _attendanceCountByDate[date] || dayRows.reduce((mx,r)=>Math.max(mx,r.workers||0),0);
     const workers  = meta.workers!=null ? meta.workers : (autoW||'');
     // Full Capa
     const firstProd = L.products.find(x=>x.name===dayRows[0].product);
