@@ -96,12 +96,14 @@ function _renderStockShell(){
   var allTypes = Array.from(new Set([].concat(Object.keys(INITIAL), Object.keys(inByType), Object.keys(outByType)))).sort();
 
   // 현재 잔여 = 기초 + 입고 - 사용
+  var KG_PER_BOX = 20;  // 박스당 추정 무게 (모든 부위 공통)
   var remainHtml = allTypes.map(function(t){
     var init = INITIAL[t]||0;
     var ins = inByType[t]||0;
     var outs = outByType[t]||0;
     var inProg = inProgressByType[t]||0;
     var rem = init + ins - outs;  // ★ 기초 재고 반영
+    var estKg = Math.round(rem * KG_PER_BOX);
     var color = rem < 50 ? '#dc2626' : rem < 200 ? '#f59e0b' : '#16a34a';
     var progressBadge = inProg > 0
       ? '<span style="margin-left:6px;font-size:11px;color:#2563eb;font-weight:600;background:#eff6ff;padding:2px 6px;border-radius:4px">해동중 '+Math.round(inProg)+'</span>'
@@ -109,6 +111,7 @@ function _renderStockShell(){
     return '<div style="flex:1;min-width:140px;padding:14px 16px;background:#fff;border:1px solid #e5e7eb;border-radius:8px;box-shadow:0 1px 2px rgba(0,0,0,0.04)">'
       + '<div style="font-size:13px;color:#6b7280;font-weight:600;margin-bottom:6px">'+t+'</div>'
       + '<div style="font-size:22px;font-weight:700;color:'+color+'">'+Math.round(rem).toLocaleString()+' <span style="font-size:13px;color:#9ca3af;font-weight:500">박스</span>'+progressBadge+'</div>'
+      + '<div style="font-size:12px;color:#6b7280;margin-top:3px">약 '+estKg.toLocaleString()+' kg</div>'
       + '<div style="font-size:11px;color:#9ca3af;margin-top:4px">입고 '+Math.round(ins).toLocaleString()+' · 사용 '+Math.round(outs).toLocaleString()+'</div>'
       + '</div>';
   }).join('');
