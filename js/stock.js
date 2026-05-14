@@ -10,6 +10,34 @@ var _stockData = { stockIn: [], stockIn_f1: [], transfer: [], thawing: [] };
 var _stockLoading = false;
 var _stockSubTab = 'f2';
 
+function _stockThisMonth(){
+  var d = new Date();
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+}
+function _ymOf(date){ return String(date||'').slice(0,7); }
+function _ymPrev(ym){
+  var p = (ym||'').split('-'); if(p.length<2) return ym;
+  var y=parseInt(p[0],10), m=parseInt(p[1],10)-1;
+  if(m<1){ m=12; y--; }
+  return y+'-'+String(m).padStart(2,'0');
+}
+function _ymNext(ym){
+  var p = (ym||'').split('-'); if(p.length<2) return ym;
+  var y=parseInt(p[0],10), m=parseInt(p[1],10)+1;
+  if(m>12){ m=1; y++; }
+  return y+'-'+String(m).padStart(2,'0');
+}
+function _ymLabel(ym){
+  var p = (ym||'').split('-');
+  if(p.length<2) return ym||'';
+  return p[0]+'년 '+parseInt(p[1],10)+'월';
+}
+
+var _stockMonthF2 = _stockThisMonth();
+var _stockMonthF1 = _stockThisMonth();
+// 캐시된 최소 fetch 시작일 (이 날짜 이전 데이터는 아직 안 가져옴)
+var _stockFetchedFrom = null;
+
 function _stockToday(){
   var d = new Date();
   return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
@@ -40,6 +68,7 @@ async function renderStock(){
     _stockData.stockIn_f1 = R[1] || [];
     _stockData.transfer = R[2] || [];
     _stockData.thawing = R[3] || [];
+    _stockFetchedFrom = stockInFrom;  // 캐시 시작 기록
     _renderStockShell();
   } catch(e){
     pg.innerHTML = '<div style="padding:20px;color:#c0392b">로드 오류: '+(e.message||e)+'</div>';
@@ -184,6 +213,25 @@ function _renderStockShell(){
       + '</td></tr>';
   }
 
+  // === 월 필터 헬퍼 ===
+  function _filterByMonth(rows, ym){
+    return rows.filter(function(r){ return _ymOf(r.date) === ym; });
+  }
+
+  // 월 선택기 UI (◀ YYYY년 M월 📅 ▶) — id는 탭별로 다르게
+  function _monthPicker(ym, tabKey){
+    var thisYm = _stockThisMonth();
+    var isCur = (ym === thisYm);
+    return '<div style="display:flex;align-items:center;justify-content:center;gap:6px;margin-bottom:10px;padding:6px 0">'
+      + '<button onclick="_stockMonthShift(\''+tabKey+'\',-1)" style="padding:5px 11px;background:#fff;border:1px solid #d1d5db;border-radius:5px;font-size:13px;cursor:pointer;color:#475569" title="이전 달">◀</button>'
+      + '<span style="font-size:14px;font-weight:600;color:#1e293b;min-width:115px;text-align:center">'+_ymLabel(ym)+(isCur?' <span style="font-size:10px;color:#10b981;font-weight:600;margin-left:2px">이번달</span>':'')+'</span>'
+      + '<label style="cursor:pointer;padding:5px 9px;background:#fff;border:1px solid #d1d5db;border-radius:5px;font-size:13px;color:#475569;position:relative" title="월 선택">📅'
+        + '<input type="month" value="'+ym+'" onchange="_stockMonthSet(\''+tabKey+'\',this.value)" style="position:absolute;left:0;top:0;width:100%;height:100%;opacity:0;cursor:pointer">'
+      + '</label>'
+      + '<button onclick="_stockMonthShift(\''+tabKey+'\',1)" style="padding:5px 11px;background:#fff;border:1px solid #d1d5db;border-radius:5px;font-size:13px;cursor:pointer;color:#475569" title="다음 달">▶</button>'
+      + '</div>';
+  }
+
   // === 2공장 이력 ===
   // 입고: stockIn (외부) + transfer F1→F2
   var f2InRows = [];
@@ -194,6 +242,8 @@ function _renderStockShell(){
     if(r.direction !== 'F1toF2') return;
     f2InRows.push({date:r.date||'-',type:r.type||'-',boxes:parseInt(r.boxes,10)||0,note:r.note||'',source:'1공장 ← 이동',fbId:r.fbId||r.id||'',collection:'transfer'});
   });
+  // 월 필터
+  f2InRows = _filterByMonth(f2InRows, _stockMonthF2);
   f2InRows.sort(function(a,b){return String(b.date).localeCompare(String(a.date));});
   var f2InHtml = f2InRows.map(function(x){return _row(x.date,x.type,x.boxes,x.note,x.source,x.fbId,x.collection);}).join('');
 
@@ -203,6 +253,7 @@ function _renderStockShell(){
     if(r.direction !== 'F2toF1') return;
     f2OutRows.push({date:r.date||'-',type:r.type||'-',boxes:parseInt(r.boxes,10)||0,note:r.note||'',source:'1공장 → 이동',fbId:r.fbId||r.id||'',collection:'transfer'});
   });
+  f2OutRows = _filterByMonth(f2OutRows, _stockMonthF2);
   f2OutRows.sort(function(a,b){return String(b.date).localeCompare(String(a.date));});
   var f2OutHtml = f2OutRows.map(function(x){return _row(x.date,x.type,x.boxes,x.note,x.source,x.fbId,x.collection);}).join('');
 
@@ -215,6 +266,7 @@ function _renderStockShell(){
     if(r.direction !== 'F2toF1') return;
     f1InRows.push({date:r.date||'-',type:r.type||'-',boxes:parseInt(r.boxes,10)||0,note:r.note||'',source:'2공장 ← 이동',fbId:r.fbId||r.id||'',collection:'transfer'});
   });
+  f1InRows = _filterByMonth(f1InRows, _stockMonthF1);
   f1InRows.sort(function(a,b){return String(b.date).localeCompare(String(a.date));});
   var f1InHtml = f1InRows.map(function(x){return _row(x.date,x.type,x.boxes,x.note,x.source,x.fbId,x.collection);}).join('');
 
@@ -223,6 +275,7 @@ function _renderStockShell(){
     if(r.direction !== 'F1toF2') return;
     f1OutRows.push({date:r.date||'-',type:r.type||'-',boxes:parseInt(r.boxes,10)||0,note:r.note||'',source:'2공장 → 이동',fbId:r.fbId||r.id||'',collection:'transfer'});
   });
+  f1OutRows = _filterByMonth(f1OutRows, _stockMonthF1);
   f1OutRows.sort(function(a,b){return String(b.date).localeCompare(String(a.date));});
   var f1OutHtml = f1OutRows.map(function(x){return _row(x.date,x.type,x.boxes,x.note,x.source,x.fbId,x.collection);}).join('');
 
@@ -307,18 +360,20 @@ function _renderStockShell(){
   // === 2공장 화면 ===
   var f2Html = '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px">'+allTypes.map(_f2Card).join('')+'</div>'
     + _section('➕ 2공장 입고 추가', f2InputForm)
+    + _monthPicker(_stockMonthF2, 'f2')
     + '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:14px">'
-      + '<div style="flex:1;min-width:340px">' + _section('📥 입고 이력 (외부 + 1공장 이동)', _table(f2InHtml, '입고 이력 없음')) + '</div>'
-      + '<div style="flex:1;min-width:340px">' + _section('📤 출고 이력 (1공장으로 이동)', _table(f2OutHtml, '출고 이력 없음')) + '</div>'
+      + '<div style="flex:1;min-width:340px">' + _section('📥 입고 이력 (외부 + 1공장 이동)', _table(f2InHtml, '이 달 입고 이력 없음')) + '</div>'
+      + '<div style="flex:1;min-width:340px">' + _section('📤 출고 이력 (1공장으로 이동)', _table(f2OutHtml, '이 달 출고 이력 없음')) + '</div>'
     + '</div>'
     + _section('🚚 1공장으로 이동', _transferForm('F2toF1'));
 
   // === 1공장 화면 ===
   var f1Html = '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px">'+allTypes.map(_f1Card).join('')+'</div>'
     + _section('➕ 1공장 입고 추가', f1InputForm)
+    + _monthPicker(_stockMonthF1, 'f1')
     + '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:14px">'
-      + '<div style="flex:1;min-width:340px">' + _section('📥 입고 이력 (외부 + 2공장 이동)', _table(f1InHtml, '입고 이력 없음')) + '</div>'
-      + '<div style="flex:1;min-width:340px">' + _section('📤 출고 이력 (2공장으로 이동)', _table(f1OutHtml, '출고 이력 없음')) + '</div>'
+      + '<div style="flex:1;min-width:340px">' + _section('📥 입고 이력 (외부 + 2공장 이동)', _table(f1InHtml, '이 달 입고 이력 없음')) + '</div>'
+      + '<div style="flex:1;min-width:340px">' + _section('📤 출고 이력 (2공장으로 이동)', _table(f1OutHtml, '이 달 출고 이력 없음')) + '</div>'
     + '</div>'
     + _section('🚚 2공장으로 이동', _transferForm('F1toF2'));
 
@@ -398,6 +453,57 @@ async function stockGenericDelete(collection, fbId){
     _renderStockShell();
   } catch(e){ console.error(e); toast && toast('삭제 오류: '+(e.message||e),'d'); }
 }
+
+// ============================================================
+// 월별 필터 핸들러
+// ============================================================
+async function _stockMonthShift(tab, delta){
+  var cur = (tab==='f1') ? _stockMonthF1 : _stockMonthF2;
+  var next = (delta < 0) ? _ymPrev(cur) : _ymNext(cur);
+  await _stockMonthSet(tab, next);
+}
+
+async function _stockMonthSet(tab, ym){
+  if(!ym || !/^\d{4}-\d{2}$/.test(ym)) return;
+  if(tab==='f1') _stockMonthF1 = ym;
+  else _stockMonthF2 = ym;
+
+  // 캐시 시작일보다 과거 월을 선택했으면 fetch 확장
+  if(_stockFetchedFrom && ym < _stockFetchedFrom.slice(0,7)){
+    await _stockFetchOlder(ym + '-01');
+  }
+  _renderStockShell();
+}
+
+// 과거 데이터 fetch 확장 (필요시)
+async function _stockFetchOlder(newFrom){
+  if(!_stockFetchedFrom) return;
+  if(newFrom >= _stockFetchedFrom) return;
+  var pg = document.getElementById('p-stock');
+  // 가벼운 로딩 표시
+  try {
+    var oldTo = _stockFetchedFrom;
+    // newFrom ~ (_stockFetchedFrom 하루 전) 까지만 추가 fetch
+    var prevDay = new Date(_stockFetchedFrom);
+    prevDay.setDate(prevDay.getDate() - 1);
+    var toStr = prevDay.getFullYear()+'-'+String(prevDay.getMonth()+1).padStart(2,'0')+'-'+String(prevDay.getDate()).padStart(2,'0');
+
+    var R = await Promise.all([
+      fbGetRange('stockIn', newFrom, toStr).catch(function(){return [];}),
+      fbGetRange('stockIn_f1', newFrom, toStr).catch(function(){return [];}),
+      fbGetRange('transfer', newFrom, toStr).catch(function(){return [];})
+    ]);
+    if(R[0] && R[0].length) _stockData.stockIn = _stockData.stockIn.concat(R[0]);
+    if(R[1] && R[1].length) _stockData.stockIn_f1 = _stockData.stockIn_f1.concat(R[1]);
+    if(R[2] && R[2].length) _stockData.transfer = _stockData.transfer.concat(R[2]);
+    _stockFetchedFrom = newFrom;
+  } catch(e){
+    console.error('과거 데이터 로드 오류', e);
+  }
+}
+
+window._stockMonthShift = _stockMonthShift;
+window._stockMonthSet = _stockMonthSet;
 
 window.renderStock = renderStock;
 window.stockAdd = stockAdd;
