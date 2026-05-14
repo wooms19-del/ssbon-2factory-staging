@@ -97,14 +97,29 @@ async function renderMonthly() {
   setText('monthLbl', ym.slice(0,4)+'년 '+months[parseInt(ym.slice(5))-1]);
 
   const prevFrom=(()=>{const [y,m,dd]=from.split('-').map(Number);const dt=new Date(y,m-1,dd-1);return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;})();
-  const [pk, op, ppMonth, thMonth, shMonth, ckMonth] = await Promise.all([
+  let [pk, op, ppMonth, thMonth, shMonth, ckMonth, pendingPk] = await Promise.all([
     fbGetRange('packing', from, effectiveTo),
     fbGetRange('outerpacking', from, effectiveTo),
     fbGetRange('preprocess', from, effectiveTo),
     fbGetRange('thawing', prevFrom, effectiveTo),
     fbGetRange('shredding', from, effectiveTo),
-    fbGetRange('cooking', from, effectiveTo)
+    fbGetRange('cooking', from, effectiveTo),
+    fbGetRange('packing_pending', from, effectiveTo).catch(()=>[])
   ]);
+
+  // ★ 진행중 설비 있는 날짜는 차트/KPI에서 제외 (부분 데이터로 수율 왜곡 방지)
+  const _pendingDates = new Set();
+  (pendingPk||[]).forEach(r => { const d = String(r.date||'').slice(0,10); if(d) _pendingDates.add(d); });
+  if(_pendingDates.size > 0){
+    const _filterPending = r => !_pendingDates.has(String(r.date||'').slice(0,10));
+    pk = pk.filter(_filterPending);
+    op = op.filter(_filterPending);
+    ppMonth = ppMonth.filter(_filterPending);
+    shMonth = shMonth.filter(_filterPending);
+    ckMonth = ckMonth.filter(_filterPending);
+    // thMonth는 그대로 — 방혈 데이터는 종료시 자동 완료
+    console.log('[월별현황] 진행중 날짜 제외:', [..._pendingDates]);
+  }
 
   // ── KPI ──────────────────────────────────────────────────
   const opReal   = op.filter(r=>!r.testRun&&!r.isTest);
