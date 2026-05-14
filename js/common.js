@@ -519,12 +519,13 @@ async function fbSave(colName, data, customDocId) {
         return null;
       }
 
-      // (4) date = 시작일 (start datetime에서 추출). 옛 클라이언트가 종료일을 보내도 환원
+      // (4) date = 종료일 (= 시작일 + 1일 = 작업일 = 박스 출고일). 룰 통일.
+      //     클라이언트가 보낸 date 무시하고, start datetime에서 +1일 계산해 강제 정정.
       const startDate = data.start.slice(0,10);
-      data = {...data, date: startDate};
       const endDate = addDays(startDate, 1);
+      data = {...data, date: endDate};
 
-      // (5) 문서ID 무조건 시작일+1일 prefix로 재생성
+      // (5) 문서ID 무조건 종료일(=date) prefix로 재생성
       const expectedPrefix = 'th_' + endDate.replace(/-/g,'') + '_';
       if(!docId.startsWith(expectedPrefix)) {
         const parts = docId.split('_');
