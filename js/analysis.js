@@ -471,8 +471,9 @@ async function renderMonthlyReport(pk, from, effectiveTo, ppMonth, thMonth, opDa
     const yldTxt   = dayYld==null?'color:#aaa;':dayYld>=55?'color:#047857;':dayYld>=52?'color:#1d4ed8;':dayYld>=50?'color:#c2410c;':'color:#b91c1c;';
     const yldBg    = dayYld==null?bg:dayYld>=55?'background:#ecfdf5;':dayYld>=52?'background:#eff6ff;':dayYld>=50?'background:#fff7ed;':'background:#fef2f2;';
 
-    // 작업인원 — attendance(출퇴근) 출근자 자동 카운트, meta.workers는 수동 override
-    const autoW    = _attendanceCountByDate[date] || dayRows.reduce((mx,r)=>Math.max(mx,r.workers||0),0);
+    // 작업인원 — 룰: 수동값(meta.workers) 우선, 없으면 출퇴근(attendance) 출근자 수
+    //         packing 등 record의 workers 값은 사용 안 함 (현장 작업 입력값이라 부정확)
+    const autoW    = _attendanceCountByDate[date] || 0;
     const workers  = meta.workers!=null ? meta.workers : (autoW||'');
     // Full Capa
     const firstProd = L.products.find(x=>x.name===dayRows[0].product);
