@@ -111,26 +111,36 @@ function _renderStockShell(){
     var color = rem < 50 ? '#dc2626' : rem < 200 ? '#f59e0b' : '#16a34a';
     var hasProg = inProg > 0;
     var progressBadge = hasProg
-      ? '<span style="font-size:12px;color:#2563eb;font-weight:600;background:#eff6ff;padding:3px 8px;border-radius:4px">해동중 '+inProg+'</span>'
+      ? '<span style="font-size:12px;color:#2563eb;font-weight:600;background:#eff6ff;padding:3px 8px;border-radius:4px">해동중 '+inProg+'박스</span>'
       : '';
-    var arrow = '<span style="color:#9ca3af;font-weight:400;margin:0 4px">→</span>';
-    var boxLine = hasProg
-      ? Math.round(rem).toLocaleString()+arrow+remNext.toLocaleString()+' <span style="font-size:13px;color:#9ca3af;font-weight:500">박스</span>'
-      : Math.round(rem).toLocaleString()+' <span style="font-size:13px;color:#9ca3af;font-weight:500">박스</span>';
-    var kgLine = hasProg
-      ? '약 '+estKg.toLocaleString()+arrow+estKgNext.toLocaleString()+' kg'
-      : '약 '+estKg.toLocaleString()+' kg';
-    var useLine = hasProg
-      ? '입고 '+Math.round(ins).toLocaleString()+' · 사용 '+Math.round(outs).toLocaleString()+arrow+outsNext.toLocaleString()
-      : '입고 '+Math.round(ins).toLocaleString()+' · 사용 '+Math.round(outs).toLocaleString();
-    return '<div style="flex:1;min-width:160px;padding:14px 16px;background:#fff;border:1px solid #e5e7eb;border-radius:8px;box-shadow:0 1px 2px rgba(0,0,0,0.04)">'
-      + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;min-height:22px">'
+
+    // 오늘 셀 (왼쪽, 가운데 정렬)
+    var todayCell = ''
+      + '<div style="flex:1;text-align:center">'
+        + '<div style="font-size:22px;font-weight:700;color:'+color+';line-height:1.2">'+rem.toLocaleString()+' <span style="font-size:13px;color:#9ca3af;font-weight:500">박스</span></div>'
+        + '<div style="font-size:12px;color:#6b7280;margin-top:4px">약 '+estKg.toLocaleString()+' kg</div>'
+        + '<div style="font-size:11px;color:#9ca3af;margin-top:4px">입고 '+Math.round(ins).toLocaleString()+' · 사용 '+Math.round(outs).toLocaleString()+'</div>'
+      + '</div>';
+
+    // 내일 셀 (오른쪽, 가운데 정렬) — 해동중 있을 때만
+    var tomorrowCell = hasProg
+      ? '<div style="font-size:24px;color:#9ca3af;font-weight:300">→</div>'
+        + '<div style="flex:1;text-align:center">'
+          + '<div style="font-size:22px;font-weight:700;color:#374151;line-height:1.2">'+remNext.toLocaleString()+' <span style="font-size:13px;color:#9ca3af;font-weight:500">박스</span></div>'
+          + '<div style="font-size:12px;color:#6b7280;margin-top:4px">약 '+estKgNext.toLocaleString()+' kg</div>'
+          + '<div style="font-size:11px;color:#9ca3af;margin-top:4px">사용 '+outsNext.toLocaleString()+'</div>'
+        + '</div>'
+      : '';
+
+    return '<div style="flex:1;min-width:200px;padding:14px 16px;background:#fff;border:1px solid #e5e7eb;border-radius:8px;box-shadow:0 1px 2px rgba(0,0,0,0.04)">'
+      + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;min-height:22px">'
         + '<div style="font-size:13px;color:#6b7280;font-weight:600">'+t+'</div>'
         + progressBadge
       + '</div>'
-      + '<div style="font-size:22px;font-weight:700;color:'+color+'">'+boxLine+'</div>'
-      + '<div style="font-size:12px;color:#6b7280;margin-top:3px">'+kgLine+'</div>'
-      + '<div style="font-size:11px;color:#9ca3af;margin-top:4px">'+useLine+'</div>'
+      + '<div style="display:flex;align-items:center;gap:8px">'
+        + todayCell
+        + tomorrowCell
+      + '</div>'
       + '</div>';
   }).join('');
   if(!remainHtml) remainHtml = '<div style="color:#9ca3af;padding:20px">입고 데이터 없음</div>';
