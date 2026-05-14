@@ -1018,7 +1018,8 @@ function _perfRenderTable(rows){
       fmt(r.sauceFP,1), fmt(r.sauceFC,1), fmt(r.qaiKg),
       r.pouch ? r.pouch.toLocaleString('ko-KR') : '', fmt(r.boxUse,1)
     ];
-    html+='<tr class="'+rowCls+'">';
+    var rowKey = (r.date||'') + '|' + (r.product||'') + '|' + (r.rmType||'') + '|' + (isSubRow?'s'+r.subRowIdx:'');
+    html+='<tr class="'+rowCls+'" data-row-key="'+rowKey+'">';
     cells.forEach(function(c, i){
       // 부위 분리 행: MCOLS 컬럼 skip
       if(isSubRow && MCOLS.has(i)) return;
@@ -1064,17 +1065,31 @@ function _perfRenderTable(rows){
   });
   html+='</tbody></table>';
   wrap.innerHTML=html;
-  // 행 클릭 시 선택 토글 (하나만 선택 가능)
+  // 행 클릭 시 선택 토글 (하나만 선택 가능). 선택 상태는 window._perfSelectedKey에 보관해 갱신 사이에도 유지
   var tbody = wrap.querySelector('table.perf-tbl tbody');
   if(tbody){
+    // 갱신 후 이전 선택 복원
+    if(window._perfSelectedKey){
+      var rows = tbody.querySelectorAll('tr');
+      for(var i=0;i<rows.length;i++){
+        if(rows[i].dataset.rowKey === window._perfSelectedKey){
+          rows[i].classList.add('row-selected');
+          break;
+        }
+      }
+    }
     tbody.addEventListener('click', function(e){
       var tr = e.target.closest('tr');
       if(!tr) return;
+      var key = tr.dataset.rowKey;
       var alreadySelected = tr.classList.contains('row-selected');
-      // 기존 선택 해제
       tbody.querySelectorAll('tr.row-selected').forEach(function(r){ r.classList.remove('row-selected'); });
-      // 동일 행 다시 클릭이면 해제만, 다른 행이면 선택
-      if(!alreadySelected) tr.classList.add('row-selected');
+      if(!alreadySelected){
+        tr.classList.add('row-selected');
+        window._perfSelectedKey = key;
+      } else {
+        window._perfSelectedKey = null;
+      }
     });
   }
 }
