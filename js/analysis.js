@@ -340,11 +340,12 @@ async function renderMonthly() {
     return true;
   });
   // ─────────────────────────────────────────────────────────────────────────────
-  renderMonthlyReport(pkReport, from, effectiveTo, ppMonthClean, thMonthClean, opReal, ckMonth, shMonth);
+  renderMonthlyReport(pkReport, from, effectiveTo, ppMonthClean, thMonthClean, opReal, ckMonth, shMonth, _attendanceCountByDate);
 }
 
 // 월간 생산 일보 렌더
-async function renderMonthlyReport(pk, from, effectiveTo, ppMonth, thMonth, opData, ckMonth, shMonth) {
+async function renderMonthlyReport(pk, from, effectiveTo, ppMonth, thMonth, opData, ckMonth, shMonth, attendanceMap) {
+  attendanceMap = attendanceMap || {};
   const tbody = document.getElementById('mo_report_tbl');
   const tfoot = document.getElementById('mo_report_total');
   if(!tbody) return;
@@ -669,7 +670,7 @@ function _moRenderRows(selProds) {
     const bg     = dayBg[(dayNo-1)%2];
     const yldTxt = dayYld==null?'color:#aaa;':dayYld>=55?'color:#047857;':dayYld>=52?'color:#1d4ed8;':dayYld>=50?'color:#c2410c;':'color:#b91c1c;';
     const yldBg  = dayYld==null?bg:dayYld>=55?'background:#ecfdf5;':dayYld>=52?'background:#eff6ff;':dayYld>=50?'background:#fff7ed;':'background:#fef2f2;';
-    const autoW  = allRows.reduce((mx,r)=>Math.max(mx,r.workers||0),0);
+    const autoW  = attendanceMap[date] || 0;
     const workers= meta.workers!=null?meta.workers:(autoW||'');
     const firstProd=L.products.find(x=>x.name===allRows[0].product);
     const capa   = meta.capa!=null?meta.capa:(firstProd&&firstProd.capa?firstProd.capa.toLocaleString():'');
