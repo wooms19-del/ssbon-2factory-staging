@@ -114,9 +114,10 @@ function _renderStockShell(){
       ? '<span style="font-size:12px;color:#2563eb;font-weight:600;background:#eff6ff;padding:3px 8px;border-radius:4px">해동중 '+inProg+'박스</span>'
       : '';
 
-    // 오늘 셀 (왼쪽, 가운데 정렬)
+    // 오늘 셀 — 해동중 있을 때 가운데, 없을 때 왼쪽 정렬
+    var todayAlign = hasProg ? 'text-align:center' : 'text-align:left';
     var todayCell = ''
-      + '<div style="flex:1;text-align:center">'
+      + '<div style="flex:1;'+todayAlign+'">'
         + '<div style="font-size:22px;font-weight:700;color:'+color+';line-height:1.2">'+rem.toLocaleString()+' <span style="font-size:13px;color:#9ca3af;font-weight:500">박스</span></div>'
         + '<div style="font-size:12px;color:#6b7280;margin-top:4px">약 '+estKg.toLocaleString()+' kg</div>'
         + '<div style="font-size:11px;color:#9ca3af;margin-top:4px">입고 '+Math.round(ins).toLocaleString()+' · 사용 '+Math.round(outs).toLocaleString()+'</div>'
