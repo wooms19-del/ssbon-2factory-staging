@@ -239,6 +239,31 @@ async function runAIAnalysis() {
       }
     }
     
+    // ★ 진행중 설비 있는 날짜는 분석에서 제외 (수율 왜곡 방지)
+    const pendingPk = [];
+    let curP = from;
+    while(curP <= to){
+      try {
+        const recs = await fbGetByDate('packing_pending', curP);
+        pendingPk.push(...recs);
+      } catch(e) {}
+      curP = addDays(curP, 1);
+    }
+    const pendingDates = new Set();
+    pendingPk.forEach(r => {
+      const d = String(r.date||'').slice(0,10);
+      if(d) pendingDates.add(d);
+    });
+    if(pendingDates.size > 0){
+      collections.forEach(col => {
+        allData[col] = allData[col].filter(r => {
+          const d = String(r.date||'').slice(0,10);
+          return !pendingDates.has(d);
+        });
+      });
+      console.log('[AI] 진행중 날짜 제외:', [...pendingDates]);
+    }
+    
     const computedKpis = _aiComputeKpis(allData);
     
     btnEl.textContent = 'AI 분석 중...';

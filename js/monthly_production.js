@@ -328,12 +328,22 @@
           fbGetRange('preprocess',   pFrom,    pTo),
           fbGetRange('thawing',      pPrevFrom,pTo),
           fbGetRange('shredding',    pFrom,    pTo),
-          fbGetRange('cooking',      pFrom,    pTo)
+          fbGetRange('cooking',      pFrom,    pTo),
+          fbGetRange('packing_pending', from, effTo).catch(function(){return [];})
         ]);
 
         _mpRaw = R;  // raw 데이터 캐시 — mode 변경 시 _mpProcess 재실행용
-        _mpData     = _mpProcess(R[0],R[1],R[2],R[3],R[4],R[5]);
-        _mpPrevData = _mpProcess(R[6],R[7],R[8],R[9],R[10],R[11]);
+        // 진행중 설비가 있는 날짜는 차트에서 제외 — 부분 데이터로 수율 왜곡 방지
+        var pendingPk = R[12] || [];
+        var pendingDates = new Set();
+        pendingPk.forEach(function(r){
+          var d = String(r.date||'').slice(0,10);
+          if(d) pendingDates.add(d);
+        });
+        _mpPendingDates = pendingDates;
+        window._mpPendingDates = pendingDates;  // 디버그용
+        _mpData     = _mpProcess(R[0],R[1],R[2],R[3],R[4],R[5], pendingDates);
+        _mpPrevData = _mpProcess(R[6],R[7],R[8],R[9],R[10],R[11], null);  // 작년 비교는 그대로
         _mpRender();
       } catch(e){
         console.error('[mp] reload error', e);
@@ -346,9 +356,23 @@
   }
 
   /* ===== 데이터 처리 (월별현황 로직 카피) ===== */
-  function _mpProcess(pk, op, ppMonth, thMonth, shMonth, ckMonth){
+  function _mpProcess(pk, op, ppMonth, thMonth, shMonth, ckMonth, pendingDates){
     pk = pk||[]; op = op||[]; ppMonth = ppMonth||[]; thMonth = thMonth||[];
     shMonth = shMonth||[]; ckMonth = ckMonth||[];
+
+    // ★ 진행중 설비 있는 날짜 제외 — 부분 데이터로 수율 왜곡 방지
+    if(pendingDates && pendingDates.size > 0){
+      var _filterByDate = function(r){
+        var d = String(r.date||'').slice(0,10);
+        return !pendingDates.has(d);
+      };
+      pk = pk.filter(_filterByDate);
+      op = op.filter(_filterByDate);
+      ppMonth = ppMonth.filter(_filterByDate);
+      thMonth = thMonth.filter(_filterByDate);
+      shMonth = shMonth.filter(_filterByDate);
+      ckMonth = ckMonth.filter(_filterByDate);
+    }
 
     // 외포장 정상분
     var opReal = op.filter(function(r){ return !r.testRun && !r.isTest; });
