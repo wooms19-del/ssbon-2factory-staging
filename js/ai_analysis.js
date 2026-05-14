@@ -227,28 +227,20 @@ async function runAIAnalysis() {
   try {
     const collections = ['thawing','preprocess','cooking','shredding','packing','sauce','outerpacking','barcode'];
     const allData = {};
-    for(const col of collections) {
-      allData[col] = [];
-      let cur = from;
-      while(cur <= to) {
-        try {
-          const recs = await fbGetByDate(col, cur);
-          allData[col].push(...recs);
-        } catch(e) { /* skip */ }
-        cur = addDays(cur, 1);
+    // ★ fbGetRange로 일괄 fetch (60배 절감)
+    await Promise.all(collections.map(async col => {
+      try {
+        allData[col] = await fbGetRange(col, from, to) || [];
+      } catch(e) {
+        allData[col] = [];
       }
-    }
+    }));
     
     // ★ 진행중 설비 있는 날짜는 분석에서 제외 (수율 왜곡 방지)
-    const pendingPk = [];
-    let curP = from;
-    while(curP <= to){
-      try {
-        const recs = await fbGetByDate('packing_pending', curP);
-        pendingPk.push(...recs);
-      } catch(e) {}
-      curP = addDays(curP, 1);
-    }
+    let pendingPk = [];
+    try {
+      pendingPk = await fbGetRange('packing_pending', from, to) || [];
+    } catch(e) {}
     const pendingDates = new Set();
     pendingPk.forEach(r => {
       const d = String(r.date||'').slice(0,10);
@@ -912,17 +904,14 @@ async function _aiFetchRecentDataSummary(daysBack) {
     const from = (typeof addDays === 'function') ? addDays(today, -daysBack) : today;
     const collections = ['thawing','preprocess','cooking','shredding','packing','outerpacking'];
     const allData = {};
-    for(const col of collections) {
-      allData[col] = [];
-      let cur = from;
-      while(cur <= today) {
-        try {
-          const recs = await fbGetByDate(col, cur);
-          allData[col].push(...recs);
-        } catch(e) { /* skip */ }
-        cur = addDays(cur, 1);
+    // ★ fbGetRange 일괄 fetch (각 컬렉션당 1회 호출, 60일×6 = 360회 → 6회)
+    await Promise.all(collections.map(async col => {
+      try {
+        allData[col] = await fbGetRange(col, from, today) || [];
+      } catch(e) {
+        allData[col] = [];
       }
-    }
+    }));
     // 일별 요약 생성 (raw 데이터 통째로 보내면 너무 큼)
     const summary = _aiSummarizeForChat(allData, from, today);
     _aiDataSummaryCache = summary;
