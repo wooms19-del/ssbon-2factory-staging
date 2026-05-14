@@ -699,3 +699,182 @@ function _drawDefChart(data) {
     }
   });
 }
+
+// ============================================================
+// 💬 챗봇 기능 (Firestore 대화 이력 저장)
+// ============================================================
+
+const _CHAT_COL = '_ai_chat';  // Firestore 컬렉션
+const _CHAT_DEVICE_ID = (function(){
+  // 디바이스별 대화는 분리되지 않음 — 회사 통합 대화방
+  return 'shared';
+})();
+
+let _aiChatHistory = [];  // 메모리 캐시
+
+async function _loadChatHistory() {
+  const logEl = document.getElementById('aiChatLog');
+  if(!logEl) return;
+  logEl.innerHTML = '<div style="color:#94a3b8;font-size:13px;text-align:center;padding:20px">대화 이력 불러오는 중...</div>';
+  try {
+    const snap = await firebase.firestore()
+      .collection(_CHAT_COL)
+      .orderBy('createdAt', 'asc')
+      .limit(100)
+      .get();
+    _aiChatHistory = [];
+    snap.forEach(doc => {
+      const d = doc.data();
+      _aiChatHistory.push({role: d.role, text: d.text, createdAt: d.createdAt});
+    });
+    _renderChatLog();
+  } catch(e) {
+    console.warn('[chat] history load fail:', e);
+    logEl.innerHTML = '<div style="color:#94a3b8;font-size:13px;text-align:center;padding:20px">대화를 시작하세요. 도메인 지식 + 회사 데이터 기반으로 답변합니다.</div>';
+  }
+}
+window._loadChatHistory = _loadChatHistory;
+
+function _renderChatLog() {
+  const logEl = document.getElementById('aiChatLog');
+  if(!logEl) return;
+  if(_aiChatHistory.length === 0) {
+    logEl.innerHTML = '<div style="color:#94a3b8;font-size:13px;text-align:center;padding:20px">대화를 시작하세요. 도메인 지식 + 회사 데이터 기반으로 답변합니다.</div>';
+    return;
+  }
+  logEl.innerHTML = _aiChatHistory.map(m => {
+    const isUser = m.role === 'user';
+    const bgColor = isUser ? '#6366f1' : '#fff';
+    const textColor = isUser ? '#fff' : '#0f172a';
+    const align = isUser ? 'flex-end' : 'flex-start';
+    const icon = isUser ? '👤' : '🤖';
+    const escText = (m.text||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
+    return `
+      <div style="display:flex;justify-content:${align};margin-bottom:10px">
+        <div style="max-width:80%;padding:10px 14px;background:${bgColor};color:${textColor};border-radius:10px;border:${isUser?'none':'1px solid #e5e7eb'};box-shadow:0 1px 2px rgba(0,0,0,0.03)">
+          <div style="font-size:11px;opacity:0.7;margin-bottom:4px">${icon} ${isUser?'사용자':'AI'}</div>
+          <div>${escText}</div>
+        </div>
+      </div>
+    `;
+  }).join('');
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+async function _sendChatMsg() {
+  const input = document.getElementById('aiChatInput');
+  const sendBtn = document.getElementById('aiChatSend');
+  if(!input) return;
+  const text = input.value.trim();
+  if(!text) return;
+
+  // UI: 사용자 메시지 즉시 표시
+  _aiChatHistory.push({role:'user', text:text, createdAt: new Date()});
+  _renderChatLog();
+  input.value = '';
+  input.disabled = true;
+  sendBtn.disabled = true;
+  sendBtn.textContent = '답변 중...';
+
+  // 로딩 메시지 표시
+  _aiChatHistory.push({role:'assistant', text:'⏳ 답변 생성 중...', createdAt: new Date(), _pending:true});
+  _renderChatLog();
+
+  try {
+    // 사용자 메시지 Firestore 저장
+    firebase.firestore().collection(_CHAT_COL).add({
+      role:'user', text:text, createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    }).catch(e => console.warn('[chat] save user fail:', e));
+
+    // AI 호출
+    const apiKey = await _aiGetKey();
+    if(!apiKey) {
+      _aiChatHistory.pop();
+      _aiChatHistory.push({role:'assistant', text:'⚠️ Gemini API 키가 설정되지 않았습니다. 분석 → 설정 → 🤖 AI 설정에서 키를 입력하세요.', createdAt: new Date()});
+      _renderChatLog();
+      return;
+    }
+    const knowledgeBase = await _aiGetKnowledgeBase();
+    
+    // 대화 컨텍스트: 최근 10턴
+    const recent = _aiChatHistory.filter(m => !m._pending).slice(-11, -1);  // 방금 추가한 pending 제외
+    const conversationContext = recent.map(m => 
+      (m.role==='user'?'사용자: ':'AI: ') + m.text
+    ).join('\n\n');
+
+    const systemPrompt = `당신은 순수본 2공장의 식품생산관리 AI 어시스턴트입니다.
+아래 도메인 지식을 토대로 사용자 질문에 정확하고 구체적으로 답변하세요.
+
+[지침]
+- 도메인 지식과 데이터를 토대로 정확하게 답변
+- 모르는 것은 "데이터가 없어 답변 불가" 명시
+- "모니터링 하세요" 같은 추상적 답변 금지
+- 수치 + 정상 범위 비교
+- 상류 공정 영향 가능성 분석
+- 3가지 구체적 액션 제안 (해당 시)
+- 한국어로 답변
+- 마크다운 X, 일반 텍스트
+
+${knowledgeBase ? '[도메인 지식]\n' + knowledgeBase + '\n\n' : ''}`;
+
+    const fullPrompt = systemPrompt + '\n\n' + 
+      (conversationContext ? '[이전 대화]\n' + conversationContext + '\n\n' : '') +
+      '[사용자 새 질문]\n' + text;
+
+    const apiUrl = 'https://generativelanguage.googleapis.com/v1beta/models/' + _AI_GEMINI_MODEL + ':generateContent?key=' + apiKey;
+    const res = await fetch(apiUrl, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        contents: [{parts: [{text: fullPrompt}]}],
+        generationConfig: { temperature: 0.4, maxOutputTokens: 3000 }
+      })
+    });
+
+    if(!res.ok) {
+      const err = await res.text();
+      throw new Error('API ' + res.status + ': ' + err.slice(0,200));
+    }
+    const data = await res.json();
+    const aiText = data.candidates?.[0]?.content?.parts?.[0]?.text || '(응답 없음)';
+
+    // pending 제거 후 진짜 답변 추가
+    _aiChatHistory.pop();
+    _aiChatHistory.push({role:'assistant', text: aiText.trim(), createdAt: new Date()});
+    _renderChatLog();
+
+    // Firestore 저장
+    firebase.firestore().collection(_CHAT_COL).add({
+      role:'assistant', text: aiText.trim(), createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    }).catch(e => console.warn('[chat] save assistant fail:', e));
+
+  } catch(e) {
+    console.error('[chat] error:', e);
+    _aiChatHistory.pop();  // pending 제거
+    _aiChatHistory.push({role:'assistant', text:'⚠️ 오류: ' + (e.message||'AI 호출 실패'), createdAt: new Date()});
+    _renderChatLog();
+  } finally {
+    input.disabled = false;
+    sendBtn.disabled = false;
+    sendBtn.textContent = '전송';
+    input.focus();
+  }
+}
+window._sendChatMsg = _sendChatMsg;
+
+async function _clearChat() {
+  if(!confirm('대화 이력을 모두 삭제하시겠습니까? (Firestore에서도 삭제)')) return;
+  try {
+    const snap = await firebase.firestore().collection(_CHAT_COL).get();
+    const batch = firebase.firestore().batch();
+    snap.forEach(doc => batch.delete(doc.ref));
+    await batch.commit();
+    _aiChatHistory = [];
+    _renderChatLog();
+    if(typeof toast === 'function') toast('대화 이력 삭제 완료','i');
+  } catch(e) {
+    console.error('[chat] clear fail:', e);
+    if(typeof toast === 'function') toast('삭제 실패: '+e.message,'d');
+  }
+}
+window._clearChat = _clearChat;

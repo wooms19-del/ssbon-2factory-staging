@@ -59,26 +59,79 @@ function _renderAIPage(el){
   var monthAgo = (typeof addDays === 'function') ? addDays(today, -7) : today;
   el.innerHTML = `
     <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:20px;margin-bottom:16px">
-      <h2 style="margin:0 0 4px;color:#0f172a;font-size:20px">🤖 AI 분석</h2>
-      <div style="color:#64748b;font-size:13px;margin-bottom:16px">기간을 선택하면 AI가 모든 공정 데이터를 종합 분석합니다.</div>
-      
-      <div style="display:flex;gap:12px;align-items:end;flex-wrap:wrap">
-        <div>
-          <label style="display:block;font-size:12px;color:#475569;margin-bottom:4px">시작일</label>
-          <input type="date" id="ai_from" value="${monthAgo}" style="padding:8px;border:1px solid #cbd5e1;border-radius:6px;font-size:14px">
-        </div>
-        <div>
-          <label style="display:block;font-size:12px;color:#475569;margin-bottom:4px">종료일</label>
-          <input type="date" id="ai_to" value="${today}" style="padding:8px;border:1px solid #cbd5e1;border-radius:6px;font-size:14px">
-        </div>
-        <button id="ai_run_btn" onclick="runAIAnalysis()" style="padding:10px 20px;background:#6366f1;color:#fff;border:none;border-radius:6px;font-size:14px;font-weight:600;cursor:pointer">🤖 AI 분석 시작</button>
+      <h2 style="margin:0 0 12px;color:#0f172a;font-size:20px">🤖 AI 분석</h2>
+      <!-- 탭 -->
+      <div style="display:flex;gap:0;border-bottom:2px solid #e5e7eb;margin-bottom:16px">
+        <button id="aiTabReport" onclick="_switchAITab('report')" style="padding:10px 18px;background:none;border:none;border-bottom:2px solid #6366f1;color:#6366f1;font-size:14px;font-weight:600;cursor:pointer;margin-bottom:-2px">📊 기간 분석</button>
+        <button id="aiTabChat" onclick="_switchAITab('chat')" style="padding:10px 18px;background:none;border:none;border-bottom:2px solid transparent;color:#64748b;font-size:14px;font-weight:500;cursor:pointer;margin-bottom:-2px">💬 챗봇</button>
       </div>
-      <div style="font-size:11px;color:#94a3b8;margin-top:8px">최대 35일까지 가능. 기간이 길수록 분석 시간 증가 (10~30초). · API 키는 분석 → 설정 → 🤖 AI 설정에서 변경</div>
+
+      <!-- 탭 1: 기간 분석 -->
+      <div id="aiTabPanel_report">
+        <div style="color:#64748b;font-size:13px;margin-bottom:16px">기간을 선택하면 AI가 모든 공정 데이터를 종합 분석합니다.</div>
+        <div style="display:flex;gap:12px;align-items:end;flex-wrap:wrap">
+          <div>
+            <label style="display:block;font-size:12px;color:#475569;margin-bottom:4px">시작일</label>
+            <input type="date" id="ai_from" value="${monthAgo}" style="padding:8px;border:1px solid #cbd5e1;border-radius:6px;font-size:14px">
+          </div>
+          <div>
+            <label style="display:block;font-size:12px;color:#475569;margin-bottom:4px">종료일</label>
+            <input type="date" id="ai_to" value="${today}" style="padding:8px;border:1px solid #cbd5e1;border-radius:6px;font-size:14px">
+          </div>
+          <button id="ai_run_btn" onclick="runAIAnalysis()" style="padding:10px 20px;background:#6366f1;color:#fff;border:none;border-radius:6px;font-size:14px;font-weight:600;cursor:pointer">🤖 AI 분석 시작</button>
+        </div>
+        <div style="font-size:11px;color:#94a3b8;margin-top:8px">최대 35일까지 가능. 기간이 길수록 분석 시간 증가 (10~30초).</div>
+      </div>
+
+      <!-- 탭 2: 챗봇 -->
+      <div id="aiTabPanel_chat" style="display:none">
+        <div style="color:#64748b;font-size:13px;margin-bottom:12px">공정 데이터/도메인 지식 기반 자유 질문이 가능합니다.</div>
+        <div id="aiChatLog" style="background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;padding:12px;height:480px;overflow-y:auto;font-size:14px;line-height:1.5"></div>
+        <div style="display:flex;gap:8px;margin-top:10px">
+          <input type="text" id="aiChatInput" placeholder="질문을 입력하세요 (예: 5월 수율 떨어진 원인이 뭐야?)" 
+            onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault(); _sendChatMsg();}"
+            style="flex:1;padding:10px 12px;border:1px solid #cbd5e1;border-radius:6px;font-size:14px">
+          <button onclick="_sendChatMsg()" id="aiChatSend" style="padding:10px 20px;background:#6366f1;color:#fff;border:none;border-radius:6px;font-size:14px;font-weight:600;cursor:pointer">전송</button>
+          <button onclick="_clearChat()" style="padding:10px 14px;background:#fff;color:#64748b;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;cursor:pointer">초기화</button>
+        </div>
+      </div>
     </div>
     
     <div id="ai_result"></div>
   `;
+  // 챗봇 이력 로드
+  if(typeof _loadChatHistory === 'function') _loadChatHistory();
 }
+
+// 탭 전환
+function _switchAITab(tab){
+  var report = document.getElementById('aiTabPanel_report');
+  var chat = document.getElementById('aiTabPanel_chat');
+  var btnR = document.getElementById('aiTabReport');
+  var btnC = document.getElementById('aiTabChat');
+  if(tab==='chat'){
+    report.style.display = 'none';
+    chat.style.display = 'block';
+    btnR.style.borderBottomColor = 'transparent';
+    btnR.style.color = '#64748b';
+    btnR.style.fontWeight = '500';
+    btnC.style.borderBottomColor = '#6366f1';
+    btnC.style.color = '#6366f1';
+    btnC.style.fontWeight = '600';
+    var input = document.getElementById('aiChatInput');
+    if(input) input.focus();
+  } else {
+    report.style.display = 'block';
+    chat.style.display = 'none';
+    btnC.style.borderBottomColor = 'transparent';
+    btnC.style.color = '#64748b';
+    btnC.style.fontWeight = '500';
+    btnR.style.borderBottomColor = '#6366f1';
+    btnR.style.color = '#6366f1';
+    btnR.style.fontWeight = '600';
+  }
+}
+window._switchAITab = _switchAITab;
 
 function showTab(mode,tab){
   if(mode==='i') ITAB=tab; else DTAB=tab;
