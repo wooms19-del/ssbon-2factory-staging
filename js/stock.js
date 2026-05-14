@@ -63,9 +63,11 @@ function _renderStockShell(){
     if(d < START_DATE) return;
     inByType[t] = (inByType[t]||0) + (parseInt(r.boxes,10)||0);
   });
+  var today = tod();
   _stockData.thawing.forEach(function(r){
     var outDate = String(r.date||'').slice(0,10);  // date = 종료일 = 출고일
     if(outDate < START_DATE) return;
+    if(outDate > today) return;  // ★ 해동중(미래 종료 예정)은 outs에서 제외 — 창고 박스로 카운트
     // thawing.type은 콤마 구분 가능 (예: "우둔,홍두깨") 박스도 합산값
     var types = (r.type||'').split(',').map(function(s){return s.trim();}).filter(Boolean);
     var boxes = parseInt(r.boxes,10)||0;
@@ -78,7 +80,6 @@ function _renderStockShell(){
   });
 
   // 해동중 (date > 오늘 = 오늘 시작했고 미래에 끝날 예정인 박스) 별도 집계
-  var today = tod();
   var inProgressByType = {};
   _stockData.thawing.forEach(function(r){
     var outDate = String(r.date||'').slice(0,10);
@@ -95,24 +96,41 @@ function _renderStockShell(){
   // 모든 부위 합집합 (INITIAL 키도 포함)
   var allTypes = Array.from(new Set([].concat(Object.keys(INITIAL), Object.keys(inByType), Object.keys(outByType)))).sort();
 
-  // 현재 잔여 = 기초 + 입고 - 사용
+  // 현재 잔여 = 기초 + 입고 - 사용 (해동중 제외 — 창고에 박스로 있음)
   var KG_PER_BOX = 20;  // 박스당 추정 무게 (모든 부위 공통)
   var remainHtml = allTypes.map(function(t){
     var init = INITIAL[t]||0;
     var ins = inByType[t]||0;
     var outs = outByType[t]||0;
-    var inProg = inProgressByType[t]||0;
-    var rem = init + ins - outs;  // ★ 기초 재고 반영
+    var inProg = Math.round(inProgressByType[t]||0);
+    var rem = Math.round(init + ins - outs);  // 오늘 창고 재고 (해동중 포함)
+    var remNext = rem - inProg;                // 내일 재고 (해동중 사용된 후)
+    var outsNext = Math.round(outs) + inProg;  // 내일 누적 사용
     var estKg = Math.round(rem * KG_PER_BOX);
+    var estKgNext = Math.round(remNext * KG_PER_BOX);
     var color = rem < 50 ? '#dc2626' : rem < 200 ? '#f59e0b' : '#16a34a';
-    var progressBadge = inProg > 0
-      ? '<span style="margin-left:6px;font-size:11px;color:#2563eb;font-weight:600;background:#eff6ff;padding:2px 6px;border-radius:4px">해동중 '+Math.round(inProg)+'</span>'
+    var hasProg = inProg > 0;
+    var progressBadge = hasProg
+      ? '<span style="font-size:12px;color:#2563eb;font-weight:600;background:#eff6ff;padding:3px 8px;border-radius:4px">해동중 '+inProg+'</span>'
       : '';
-    return '<div style="flex:1;min-width:140px;padding:14px 16px;background:#fff;border:1px solid #e5e7eb;border-radius:8px;box-shadow:0 1px 2px rgba(0,0,0,0.04)">'
-      + '<div style="font-size:13px;color:#6b7280;font-weight:600;margin-bottom:6px">'+t+'</div>'
-      + '<div style="font-size:22px;font-weight:700;color:'+color+'">'+Math.round(rem).toLocaleString()+' <span style="font-size:13px;color:#9ca3af;font-weight:500">박스</span>'+progressBadge+'</div>'
-      + '<div style="font-size:12px;color:#6b7280;margin-top:3px">약 '+estKg.toLocaleString()+' kg</div>'
-      + '<div style="font-size:11px;color:#9ca3af;margin-top:4px">입고 '+Math.round(ins).toLocaleString()+' · 사용 '+Math.round(outs).toLocaleString()+'</div>'
+    var arrow = '<span style="color:#9ca3af;font-weight:400;margin:0 4px">→</span>';
+    var boxLine = hasProg
+      ? Math.round(rem).toLocaleString()+arrow+remNext.toLocaleString()+' <span style="font-size:13px;color:#9ca3af;font-weight:500">박스</span>'
+      : Math.round(rem).toLocaleString()+' <span style="font-size:13px;color:#9ca3af;font-weight:500">박스</span>';
+    var kgLine = hasProg
+      ? '약 '+estKg.toLocaleString()+arrow+estKgNext.toLocaleString()+' kg'
+      : '약 '+estKg.toLocaleString()+' kg';
+    var useLine = hasProg
+      ? '입고 '+Math.round(ins).toLocaleString()+' · 사용 '+Math.round(outs).toLocaleString()+arrow+outsNext.toLocaleString()
+      : '입고 '+Math.round(ins).toLocaleString()+' · 사용 '+Math.round(outs).toLocaleString();
+    return '<div style="flex:1;min-width:160px;padding:14px 16px;background:#fff;border:1px solid #e5e7eb;border-radius:8px;box-shadow:0 1px 2px rgba(0,0,0,0.04)">'
+      + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;min-height:22px">'
+        + '<div style="font-size:13px;color:#6b7280;font-weight:600">'+t+'</div>'
+        + progressBadge
+      + '</div>'
+      + '<div style="font-size:22px;font-weight:700;color:'+color+'">'+boxLine+'</div>'
+      + '<div style="font-size:12px;color:#6b7280;margin-top:3px">'+kgLine+'</div>'
+      + '<div style="font-size:11px;color:#9ca3af;margin-top:4px">'+useLine+'</div>'
       + '</div>';
   }).join('');
   if(!remainHtml) remainHtml = '<div style="color:#9ca3af;padding:20px">입고 데이터 없음</div>';
