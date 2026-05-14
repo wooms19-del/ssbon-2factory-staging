@@ -398,7 +398,7 @@ async function renderMonthlyReport(pk, from, effectiveTo, ppMonth, thMonth, opDa
   });
 
   // 글로벌 저장 (필터용)
-  window._moGD = { dayEntries, rmByDate, opMap, metaMap, thMonth: thMonth||[], ppMonth: ppMonth||[], metaKey };
+  window._moGD = { dayEntries, rmByDate, opMap, metaMap, thMonth: thMonth||[], ppMonth: ppMonth||[], metaKey, attendanceMap: attendanceMap||{} };
   _moRenderRows(null);
   renderPackingChart(dayEntries, opMap, _moYm || tod().slice(0,7));
   // 일별 원육 사용량 차트
@@ -641,7 +641,8 @@ function _moRenderRows(selProds) {
   const tbody = document.getElementById('mo_report_tbl');
   const tfoot = document.getElementById('mo_report_total');
   if(!tbody || !window._moGD) return;
-  const {dayEntries, rmByDate, opMap, metaMap, thMonth, ppMonth, metaKey} = window._moGD;
+  const {dayEntries, rmByDate, opMap, metaMap, thMonth, ppMonth, metaKey, attendanceMap} = window._moGD;
+  const _attMap = attendanceMap || {};
   const fmtKg = v => v>0 ? v.toLocaleString('ko-KR',{minimumFractionDigits:1,maximumFractionDigits:1}) : '—';
   const PC='padding:8px 8px;', P='padding:8px 10px;', vm='vertical-align:middle;';
   const dayBg=['background:#ffffff;','background:#f8fafc;'];
@@ -670,7 +671,7 @@ function _moRenderRows(selProds) {
     const bg     = dayBg[(dayNo-1)%2];
     const yldTxt = dayYld==null?'color:#aaa;':dayYld>=55?'color:#047857;':dayYld>=52?'color:#1d4ed8;':dayYld>=50?'color:#c2410c;':'color:#b91c1c;';
     const yldBg  = dayYld==null?bg:dayYld>=55?'background:#ecfdf5;':dayYld>=52?'background:#eff6ff;':dayYld>=50?'background:#fff7ed;':'background:#fef2f2;';
-    const autoW  = attendanceMap[date] || 0;
+    const autoW  = _attMap[date] || 0;
     const workers= meta.workers!=null?meta.workers:(autoW||'');
     const firstProd=L.products.find(x=>x.name===allRows[0].product);
     const capa   = meta.capa!=null?meta.capa:(firstProd&&firstProd.capa?firstProd.capa.toLocaleString():'');
