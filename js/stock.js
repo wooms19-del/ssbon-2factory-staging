@@ -307,15 +307,19 @@ function _renderStockShell(){
   // === 2공장 화면 ===
   var f2Html = '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px">'+allTypes.map(_f2Card).join('')+'</div>'
     + _section('➕ 2공장 입고 추가', f2InputForm)
-    + _section('📥 입고 이력 (외부 + 1공장 이동)', _table(f2InHtml, '입고 이력 없음'))
-    + _section('📤 출고 이력 (1공장으로 이동)', _table(f2OutHtml, '출고 이력 없음'))
+    + '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:14px">'
+      + '<div style="flex:1;min-width:340px">' + _section('📥 입고 이력 (외부 + 1공장 이동)', _table(f2InHtml, '입고 이력 없음')) + '</div>'
+      + '<div style="flex:1;min-width:340px">' + _section('📤 출고 이력 (1공장으로 이동)', _table(f2OutHtml, '출고 이력 없음')) + '</div>'
+    + '</div>'
     + _section('🚚 1공장으로 이동', _transferForm('F2toF1'));
 
   // === 1공장 화면 ===
   var f1Html = '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px">'+allTypes.map(_f1Card).join('')+'</div>'
     + _section('➕ 1공장 입고 추가', f1InputForm)
-    + _section('📥 입고 이력 (외부 + 2공장 이동)', _table(f1InHtml, '입고 이력 없음'))
-    + _section('📤 출고 이력 (2공장으로 이동)', _table(f1OutHtml, '출고 이력 없음'))
+    + '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:14px">'
+      + '<div style="flex:1;min-width:340px">' + _section('📥 입고 이력 (외부 + 2공장 이동)', _table(f1InHtml, '입고 이력 없음')) + '</div>'
+      + '<div style="flex:1;min-width:340px">' + _section('📤 출고 이력 (2공장으로 이동)', _table(f1OutHtml, '출고 이력 없음')) + '</div>'
+    + '</div>'
     + _section('🚚 2공장으로 이동', _transferForm('F1toF2'));
 
   pg.innerHTML = '<div style="padding:16px 20px;max-width:1300px;margin:0 auto">'
