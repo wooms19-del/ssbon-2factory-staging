@@ -4,6 +4,36 @@
 
 const _AI_GEMINI_MODEL = 'gemini-flash-latest';
 let _aiKeyCache = null;  // 메모리 캐시 (한 세션 내 재사용)
+let _aiKnowledgeCache = null;  // 도메인 지식 캐시 (탭 유지 동안)
+
+// 도메인 지식 MD 파일들 — GitHub raw URL에서 fetch
+const _AI_KNOWLEDGE_FILES = [
+  'https://raw.githubusercontent.com/wooms19-del/ssbon-2factory/main/docs/ai_knowledge/01_%EA%B3%B5%EC%A0%95%EC%9B%90%EB%A6%AC.md',
+  'https://raw.githubusercontent.com/wooms19-del/ssbon-2factory/main/docs/ai_knowledge/02_%EC%A7%84%EB%8B%A8%EB%A3%B0%EB%B6%81.md',
+  'https://raw.githubusercontent.com/wooms19-del/ssbon-2factory/main/docs/ai_knowledge/03_%EA%B3%B5%EC%9E%A5%ED%8A%B9%EC%88%98%EC%A0%95%EB%B3%B4.md'
+];
+
+async function _aiGetKnowledgeBase() {
+  if(_aiKnowledgeCache !== null) return _aiKnowledgeCache;
+  try {
+    const texts = await Promise.all(_AI_KNOWLEDGE_FILES.map(async url => {
+      try {
+        const r = await fetch(url);
+        if(!r.ok) return '';
+        return await r.text();
+      } catch(e) {
+        console.warn('[AI] knowledge fetch fail:', url, e);
+        return '';
+      }
+    }));
+    _aiKnowledgeCache = texts.filter(Boolean).join('\n\n---\n\n');
+    console.log('[AI] 도메인 지식 로드 완료:', _aiKnowledgeCache.length, '자');
+    return _aiKnowledgeCache;
+  } catch(e) {
+    console.error('[AI] knowledge fetch error:', e);
+    return '';
+  }
+}
 
 // Firestore에서 API 키 조회
 async function _aiGetKey() {
@@ -227,7 +257,31 @@ async function runAIAnalysis() {
         .slice(0, 50)  // 최대 50건
     };
     
-    const prompt = _AI_PROMPT_TEMPLATE + '\n\n[데이터]\n' + JSON.stringify(aiInput, null, 2);
+    const knowledgeBase = await _aiGetKnowledgeBase();
+    const causalInstruction = `
+[중요 — 분석 사고 순서 (반드시 이 순서로 사고)]
+1. 증상 식별: 어떤 수치가 비정상인가? (정상 범위와 비교)
+2. 영향 받는 공정 특정: 어느 단계 데이터인가?
+3. 상류 공정 역추적: 그 위 공정에서 시작된 문제인가?
+   - 예: 수율 저하 + 전처리 비가식부 多 → 원물 품질 의심
+   - 예: 자숙 손실 多 → 해동/자숙 시간 또는 온도
+4. 패턴 검증: 특정 부위/날짜/공급처에 집중되는가?
+5. 근본 원인 추정 + 구체적 액션 3가지
+
+[절대 금지 패턴]
+- "모니터링 하세요" 같은 추상적 액션 금지
+- 증상만 보고 표면적 조언 금지
+- 정확한 수치 + 정상 범위 비교 없이 결론 금지
+
+[필수 출력 항목]
+- 정확한 수치 + 정상 범위
+- 상류 공정의 영향 가능성
+- 3가지 구체적 액션 (점검할 것, 확인할 것, 수정할 것)
+`;
+    const prompt = (knowledgeBase ? '[도메인 지식]\n' + knowledgeBase + '\n\n' : '') 
+                 + _AI_PROMPT_TEMPLATE + '\n\n' 
+                 + causalInstruction + '\n\n'
+                 + '[데이터]\n' + JSON.stringify(aiInput, null, 2);
     
     const apiUrl = 'https://generativelanguage.googleapis.com/v1beta/models/' + _AI_GEMINI_MODEL + ':generateContent?key=' + apiKey;
     const apiRes = await _aiFetchWithRetry(apiUrl, {
