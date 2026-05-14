@@ -356,17 +356,20 @@ async function renderMonthlyReport(pk, from, effectiveTo, ppMonth, thMonth, opDa
   // [메타 로드] firestore 우선, 없으면 localStorage fallback + 자동 마이그레이션
   let metaMap = await _moLoadMeta(ym);
 
-  // 날짜별 + 제품별 집계 (작업인원 포함)
+  // 날짜별 + 제품별 집계 (작업인원 + type 포함)
   const byDateProd = {};
   pk.forEach(r => {
     const d = String(r.date||'').slice(0,10);
     const prod = r.product||'기타';
     const key = d+'|'+prod;
-    if(!byDateProd[key]) byDateProd[key] = {date:d, product:prod, ea:0, pkKg:0, workers:0};
+    if(!byDateProd[key]) byDateProd[key] = {date:d, product:prod, ea:0, pkKg:0, workers:0, types:{}};
     byDateProd[key].ea += parseFloat(r.ea)||0;
     const p = L.products.find(x=>x.name===prod);
     byDateProd[key].pkKg += p ? (parseFloat(r.ea)||0)*p.kgea : 0;
     byDateProd[key].workers = Math.max(byDateProd[key].workers, parseFloat(r.workers)||0);
+    // type 정보 누적 (콤마 구분 가능)
+    const tps = (r.type||'').split(',').map(s=>s.trim()).filter(Boolean);
+    tps.forEach(t => { byDateProd[key].types[t] = (byDateProd[key].types[t]||0) + (parseFloat(r.ea)||0); });
   });
 
   // 날짜 목록
@@ -398,7 +401,7 @@ async function renderMonthlyReport(pk, from, effectiveTo, ppMonth, thMonth, opDa
   });
 
   // 글로벌 저장 (필터용)
-  window._moGD = { dayEntries, rmByDate, opMap, metaMap, thMonth: thMonth||[], ppMonth: ppMonth||[], metaKey, attendanceMap: attendanceMap||{} };
+  window._moGD = { dayEntries, rmByDate, rmByDatePart, opMap, metaMap, thMonth: thMonth||[], ppMonth: ppMonth||[], metaKey, attendanceMap: attendanceMap||{} };
   _moRenderRows(null);
   renderPackingChart(dayEntries, opMap, _moYm || tod().slice(0,7));
   // 일별 원육 사용량 차트
@@ -679,15 +682,47 @@ function _moRenderRows(selProds) {
     const thDay  = thMonth.filter(r=>String(r.date||'').slice(0,10)===date);
     // 그날 모든 제품이 무육(메추리알 등)이면 부위 표시 안 함
     const _isAllNoMeat = dayRows.length>0 && dayRows.every(r => /메추리알/.test(r.product||''));
-    let meatParts = _isAllNoMeat ? [] : [...new Set(thDay.flatMap(r=>(r.type||'').split(',').map(s=>s.trim()).filter(Boolean)))];
-    // 방혈 type 없으면 전처리 type으로 fallback
-    if(!meatParts.length && ppMonth && !_isAllNoMeat){
-      const ppDay=(ppMonth||[]).filter(r=>String(r.date||'').slice(0,10)===date);
-      meatParts=[...new Set(ppDay.flatMap(r=>(r.type||'').split(',').map(s=>s.trim()).filter(Boolean)))];
+
+    // ★ 제품별 type 결정 (packing record의 type 필드 기준, 가장 많이 쓴 type 1개)
+    const _rowType = {};  // {product: type}
+    dayRows.forEach(r => {
+      const types = r.types || {};
+      const sorted = Object.entries(types).sort((a,b)=>b[1]-a[1]);
+      _rowType[r.product] = sorted.length ? sorted[0][0] : '';
+    });
+
+    // ★ 같은 type끼리 묶음 (rowspan 병합용)
+    // dayRows 순서를 type별로 정렬하여 같은 type 인접하게
+    if(!_isAllNoMeat){
+      dayRows.sort((a,b) => {
+        const ta = _rowType[a.product] || '';
+        const tb = _rowType[b.product] || '';
+        if(ta !== tb) return ta.localeCompare(tb);
+        return a.product.localeCompare(b.product);
+      });
     }
-    const meatStr= meatParts.length
-      ? meatParts.map(p=>`<span style="display:inline-block;background:#dbeafe;color:#1e40af;border-radius:3px;padding:1px 6px;font-size:11px;font-weight:600;white-space:nowrap;margin:1px 2px">${p}</span>`).join('')
-      : '<span style="color:#ccc">—</span>';
+
+    // type별 그룹 (첫 row 위치 + 개수)
+    const _typeGroups = {};  // {type: {startIdx, count, products:[]}}
+    dayRows.forEach((r, idx) => {
+      const t = _rowType[r.product] || '';
+      if(!_typeGroups[t]) _typeGroups[t] = {startIdx: idx, count: 0, products: []};
+      _typeGroups[t].count++;
+      _typeGroups[t].products.push(r.product);
+    });
+
+    // 부위별 원육 사용량 (rmByDatePart에서 부위별)
+    const _rmByPart = (window._moGD && window._moGD.rmByDatePart && window._moGD.rmByDatePart[date]) || {};
+    // fallback: thDay에서 부위별 합산
+    if(Object.keys(_rmByPart).length === 0){
+      thDay.forEach(r => {
+        const tps = (r.type||'').split(',').map(s=>s.trim()).filter(Boolean);
+        if(!tps.length) return;
+        const per = (parseFloat(r.totalKg)||0) / tps.length;
+        tps.forEach(t => { _rmByPart[t] = (_rmByPart[t]||0) + per; });
+      });
+    }
+
     totRm+=propRm; totPkKg+=dayPkKg;
     const mkEdit=(field,val,display,style='')=>`<span class="mo-edit" data-date="${date}" data-field="${field}" title="클릭하여 수정" style="cursor:pointer;border-bottom:1px dashed #aaa;${style}">${display}</span>`;
     const editW   =mkEdit('workers',workers,workers||'—')+'명';
@@ -698,16 +733,30 @@ function _moRenderRows(selProds) {
       const isFirst=ri===0, isLast=ri===cnt-1;
       const rowBorder=isLast?'border-bottom:2px solid #cbd5e1;':'border-bottom:1px solid #e2e8f0;';
       const pkDisp=fmtKg(effPkMap[row.product]||r2(row.pkKg));
+
+      // 이 row의 type, 그룹 정보
+      const _myType = _rowType[row.product] || '';
+      const _grp = _typeGroups[_myType] || {startIdx:ri, count:1};
+      const _isTypeFirstRow = (ri === _grp.startIdx);
+
       let cells='';
       if(isFirst){
         cells+=`<td rowspan="${cnt}" style="${vm}${PC}${bg}text-align:center;font-weight:700;font-size:15px;color:#1e293b;border-right:1px solid #e2e8f0;border-bottom:2px solid #cbd5e1;">${dayNo}</td>`;
         cells+=`<td rowspan="${cnt}" style="${vm}${PC}${bg}text-align:center;border-right:1px solid #e2e8f0;border-bottom:2px solid #cbd5e1;line-height:1.5"><span style="font-weight:600;font-size:13px;color:#334155">${date.slice(5).replace('-','/')}</span><br><span style="font-size:10px;color:#94a3b8">(${dow})</span></td>`;
         cells+=`<td rowspan="${cnt}" style="${vm}${PC}${bg}text-align:center;color:#475569;border-right:1px solid #e2e8f0;border-bottom:2px solid #cbd5e1">${editW}</td>`;
-        cells+=`<td rowspan="${cnt}" style="${vm}${PC}${bg}text-align:center;border-right:1px solid #e2e8f0;border-bottom:2px solid #cbd5e1">${meatStr}</td>`;
+      }
+      // 부위 컬럼: 같은 type 그룹에서 첫 row만 출력 (rowspan 병합)
+      if(_isTypeFirstRow){
+        const _typeBadge = _isAllNoMeat || !_myType
+          ? '<span style="color:#ccc">—</span>'
+          : `<span style="display:inline-block;background:#dbeafe;color:#1e40af;border-radius:3px;padding:1px 6px;font-size:11px;font-weight:600;white-space:nowrap;margin:1px 2px">${_myType}</span>`;
+        cells+=`<td rowspan="${_grp.count}" style="${vm}${PC}${bg}text-align:center;border-right:1px solid #e2e8f0;border-bottom:1px solid #cbd5e1">${_typeBadge}</td>`;
       }
       cells+=`<td style="${vm}${PC}${bg}text-align:center;font-weight:500;color:#1e293b;border-right:1px solid #e2e8f0;${rowBorder}">${row.product}</td>`;
-      if(isFirst){
-        cells+=`<td rowspan="${cnt}" style="${vm}${PC}${bg}text-align:center;font-variant-numeric:tabular-nums;color:#374151;border-right:1px solid #e2e8f0;border-bottom:2px solid #cbd5e1">${fmtKg(propRm)}</td>`;
+      // 원육 사용량: 같은 type 그룹에서 첫 row만 출력 (해당 부위 사용량)
+      if(_isTypeFirstRow){
+        const _partRm = _rmByPart[_myType] || 0;
+        cells+=`<td rowspan="${_grp.count}" style="${vm}${PC}${bg}text-align:center;font-variant-numeric:tabular-nums;color:#374151;border-right:1px solid #e2e8f0;border-bottom:1px solid #cbd5e1">${fmtKg(r2(_partRm))}</td>`;
       }
       const _opEa=opMap[date+'|'+row.product]||0;
       const _dispEa=_opEa>0?_opEa:(row.ea>0?Math.round(row.ea):0);
