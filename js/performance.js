@@ -106,6 +106,8 @@ function _perfRenderShell(){
       '#p-performance table.perf-tbl tr.row-pending td{background:#dbeafe;color:#1e40af}'+   /* 외포장 미완료: 연하늘 */
       '#p-performance table.perf-tbl tr.row-bg0 td{background:#ffffff}'+
       '#p-performance table.perf-tbl tr.row-bg1 td{background:#f8fafc}'+
+      '#p-performance table.perf-tbl tbody tr:hover td{background:#fef3c7 !important;cursor:pointer;transition:background .12s}'+
+      '#p-performance table.perf-tbl tbody tr.row-selected td{background:#fde68a !important}'+
       '#p-performance .perf-wrap{overflow-x:auto;max-width:100%}'+
     '</style>'+
     '<div class="pf-card">'+
@@ -1062,6 +1064,19 @@ function _perfRenderTable(rows){
   });
   html+='</tbody></table>';
   wrap.innerHTML=html;
+  // 행 클릭 시 선택 토글 (하나만 선택 가능)
+  var tbody = wrap.querySelector('table.perf-tbl tbody');
+  if(tbody){
+    tbody.addEventListener('click', function(e){
+      var tr = e.target.closest('tr');
+      if(!tr) return;
+      var alreadySelected = tr.classList.contains('row-selected');
+      // 기존 선택 해제
+      tbody.querySelectorAll('tr.row-selected').forEach(function(r){ r.classList.remove('row-selected'); });
+      // 동일 행 다시 클릭이면 해제만, 다른 행이면 선택
+      if(!alreadySelected) tr.classList.add('row-selected');
+    });
+  }
 }
 
 // ── 엑셀 다운로드 ─────────────────────────────────────────────
