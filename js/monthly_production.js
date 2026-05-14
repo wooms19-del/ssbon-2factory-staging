@@ -19,6 +19,7 @@
   var _lastRendered = null;  // {calcRows, visibleCols, sum, dayCount}
   var _mpPrevData = null;
   var _mpBusy = false;
+  var _mpPendingDates = null;  // 진행중 설비 있는 날짜 Set
   var _mpGrp = {
     inout: true, workers: false, hours: false, prod: false, yield: false, usage: false
   };
