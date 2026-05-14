@@ -1389,31 +1389,31 @@ function _moRenderPrevCmp(el, cur, prev, prevYm) {
         </tr></thead>
         <tbody>
           <tr style="border-top:1px solid #f1f5f9">
-            <td style="padding:7px 3px;color:#64748b">원육 사용량</td>
+            <td style="padding:7px 3px;text-align:center;color:#64748b">원육 사용량</td>
             <td style="padding:7px 3px;text-align:center">${fmt(prev.rm)}<span style="font-size:9px;color:#94a3b8">kg</span></td>
             <td style="padding:7px 3px;text-align:center;font-weight:600">${fmt(cur.rm)}<span style="font-size:9px;color:#94a3b8">kg</span></td>
             <td style="padding:7px 3px;text-align:center">${delta(cur.rm,prev.rm,true)}</td>
           </tr>
           <tr style="border-top:1px solid #f1f5f9">
-            <td style="padding:7px 3px;color:#64748b">완제품 중량</td>
+            <td style="padding:7px 3px;text-align:center;color:#64748b">완제품 중량</td>
             <td style="padding:7px 3px;text-align:center">${fmt(prev.pkKg)}<span style="font-size:9px;color:#94a3b8">kg</span></td>
             <td style="padding:7px 3px;text-align:center;font-weight:600">${fmt(cur.pkKg)}<span style="font-size:9px;color:#94a3b8">kg</span></td>
             <td style="padding:7px 3px;text-align:center">${delta(cur.pkKg,prev.pkKg,true)}</td>
           </tr>
           <tr style="border-top:1px solid #f1f5f9;background:#f8fafc">
-            <td style="padding:7px 3px;font-weight:700">평균 수율</td>
+            <td style="padding:7px 3px;text-align:center;font-weight:700">평균 수율</td>
             <td style="padding:7px 3px;text-align:center">${prev.yld>0?prev.yld.toFixed(1)+'%':'—'}</td>
             <td style="padding:7px 3px;text-align:center;font-weight:700;color:${cur.yld>=52?'#1d4ed8':cur.yld>=50?'#c2410c':'#b91c1c'}">${cur.yld>0?cur.yld.toFixed(1)+'%':'—'}</td>
             <td style="padding:7px 3px;text-align:center">${delta(cur.yld,prev.yld,true)}</td>
           </tr>
           <tr style="border-top:1px solid #f1f5f9">
-            <td style="padding:7px 3px;color:#64748b">작업일수</td>
+            <td style="padding:7px 3px;text-align:center;color:#64748b">작업일수</td>
             <td style="padding:7px 3px;text-align:center">${prev.days}일</td>
             <td style="padding:7px 3px;text-align:center;font-weight:600">${cur.days}일</td>
             <td style="padding:7px 3px;text-align:center">${delta(cur.days,prev.days,true)}</td>
           </tr>
           <tr style="border-top:1px solid #f1f5f9">
-            <td style="padding:7px 3px;color:#64748b">일평균 원육</td>
+            <td style="padding:7px 3px;text-align:center;color:#64748b">일평균 원육</td>
             <td style="padding:7px 3px;text-align:center">${prev.days>0?fmt(prev.rm/prev.days):'—'}<span style="font-size:9px;color:#94a3b8">kg</span></td>
             <td style="padding:7px 3px;text-align:center;font-weight:600">${cur.days>0?fmt(cur.rm/cur.days):'—'}<span style="font-size:9px;color:#94a3b8">kg</span></td>
             <td style="padding:7px 3px;text-align:center">${cur.days>0&&prev.days>0?delta(cur.rm/cur.days,prev.rm/prev.days,true):'—'}</td>
@@ -1496,7 +1496,7 @@ function _moRenderPrevCmp(el, cur, prev, prevYm) {
         </tr></thead>
         <tbody>
           <tr style="border-top:1px solid #f1f5f9;background:#f8fafc">
-            <td style="padding:7px 3px;font-weight:700">평균 수율</td>
+            <td style="padding:7px 3px;text-align:center;font-weight:700">평균 수율</td>
             <td style="padding:7px 3px;text-align:center">${t.yieldGoal.toFixed(1)}% 이상</td>
             <td style="padding:7px 3px;text-align:center;font-weight:700">${cur.yld>0?cur.yld.toFixed(1)+'%':'—'}</td>
             <td style="padding:7px 3px;text-align:center">${status(cur.yld, t.yieldGoal, true)}</td>
