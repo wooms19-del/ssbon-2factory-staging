@@ -26,11 +26,14 @@ async function renderStock(){
   var thawingFrom = '2026-04-29';
   var today = new Date();
   var toStr = today.getFullYear()+'-'+String(today.getMonth()+1).padStart(2,'0')+'-'+String(today.getDate()).padStart(2,'0');
+  // ★ 해동중(미래 종료 예정) thawing도 fetch — 내일까지 범위 확장
+  var tomorrow = new Date(today.getFullYear(), today.getMonth(), today.getDate()+1);
+  var toStrThawing = tomorrow.getFullYear()+'-'+String(tomorrow.getMonth()+1).padStart(2,'0')+'-'+String(tomorrow.getDate()).padStart(2,'0');
 
   try {
     var R = await Promise.all([
       fbGetRange('stockIn', stockInFrom, toStr),
-      fbGetRange('thawing', thawingFrom, toStr)
+      fbGetRange('thawing', thawingFrom, toStrThawing)
     ]);
     _stockData.stockIn = R[0] || [];
     _stockData.thawing = R[1] || [];
