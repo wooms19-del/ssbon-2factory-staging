@@ -428,7 +428,7 @@ async function renderMonthlyReport(pk, from, effectiveTo, ppMonth, thMonth, opDa
   });
 
   // 글로벌 저장 (필터용)
-  window._moGD = { dayEntries, rmByDate, rmByDatePart, opMap, metaMap, thMonth: thMonth||[], ppMonth: ppMonth||[], metaKey, attendanceMap: attendanceMap||{} };
+  window._moGD = { dayEntries, rmByDate, rmByDatePart, opMap, metaMap, thMonth: thMonth||[], ppMonth: ppMonth||[], shMonth: shMonth||[], metaKey, attendanceMap: attendanceMap||{} };
   _moRenderRows(null);
   renderPackingChart(dayEntries, opMap, _moYm || tod().slice(0,7));
   // 일별 원육 사용량 차트
@@ -671,7 +671,7 @@ function _moRenderRows(selProds) {
   const tbody = document.getElementById('mo_report_tbl');
   const tfoot = document.getElementById('mo_report_total');
   if(!tbody || !window._moGD) return;
-  const {dayEntries, rmByDate, opMap, metaMap, thMonth, ppMonth, metaKey, attendanceMap} = window._moGD;
+  const {dayEntries, rmByDate, opMap, metaMap, thMonth, ppMonth, shMonth, metaKey, attendanceMap} = window._moGD;
   const _attMap = attendanceMap || {};
   const fmtKg = v => v>0 ? v.toLocaleString('ko-KR',{minimumFractionDigits:1,maximumFractionDigits:1}) : '—';
   const PC='padding:8px 8px;', P='padding:8px 10px;', vm='vertical-align:middle;';
@@ -774,16 +774,21 @@ function _moRenderRows(selProds) {
       }
       // 부위 컬럼: 같은 type 그룹에서 첫 row만 출력 (rowspan 병합)
       if(_isTypeFirstRow){
+        // 이 그룹이 그날의 마지막에 닿으면 두꺼운 선, 아니면 얇은 선
+        const _grpEndsAtDay = (_grp.startIdx + _grp.count >= cnt);
+        const _grpBorder = _grpEndsAtDay ? 'border-bottom:2px solid #cbd5e1' : 'border-bottom:1px solid #cbd5e1';
         const _typeBadge = _isAllNoMeat || !_myType
           ? '<span style="color:#ccc">—</span>'
           : `<span style="display:inline-block;background:#dbeafe;color:#1e40af;border-radius:3px;padding:1px 6px;font-size:11px;font-weight:600;white-space:nowrap;margin:1px 2px">${_myType}</span>`;
-        cells+=`<td rowspan="${_grp.count}" style="${vm}${PC}${bg}text-align:center;border-right:1px solid #e2e8f0;border-bottom:1px solid #cbd5e1">${_typeBadge}</td>`;
+        cells+=`<td rowspan="${_grp.count}" style="${vm}${PC}${bg}text-align:center;border-right:1px solid #e2e8f0;${_grpBorder}">${_typeBadge}</td>`;
       }
       cells+=`<td style="${vm}${PC}${bg}text-align:center;font-weight:500;color:#1e293b;border-right:1px solid #e2e8f0;${rowBorder}">${row.product}</td>`;
       // 원육 사용량: 같은 type 그룹에서 첫 row만 출력 (해당 부위 사용량)
       if(_isTypeFirstRow){
+        const _grpEndsAtDay = (_grp.startIdx + _grp.count >= cnt);
+        const _grpBorder = _grpEndsAtDay ? 'border-bottom:2px solid #cbd5e1' : 'border-bottom:1px solid #cbd5e1';
         const _partRm = _rmByPart[_myType] || 0;
-        cells+=`<td rowspan="${_grp.count}" style="${vm}${PC}${bg}text-align:center;font-variant-numeric:tabular-nums;color:#374151;border-right:1px solid #e2e8f0;border-bottom:1px solid #cbd5e1">${fmtKg(r2(_partRm))}</td>`;
+        cells+=`<td rowspan="${_grp.count}" style="${vm}${PC}${bg}text-align:center;font-variant-numeric:tabular-nums;color:#374151;border-right:1px solid #e2e8f0;${_grpBorder}">${fmtKg(r2(_partRm))}</td>`;
       }
       const _opEa=opMap[date+'|'+row.product]||0;
       const _dispEa=_opEa>0?_opEa:(row.ea>0?Math.round(row.ea):0);
@@ -794,7 +799,18 @@ function _moRenderRows(selProds) {
       if(isFirst){
         cells+=`<td rowspan="${cnt}" style="${vm}${PC}${yldBg}text-align:center;font-weight:700;font-size:15px;${yldTxt}border-right:1px solid #e2e8f0;border-bottom:2px solid #cbd5e1">${dayYld!=null?dayYld.toFixed(1)+'%':'—'}</td>`;
         cells+=`<td rowspan="${cnt}" style="${vm}${PC}${bg}text-align:center;color:#64748b;border-right:1px solid #e2e8f0;border-bottom:2px solid #cbd5e1">${editCapa}</td>`;
-        cells+=`<td rowspan="${cnt}" style="${vm}${P}${bg}text-align:left;font-size:12px;color:#64748b;border-bottom:2px solid #cbd5e1;white-space:pre-wrap">${editNote}</td>`;
+        // 비고: 메모 + 비가식부율 (원육 대비 %, 자동 계산, 빨간색)
+        // 비가식부 합: 그날 preprocess + shredding 의 waste 합
+        const _ppDay = (ppMonth||[]).filter(r=>String(r.date||'').slice(0,10)===date);
+        const _shDay = (shMonth||[]).filter(r=>String(r.date||'').slice(0,10)===date);
+        const _wastePp = _ppDay.reduce((s,r)=>s+(parseFloat(r.waste)||0),0);
+        const _wasteSh = _shDay.reduce((s,r)=>s+(parseFloat(r.waste)||0),0);
+        const _wasteTotal = _wastePp + _wasteSh;
+        const _wasteRate = (dayRm>0 && _wasteTotal>0) ? (_wasteTotal/dayRm*100) : null;
+        const _wasteHtml = (_wasteRate!=null)
+          ? `<div style="font-size:11px;color:#dc2626;margin-top:3px">원육 대비 ${_wasteRate.toFixed(1)}%</div>`
+          : '';
+        cells+=`<td rowspan="${cnt}" style="${vm}${P}${bg}text-align:left;font-size:12px;color:#64748b;border-bottom:2px solid #cbd5e1;white-space:pre-wrap">${editNote}${_wasteHtml}</td>`;
       }
       html.push(`<tr data-mo-date="${date}">${cells}</tr>`);
     });
