@@ -22,12 +22,38 @@ let _moMetaCache = {};
 
 // ── 월간 메타(작업인원/Capa/메모) firestore 동기화 헬퍼 ─────────────────────
 
+// ── 직원 마스터에서 작업인원 제외 대상(QC, 관리직 등) fetch (캐시) ─────
+// role !== 'production' 인 사람은 작업인원 카운트에서 제외
+let _moNonProdNames = null;
+async function _moFetchNonProductionEmps(){
+  if(_moNonProdNames !== null) return _moNonProdNames;
+  try {
+    if(typeof db === 'undefined' || !db){ _moNonProdNames = new Set(); return _moNonProdNames; }
+    const doc = await db.collection('_config').doc('attendance_employees').get();
+    if(!doc.exists){ _moNonProdNames = new Set(); return _moNonProdNames; }
+    const data = doc.data() || {};
+    const emps = Array.isArray(data.employees) ? data.employees : [];
+    // role이 'production'이 아닌 사람만 (qc, manager 등 → 작업인원 제외)
+    // role이 비어있으면 'production'으로 간주 (기존 직원 호환)
+    _moNonProdNames = new Set(
+      emps.filter(e => e && e.role && e.role !== 'production').map(e => e.name)
+    );
+  } catch(e){
+    console.warn('[non-prod emps] fetch fail:', e);
+    _moNonProdNames = new Set();
+  }
+  return _moNonProdNames;
+}
+
 // ── 출퇴근 데이터 fetch (월간) ─────────────────────
 // attendance/{date} 문서 → records 맵 → tags에 'checkin' 포함된 사람 수 카운트
+// QC/관리직 등 (role !== 'production') 은 작업인원 카운트에서 제외
 async function _moFetchAttendance(from, to){
   const result = {};  // {date: count}
   try {
     if(typeof db === 'undefined' || !db) return result;
+    // 작업인원 제외 대상 (QC 등)
+    const nonProdSet = await _moFetchNonProductionEmps();
     // from~to 사이 모든 날짜 fetch (각 날짜가 docId)
     const dates = [];
     let cur = from;
@@ -46,7 +72,8 @@ async function _moFetchAttendance(from, to){
       const data = snap.data() || {};
       const records = data.records || {};
       let count = 0;
-      Object.values(records).forEach(rec => {
+      Object.entries(records).forEach(([name, rec]) => {
+        if(nonProdSet.has(name)) return;  // ★ QC 등 제외
         const tags = (rec && rec.tags) || [];
         if(Array.isArray(tags) && tags.indexOf('checkin') !== -1) count++;
       });
