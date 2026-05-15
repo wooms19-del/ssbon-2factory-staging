@@ -308,7 +308,7 @@ function showTraceDetail(key){
         <td style="text-align:center">${fmtDT(addDays(String(r.date||'').slice(0,10),-1), r.start)}</td>
         <td style="text-align:center">${d.pp&&d.pp.length ? fmtDT(d.pp[0].date, d.pp[0].start) : fmtDT(addDays(String(r.date||'').slice(0,10),-1), r.end)}</td>
         <td style="text-align:center">${r.boxes||0}</td>
-        <td style="text-align:center">${r.totalKg||0}</td>
+        <td style="text-align:center">${r2(parseFloat(r.totalKg)||0)}</td>
       </tr>`).join('')}${typeSummary}</tbody>
       <tfoot><tr>
         <td colspan="5" style="text-align:center;font-weight:600">합계</td>
@@ -331,8 +331,8 @@ function showTraceDetail(key){
         <td style="text-align:center">${r.start||'-'}</td>
         <td style="text-align:center">${r.end||'-'}</td>
         <td style="text-align:center">${r.workers||0}</td>
-        <td style="text-align:center" style="font-weight:600;color:var(--s)">${r.kg||0}</td>
-        <td style="text-align:center">${r.waste||0}</td>
+        <td style="text-align:center" style="font-weight:600;color:var(--s)">${r2(parseFloat(r.kg)||0)}</td>
+        <td style="text-align:center">${r2(parseFloat(r.waste)||0)}</td>
       </tr>`).join('')}
       ${(()=>{ const byT={}; pp.forEach(r=>{ const t=r.type||'기타'; if(!byT[t]) byT[t]=0; byT[t]+=parseFloat(r.kg)||0; }); return Object.entries(byT).map(([t,v])=>`<tr style="background:var(--g1)"><td colspan="7" style="text-align:center;font-weight:600;color:var(--s)">${t} 소계</td><td style="text-align:center;font-weight:600;color:var(--s)">${r2(v)}kg</td><td></td></tr>`).join(''); })()}
       </tbody><tfoot><tr><td colspan="7" style="text-align:center;font-weight:600">합계</td><td style="text-align:center;font-weight:600;color:var(--s)">${r2(pp.reduce((s,r)=>s+(parseFloat(r.kg)||0),0))}kg</td><td></td></tr></tfoot>
@@ -351,7 +351,7 @@ function showTraceDetail(key){
         <td style="text-align:center">${r.type||'-'}</td>
         <td style="text-align:center">${r.start||'-'}</td>
         <td style="text-align:center">${r.end||'-'}</td>
-        <td style="text-align:center" style="font-weight:600;color:var(--s)">${r.kg||0}</td>
+        <td style="text-align:center" style="font-weight:600;color:var(--s)">${r2(parseFloat(r.kg)||0)}</td>
         <td style="text-align:center">${r.wagonOut||'-'}</td>
       </tr>`).join('')}
       ${(()=>{ const byT={}; ck.forEach(r=>{ const t=r.type||'기타'; if(!byT[t]) byT[t]=0; byT[t]+=parseFloat(r.kg)||0; }); return Object.entries(byT).map(([t,v])=>`<tr style="background:var(--g1)"><td colspan="5" style="text-align:center;font-weight:600;color:#c27803">${t} 소계</td><td style="text-align:center;font-weight:600;color:#c27803">${r2(v)}kg</td><td></td></tr>`).join(''); })()}
@@ -370,8 +370,8 @@ function showTraceDetail(key){
         <td style="text-align:center">${r.start||'-'}</td>
         <td style="text-align:center">${r.end||'-'}</td>
         <td style="text-align:center">${r.workers||0}</td>
-        <td style="text-align:center" style="font-weight:600;color:var(--s)">${r.kg||0}</td>
-        <td style="text-align:center">${r.waste||0}</td>
+        <td style="text-align:center" style="font-weight:600;color:var(--s)">${r2(parseFloat(r.kg)||0)}</td>
+        <td style="text-align:center">${r2(parseFloat(r.waste)||0)}</td>
         <td style="text-align:center">${r.wagonOut||'-'}</td>
       </tr>`).join('')}
       </tbody><tfoot><tr><td colspan="5" style="text-align:center;font-weight:600">합계</td><td style="text-align:center;font-weight:600;color:#c27803">${r2(sh.reduce((s,r)=>s+(parseFloat(r.kg)||0),0))}kg</td><td></td><td></td></tr></tfoot>
