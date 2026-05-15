@@ -1427,7 +1427,7 @@ function _moRenderPrevCmp(el, cur, prev, prevYm) {
           </tr>
           <tr style="border-top:1px solid #f1f5f9;background:#f8fafc">
             <td style="padding:7px 3px;text-align:center;font-weight:700">평균 수율</td>
-            <td style="padding:7px 3px;text-align:center">${prev.yld>0?prev.yld.toFixed(1)+'%':'—'}</td>
+            <td style="padding:7px 3px;text-align:center;font-weight:700;color:${prev.yld>=52?'#1d4ed8':prev.yld>=50?'#c2410c':prev.yld>0?'#b91c1c':'#94a3b8'}">${prev.yld>0?prev.yld.toFixed(1)+'%':'—'}</td>
             <td style="padding:7px 3px;text-align:center;font-weight:700;color:${cur.yld>=52?'#1d4ed8':cur.yld>=50?'#c2410c':'#b91c1c'}">${cur.yld>0?cur.yld.toFixed(1)+'%':'—'}</td>
             <td style="padding:7px 3px;text-align:center">${delta(cur.yld,prev.yld,true)}</td>
           </tr>
@@ -1474,9 +1474,9 @@ function _moRenderPrevCmp(el, cur, prev, prevYm) {
       const rows = stages.map((s,idx) => {
         const isFinal = idx === stages.length-1;
         const yldDelta = (s.p>0 && s.c>0) ? delta(s.c, s.p, true) : '<span style="color:#94a3b8">—</span>';
-        return `<tr style="border-top:1px solid #f1f5f9;${isFinal?'background:#eff6ff':''}">
+        return `<tr class="cmp-row" style="border-top:1px solid #f1f5f9;${isFinal?'background:#eff6ff':''}">
           <td style="padding:8px 6px;color:#64748b;${isFinal?'font-weight:700;color:#1e293b':''}">${s.label}</td>
-          <td style="padding:8px 6px;text-align:center;background:#f8fafc">${s.p>0?s.p.toFixed(1)+'%':'—'}</td>
+          <td style="padding:8px 6px;text-align:center;${isFinal?'font-weight:600;color:#1d4ed8':'background:#f8fafc'}">${s.p>0?s.p.toFixed(1)+'%':'—'}</td>
           <td style="padding:8px 6px;text-align:center;font-weight:600${isFinal?';color:#1d4ed8':''}">${s.c>0?s.c.toFixed(1)+'%':'—'}</td>
           <td style="padding:8px 6px;text-align:center">${yldDelta}</td>
         </tr>`;
@@ -1554,6 +1554,21 @@ function _moRenderPrevCmp(el, cur, prev, prevYm) {
   }
 
   el.innerHTML = `<div class="ct">전월 비교</div>${tabsHtml}${bodyHtml}`;
+
+  // ★ 표 행 호버 효과 (인라인 background 보존)
+  el.querySelectorAll('tbody tr').forEach(tr => {
+    tr.addEventListener('mouseenter', function(){
+      this.querySelectorAll('td').forEach(td => {
+        if(!td.dataset._origBg) td.dataset._origBg = td.style.background || 'none';
+        td.style.background = '#fef9c3';
+      });
+    });
+    tr.addEventListener('mouseleave', function(){
+      this.querySelectorAll('td').forEach(td => {
+        td.style.background = (td.dataset._origBg === 'none') ? '' : td.dataset._origBg;
+      });
+    });
+  });
 }
 
 // 탭 전환 핸들러
