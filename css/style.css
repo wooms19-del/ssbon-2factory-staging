@@ -34,11 +34,16 @@ input[placeholder="HH:MM"]{letter-spacing:1px}
 .pg{display:none}.pg.on{display:block}
 
 /* 카드 */
-.card{background:#fff;border-radius:var(--rl);border:var(--br);padding:1.25rem;margin-bottom:1rem}
+.card{background:#fff;border-radius:var(--rl);border:var(--br);padding:1.25rem;margin-bottom:1rem;transition:background .12s}
+#p-monthly .card:hover{background:#fef9c3 !important}
 .ct{font-size:15px;font-weight:600;color:var(--g8);margin-bottom:1rem;display:flex;align-items:center;gap:8px}
 .bdg{font-size:11px;font-weight:600;padding:2px 8px;border-radius:20px;background:var(--pl);color:var(--p)}
 .bdg-s{background:var(--sl);color:var(--s)}
 .bdg-d{background:var(--dl);color:var(--d)}
+
+/* 월별현황 — 제품별 표 행 호버 */
+#p-monthly .tbl tbody tr{transition:background .12s}
+#p-monthly .tbl tbody tr:hover td{background:#fef9c3 !important}
 
 /* 폼 */
 .fg{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:1rem}
