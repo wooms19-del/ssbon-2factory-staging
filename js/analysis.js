@@ -799,17 +799,20 @@ function _moRenderRows(selProds) {
       if(isFirst){
         cells+=`<td rowspan="${cnt}" style="${vm}${PC}${yldBg}text-align:center;font-weight:700;font-size:15px;${yldTxt}border-right:1px solid #e2e8f0;border-bottom:2px solid #cbd5e1">${dayYld!=null?dayYld.toFixed(1)+'%':'—'}</td>`;
         cells+=`<td rowspan="${cnt}" style="${vm}${PC}${bg}text-align:center;color:#64748b;border-right:1px solid #e2e8f0;border-bottom:2px solid #cbd5e1">${editCapa}</td>`;
-        // 비고: 메모 + 비가식부율 (원육 대비 %, 자동 계산, 빨간색)
-        // 비가식부 합: 그날 preprocess + shredding 의 waste 합
-        const _ppDay = (ppMonth||[]).filter(r=>String(r.date||'').slice(0,10)===date);
-        const _shDay = (shMonth||[]).filter(r=>String(r.date||'').slice(0,10)===date);
-        const _wastePp = _ppDay.reduce((s,r)=>s+(parseFloat(r.waste)||0),0);
-        const _wasteSh = _shDay.reduce((s,r)=>s+(parseFloat(r.waste)||0),0);
-        const _wasteTotal = _wastePp + _wasteSh;
-        const _wasteRate = (dayRm>0 && _wasteTotal>0) ? (_wasteTotal/dayRm*100) : null;
-        const _wasteHtml = (_wasteRate!=null)
-          ? `<div style="font-size:11px;color:#dc2626;margin-top:3px">원육 대비 ${_wasteRate.toFixed(1)}%</div>`
-          : '';
+        // 비고: 메모에 '비가식부' 단어가 있을 때만 비율 자동 추가 (원육 대비 %, 빨간색)
+        const _hasWasteNote = /비가식부|손실|폐기|불량/.test(note||'');
+        let _wasteHtml = '';
+        if(_hasWasteNote){
+          const _ppDay = (ppMonth||[]).filter(r=>String(r.date||'').slice(0,10)===date);
+          const _shDay = (shMonth||[]).filter(r=>String(r.date||'').slice(0,10)===date);
+          const _wastePp = _ppDay.reduce((s,r)=>s+(parseFloat(r.waste)||0),0);
+          const _wasteSh = _shDay.reduce((s,r)=>s+(parseFloat(r.waste)||0),0);
+          const _wasteTotal = _wastePp + _wasteSh;
+          const _wasteRate = (dayRm>0 && _wasteTotal>0) ? (_wasteTotal/dayRm*100) : null;
+          if(_wasteRate!=null){
+            _wasteHtml = `<div style="font-size:11px;color:#dc2626;margin-top:3px">원육 대비 ${_wasteRate.toFixed(1)}%</div>`;
+          }
+        }
         cells+=`<td rowspan="${cnt}" style="${vm}${P}${bg}text-align:left;font-size:12px;color:#64748b;border-bottom:2px solid #cbd5e1;white-space:pre-wrap">${editNote}${_wasteHtml}</td>`;
       }
       html.push(`<tr data-mo-date="${date}">${cells}</tr>`);
