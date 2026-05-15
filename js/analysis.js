@@ -2076,12 +2076,13 @@ function renderDailyFromLocal_(d){
     });
   });
 
-  // 원육 계산: 전처리 wagons → 방혈 매칭
-  // thawing.date = 입고일이므로 date 만 보면 당일 입고됐지만 아직 안 풀린 박스도 잡힘.
-  // 정확한 매칭: end 가 작업일 d 와 매칭되는 record (= 실제 그날 풀린 박스)
+  // 원육 계산: 그날(d) 작업된 방혈 전체를 투입으로 본다.
+  // 정의: end 가 d 에 매칭되는 방혈 record (= 그날 실제로 풀려서 작업장에 들어간 박스)
+  // 진행중(end=''), 다른 날 종료된 박스는 제외.
+  // ※ 이전엔 전처리 record의 wagons 필드와 정확 매칭했으나, wagons 입력 누락 시
+  //   투입이 부풀려져 산출됨(수율 100% 초과 등). 사용자 룰: 그날 end된 방혈은 모두 그날 전처리 투입.
   const _normW=w=>String(w||'').replace(/[^0-9]/g,'')||String(w||'').trim();
   const _ppWagons=[...new Set(pp.flatMap(r=>(r.wagons||'').split(',').map(w=>_normW(w)).filter(Boolean)))];
-  // end 가 작업일 d 와 매칭되는지 (datetime 'YYYY-MM-DD HH:MM' 또는 옛 'HH:MM' + date=d)
   const _endsOnDay=(r,day)=>{
     const e=String(r.end||'');
     if(!e) return false; // 진행중 박스 제외
@@ -2090,29 +2091,25 @@ function renderDailyFromLocal_(d){
     return false;
   };
   let _rawTh=[];
-  if(_ppWagons.length){
-    // 후보: 전날 입고(date=d-1) + 당일 입고(date=d) 합집합
-    // 그 중 end 가 d 와 매칭 + cart 가 ppWagons 와 매칭 + 테스트 cart 제외
-    const candidates = L.thawing.filter(r=>{
-      const rDate = String(r.date||'').slice(0,10);
-      return (rDate===d || rDate===prevD) && !_testPpW.has((r.cart||'').trim());
-    });
-    _rawTh = candidates.filter(r => _endsOnDay(r,d) && _ppWagons.includes(_normW(r.cart)));
-    // 폴백 1: end 매칭 0 → cart 매칭만 (옛 데이터 호환, end 비어있는 경우)
-    if(!_rawTh.length){
-      _rawTh = candidates.filter(r => _ppWagons.includes(_normW(r.cart)));
+  // 후보: 전날 입고(date=d-1) + 당일 입고(date=d). 테스트 cart 제외.
+  const _candidates = L.thawing.filter(r=>{
+    const rDate = String(r.date||'').slice(0,10);
+    return (rDate===d || rDate===prevD) && !_testPpW.has((r.cart||'').trim());
+  });
+  // 1차: 그날 end된 방혈 전체 (wagons 매칭 안 함)
+  _rawTh = _candidates.filter(r => _endsOnDay(r,d));
+  // 폴백 1: end 매칭 0 → 옛 데이터(end 빈 값) 호환
+  //   - 전처리 wagons 있으면 cart 매칭으로 한정
+  //   - 없으면 당일 date 매칭
+  if(!_rawTh.length){
+    if(_ppWagons.length){
+      _rawTh = _candidates.filter(r => _ppWagons.includes(_normW(r.cart)));
+    } else {
+      _rawTh = L.thawing.filter(r=>String(r.date||'').slice(0,10)===d && !_testPpW.has((r.cart||'').trim()));
+      if(!_rawTh.length) _rawTh = L.thawing.filter(r=>String(r.date||'').slice(0,10)===prevD && !_testPpW.has((r.cart||'').trim()));
     }
-    // 폴백 2: 그래도 0 → 당일 전체 → 전날 전체
-    if(!_rawTh.length){
-      _rawTh=L.thawing.filter(r=>String(r.date||'').slice(0,10)===d&&!_testPpW.has((r.cart||'').trim()));
-      if(!_rawTh.length) _rawTh=L.thawing.filter(r=>String(r.date||'').slice(0,10)===prevD&&!_testPpW.has((r.cart||'').trim()));
-    }
-  } else {
-    _rawTh=L.thawing.filter(r=>String(r.date||'').slice(0,10)===d&&!_testPpW.has((r.cart||'').trim()));
-    if(!_rawTh.length) _rawTh=L.thawing.filter(r=>String(r.date||'').slice(0,10)===prevD&&!_testPpW.has((r.cart||'').trim()));
   }
-  // 재입력이 다음날로 저장된 경우 보정 (날짜 미변경 입력 오류 대비)
-  // 현재 찾은 방혈 totalKg보다 다음날 같은 wagon이 2배 이상이면 다음날 기록 우선 사용
+  // 재입력이 다음날로 저장된 경우 보정 (전처리 wagons 있을 때만)
   if(_ppWagons.length){
     const _nextD=addDays(d,1);
     const _nextRaw=L.thawing.filter(r=>String(r.date||'').slice(0,10)===_nextD&&!_testPpW.has((r.cart||'').trim())&&_ppWagons.includes(_normW(r.cart)));
