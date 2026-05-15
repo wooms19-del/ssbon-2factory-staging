@@ -3,7 +3,8 @@
 // 출근버튼 추가 + 복합상태 지원
 // ============================================================
 
-const ATT_EMP_KEY = 'att_employees_v1';
+const ATT_EMP_KEY = 'att_employees_v1';  // 로컬 캐시 (Firestore 폴백용)
+const ATT_EMP_DOC = '_config/attendance_employees';  // Firestore 공유 마스터
 const DEFAULT_EMPS = ['김구식','김수영','임혜경','한채현','김정희','안남정','심현주','홍안순',
   '박수경','하대성','홍유순','정현석','김성희','김영선','배현자','김미애','이용범','게이코',
   '유혜선','레티장','김진화','드엉반담','르탄프엉','응우옌반동','응우옌민호앙',
@@ -18,14 +19,52 @@ const ATT_NEEDS_OUT = {overtime:true};
 
 let _attDate='', _attRecs={}, _attEmps=[], _attSubTab='input', _attSelStatus='';
 
-function initAttendance(){
+async function initAttendance(){
   _attDate=tod();
-  var raw=localStorage.getItem(ATT_EMP_KEY);
-  _attEmps=raw?JSON.parse(raw):DEFAULT_EMPS.map(function(n){return {name:n,annualDays:15,usedDays:0};});
-  if(!raw)_saveAttEmps();
+  // 1) Firestore 마스터 우선 — 디바이스 간 공유
+  var loaded = false;
+  try{
+    var doc = await firebase.firestore().doc(ATT_EMP_DOC).get();
+    if(doc.exists){
+      var data = doc.data();
+      if(data && Array.isArray(data.employees) && data.employees.length){
+        _attEmps = data.employees;
+        // 로컬 캐시 동기화
+        try{ localStorage.setItem(ATT_EMP_KEY, JSON.stringify(_attEmps)); }catch(e){}
+        loaded = true;
+      }
+    }
+  }catch(e){ console.error('직원 마스터 로드 오류', e); }
+
+  // 2) Firestore 없으면 localStorage 폴백
+  if(!loaded){
+    var raw=localStorage.getItem(ATT_EMP_KEY);
+    if(raw){
+      try{ _attEmps = JSON.parse(raw); loaded = true; }catch(e){}
+    }
+  }
+
+  // 3) 둘 다 없으면 DEFAULT_EMPS로 초기화 + Firestore에 저장
+  if(!loaded || !_attEmps.length){
+    _attEmps = DEFAULT_EMPS.map(function(n){return {name:n,annualDays:15,usedDays:0};});
+    await _saveAttEmps();
+  }
+
   _loadAttDate(_attDate);
 }
-function _saveAttEmps(){localStorage.setItem(ATT_EMP_KEY,JSON.stringify(_attEmps));}
+
+// Firestore + localStorage 동시 저장 (디바이스 간 공유 보장)
+async function _saveAttEmps(){
+  // 로컬 캐시
+  try{ localStorage.setItem(ATT_EMP_KEY, JSON.stringify(_attEmps)); }catch(e){}
+  // Firestore 마스터
+  try{
+    await firebase.firestore().doc(ATT_EMP_DOC).set({
+      employees: _attEmps,
+      updatedAt: new Date().toISOString()
+    });
+  }catch(e){ console.error('직원 마스터 저장 오류', e); }
+}
 function _attDateKey(d){return 'att_day_'+d;}
 
 async function _loadAttDate(date){
