@@ -1930,28 +1930,25 @@ function getThKgByPP_(ppRecs, allThawing, packDate) {
     if(e.length<=5 && String(r.date||'').slice(0,10)===packDate) return true;
     return false;
   };
-  // 후보: (date=prevD) + (date=packDate) 합집합. 그 중 end 가 작업일 매칭 + cart in wagons.
+  // 후보: (date=prevD) + (date=packDate) 합집합
   const candidates=allThawing.filter(r=>{
     const rd=String(r.date||'').slice(0,10);
     return rd===prevD || rd===packDate;
   });
-  let matched=[];
-  if(wagons.length){
-    matched=candidates.filter(r=>_endsOnDay(r) && wagons.includes(_normW(r.cart)));
-    // 폴백 1: end 매칭 0 → cart 매칭만 (옛 record 호환)
-    if(!matched.length){
-      matched=candidates.filter(r=>wagons.includes(_normW(r.cart)));
-    }
-  } else {
-    matched=candidates.filter(r=>_endsOnDay(r));
-    if(!matched.length) matched=candidates;
-  }
-  // 폴백 2: 그래도 0 → 옛 동작 (date 기반)
+  // 1차: 그날 end된 방혈 전체 (wagons 매칭 안 함)
+  // 룰: 그날 작업 끝난(end=그날) 방혈은 그날 전처리 투입.
+  // 전처리 wagons 입력 누락이 있어도 정확히 잡힘.
+  let matched=candidates.filter(r=>_endsOnDay(r));
+  // 폴백: end 매칭 0 → 옛 데이터 호환
   if(!matched.length){
-    matched=allThawing.filter(r=>String(r.date||'').slice(0,10)===packDate);
-    if(!matched.length) matched=allThawing.filter(r=>String(r.date||'').slice(0,10)===prevD);
+    if(wagons.length){
+      matched=candidates.filter(r=>wagons.includes(_normW(r.cart)));
+    } else {
+      matched=allThawing.filter(r=>String(r.date||'').slice(0,10)===packDate);
+      if(!matched.length) matched=allThawing.filter(r=>String(r.date||'').slice(0,10)===prevD);
+    }
   }
-  // 재입력이 다음날로 저장된 경우 보정 (날짜 오입력 대비)
+  // 재입력이 다음날로 저장된 경우 보정
   if(wagons.length){
     const _nextD=addDays(packDate,1);
     const _nextMatched=allThawing.filter(r=>String(r.date||'').slice(0,10)===_nextD&&wagons.includes(_normW(r.cart)));
@@ -1980,19 +1977,15 @@ function getThByPartByPP_(ppRecs, allThawing, packDate) {
     const rd=String(r.date||'').slice(0,10);
     return rd===prevD || rd===packDate;
   });
-  let matched=[];
-  if(wagons.length){
-    matched=candidates.filter(r=>_endsOnDay(r) && wagons.includes(_normW(r.cart)));
-    if(!matched.length){
-      matched=candidates.filter(r=>wagons.includes(_normW(r.cart)));
-    }
-  } else {
-    matched=candidates.filter(r=>_endsOnDay(r));
-    if(!matched.length) matched=candidates;
-  }
+  // 1차: 그날 end된 방혈 전체
+  let matched=candidates.filter(r=>_endsOnDay(r));
   if(!matched.length){
-    matched=allThawing.filter(r=>String(r.date||'').slice(0,10)===packDate);
-    if(!matched.length) matched=allThawing.filter(r=>String(r.date||'').slice(0,10)===prevD);
+    if(wagons.length){
+      matched=candidates.filter(r=>wagons.includes(_normW(r.cart)));
+    } else {
+      matched=allThawing.filter(r=>String(r.date||'').slice(0,10)===packDate);
+      if(!matched.length) matched=allThawing.filter(r=>String(r.date||'').slice(0,10)===prevD);
+    }
   }
   if(wagons.length){
     const _nextD=addDays(packDate,1);
