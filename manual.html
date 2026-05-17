@@ -117,6 +117,8 @@
     <a class="toc-item" href="#s6"><span class="toc-num">6</span> 파쇄 입력</a>
     <a class="toc-item" href="#s7"><span class="toc-num">7</span> 포장 입력</a>
     <a class="toc-item" href="#s8"><span class="toc-num">8</span> 분석 탭 보는 법</a>
+    <a class="toc-item" href="#s10"><span class="toc-num">10</span> 입고관리 (1공장/2공장) <span style="background:#fef3c7;color:#92400e;border-radius:3px;padding:1px 6px;font-size:10px;font-weight:600;margin-left:4px">NEW</span></a>
+    <a class="toc-item" href="#s11"><span class="toc-num">11</span> AI 분석 + 챗봇 <span style="background:#fef3c7;color:#92400e;border-radius:3px;padding:1px 6px;font-size:10px;font-weight:600;margin-left:4px">NEW</span></a>
     <a class="toc-item" href="#s9"><span class="toc-num">9</span> 하루 전체 흐름 정리</a>
   </div>
 </div>
@@ -241,6 +243,18 @@
         <p>입력 완료 후 하단의 <b>[저장]</b> 버튼을 반드시 누르세요.</p>
         <button class="sim-save green">💾 저장</button>
         <div class="warn">⚠️ 저장 버튼을 누르지 않으면 데이터가 사라집니다!</div>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">4</div>
+      <div class="step-content">
+        <h3>직원 분류 (role) <span style="background:#fbbf24;color:#000;border-radius:3px;padding:2px 8px;font-size:11px;font-weight:700;margin-left:6px">2026-05-14</span></h3>
+        <p>각 직원에 <b>role</b>(역할) 정보가 있습니다:</p>
+        <p>• <b>production</b> (생산직, 기본값): 작업인원 카운트에 <b>포함</b></p>
+        <p>• <b>qc</b> (품질관리): 출퇴근 화면엔 정상 표시되지만 작업인원 카운트에서 <b>제외</b></p>
+        <p>• <b>manager</b> (관리직): 동일하게 제외</p>
+        <p>월간 생산 일보의 "작업인원" 수치는 production만 카운트합니다. 직원 추가 시 기본은 production이며, QC/관리직은 role 변경 필요.</p>
+        <div class="tip">💡 직원 마스터는 <b>모든 디바이스 공유</b>(Firestore). PC에서 추가한 직원이 태블릿/모바일에서도 자동으로 보입니다.</div>
       </div>
     </div>
   </div>
@@ -553,6 +567,112 @@
           <div style="display:flex;align-items:center;gap:8px"><span style="color:var(--red);font-weight:700">▼ 빨강</span> = 전월 대비 나빠짐 (감소가 나쁜 항목)</div>
           <div style="display:flex;align-items:center;gap:8px"><span style="color:var(--red);font-weight:700">빨간 숫자</span> = 기준치 초과 (불량률, 비가식부 등)</div>
         </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 10. 입고관리 (신규) -->
+<div class="section" id="s10">
+  <div class="section-hd" style="background:#0891b2">
+    <div class="num">10</div>
+    <div><h2>입고관리 (1공장 / 2공장 분리) <span style="background:#fbbf24;color:#000;border-radius:3px;padding:2px 8px;font-size:11px;font-weight:700;margin-left:6px">2026-05-14 개편</span></h2><p>외부 입고 + 공장간 이동 + 월별 이력 조회</p></div>
+  </div>
+  <div class="section-body">
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-content">
+        <h3>화면 구조</h3>
+        <p>입고관리 페이지는 2개 서브탭으로 나뉩니다: <b>🏭 2공장</b> / <b>📦 1공장</b>. 각 탭마다 동일한 구성 (재고카드 + 외부 입고폼 + 입고 이력 + 출고 이력 + 공장간 이동폼).</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-content">
+        <h3>재고 카드 보는 법</h3>
+        <p>부위별(설도/우둔/홍두깨)로 카드 표시. <b>잔여 박스 = 입고 + 들어온 이동 − 나간 이동 − 사용량</b>. 박스당 20kg 고정으로 "약 N kg" 자동 환산. 해동중이면 "해동중 N박스" 표시 + 화살표로 오늘→내일 비교.</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">3</div>
+      <div class="step-content">
+        <h3>외부 입고 추가</h3>
+        <p>입고일 / 부위 / 박스 수 / 메모(원산지·로트번호 등) 입력 후 저장.</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">4</div>
+      <div class="step-content">
+        <h3>공장간 이동</h3>
+        <p>"1공장으로 이동" / "2공장으로 이동" 폼에서 방향·부위·박스 수·사유 입력. 저장 시 자동으로 양쪽 이력(나간 쪽 출고이력 + 받은 쪽 입고이력)에 동시 등록됩니다.</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">5</div>
+      <div class="step-content">
+        <h3>월별 필터 (이력 조회)</h3>
+        <p>이력 카드 위에 월 선택기:</p>
+        <p style="background:#f8fafc;padding:10px;border-radius:6px;font-family:monospace;text-align:center;font-size:13px">◀  &nbsp;2026년 5월 [이번달]&nbsp;  📅  ▶</p>
+        <p>• <b>◀▶</b>: 한 달씩 이동 (이번달, 4월, 3월...)</p>
+        <p>• <b>📅</b>: 달력 팝업으로 직접 년/월 선택 — 데이터 누적되면 화살표만 누르기 힘드니까 점프용</p>
+        <p>• <b>재고 카드는 항상 최신</b> — 월 선택과 무관</p>
+        <p>• <b>1공장/2공장 탭 각자 독립</b> — 한 쪽 바꿔도 다른 쪽 영향 없음</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 11. AI 분석 + 챗봇 (신규) -->
+<div class="section" id="s11">
+  <div class="section-hd" style="background:#7c3aed">
+    <div class="num">11</div>
+    <div><h2>AI 분석 + 챗봇 <span style="background:#fbbf24;color:#000;border-radius:3px;padding:2px 8px;font-size:11px;font-weight:700;margin-left:6px">2026-05-13 신설</span></h2><p>기간 분석 + 자연어 챗봇 (Gemini Flash)</p></div>
+  </div>
+  <div class="section-body">
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-content">
+        <h3>두 가지 탭</h3>
+        <p>AI 분석 페이지에 2개 탭: <b>📊 기간 분석</b> (기간을 지정하면 AI가 데이터를 분석하여 종합 리포트 작성) / <b>💬 챗봇</b> (자유로운 자연어 질의응답).</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-content">
+        <h3>챗봇 사용법</h3>
+        <p>질문 예시:</p>
+        <p style="background:#f8fafc;padding:10px;border-radius:6px;font-size:13px;line-height:1.7">
+          • "어제 원육수율이 평소보다 낮은 이유 분석해줘"<br>
+          • "5월 홍두깨 비가식부율 추이 알려줘"<br>
+          • "최근 일주일 동안 가장 생산성 좋은 날은?"<br>
+          • "FC 장조림 3KG 만들 때 보통 며칠 걸려?"
+        </p>
+        <p>최근 60일 데이터를 자동 fetch해서 답변. 대화 이력은 모든 디바이스에 공유 저장.</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">3</div>
+      <div class="step-content">
+        <h3>도메인 지식</h3>
+        <p>AI는 다음 도메인 지식 문서를 자동으로 참조합니다 (GitHub 자동 fetch):</p>
+        <p>• <b>공정 원리</b>: 각 공정의 정상 범위, 비정상 신호, 상류 추적 흐름</p>
+        <p>• <b>진단 룰북</b>: 증상→원인 패턴 7가지</p>
+        <p>• <b>공장 특수 정보</b>: 부위/제품/레토르트 운영 룰</p>
+        <p>답변이 부정확하면 관리자가 도메인 지식 MD를 보강하여 개선할 수 있습니다.</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <div class="step-num">4</div>
+      <div class="step-content">
+        <h3>한도 / 비용</h3>
+        <p>일 1500회 호출. 평소 운영하면 무료 범위. 5/13 처음 운영 시 일 5만회 초과로 ₩950 청구된 적 있으나, 50배 성능 최적화 적용 후 정상 운영.</p>
       </div>
     </div>
   </div>
