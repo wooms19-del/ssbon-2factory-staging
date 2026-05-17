@@ -10,7 +10,9 @@ let _aiKnowledgeCache = null;  // 도메인 지식 캐시 (탭 유지 동안)
 const _AI_KNOWLEDGE_FILES = [
   'https://raw.githubusercontent.com/wooms19-del/ssbon-2factory/main/docs/ai_knowledge/01_%EA%B3%B5%EC%A0%95%EC%9B%90%EB%A6%AC.md',
   'https://raw.githubusercontent.com/wooms19-del/ssbon-2factory/main/docs/ai_knowledge/02_%EC%A7%84%EB%8B%A8%EB%A3%B0%EB%B6%81.md',
-  'https://raw.githubusercontent.com/wooms19-del/ssbon-2factory/main/docs/ai_knowledge/03_%EA%B3%B5%EC%9E%A5%ED%8A%B9%EC%88%98%EC%A0%95%EB%B3%B4.md'
+  'https://raw.githubusercontent.com/wooms19-del/ssbon-2factory/main/docs/ai_knowledge/03_%EA%B3%B5%EC%9E%A5%ED%8A%B9%EC%88%98%EC%A0%95%EB%B3%B4.md',
+  'https://raw.githubusercontent.com/wooms19-del/ssbon-2factory/main/docs/ai_knowledge/04_%EC%82%AC%EA%B3%A0%EC%BC%80%EC%9D%B4%EC%8A%A4.md',
+  'https://raw.githubusercontent.com/wooms19-del/ssbon-2factory/main/docs/ai_knowledge/05_%EC%BD%94%EB%93%9C%EB%A7%B5.md'
 ];
 
 async function _aiGetKnowledgeBase() {
@@ -823,14 +825,21 @@ async function _sendChatMsg() {
     ).join('\n\n');
 
     const today = (typeof tod === 'function') ? tod() : new Date().toISOString().slice(0,10);
-    const systemPrompt = `당신은 순수본 2공장의 식품생산관리 AI 어시스턴트입니다. 오늘 날짜는 ${today}입니다.
+    const systemPrompt = `당신은 순수본 2공장의 식품생산관리 + 시스템 운영 AI 어시스턴트입니다. 오늘 날짜는 ${today}입니다.
 아래 도메인 지식과 실제 회사 공정 데이터를 토대로 사용자 질문에 정확하고 구체적으로 답변하세요.
 
-[지침]
+[답변 가능 영역]
+1. 운영 분석: 수율 / 생산성 / 비가식부 / 불량률 등 — 실제 데이터 인용하여 진단
+2. 사고 진단: "수율이 이상해", "다른 PC에서 안 보여" 같은 증상 → 사고 케이스집(04) 참조하여 비슷한 사례·해결법 제시
+3. 코딩 질문: "thawing.date 어디서 강제 정정?", "직원 마스터 어떻게 저장?" → 코드 맵(05) 참조하여 정확한 파일/함수 위치 안내
+4. 룰 / 데이터 흐름 질문: 공정 원리 / 진단 룰북 / 공장 특수 정보 참조
+
+[일반 지침]
 - 도메인 지식과 실제 데이터를 토대로 정확하게 답변
 - 데이터를 직접 인용하여 수치 근거 제시
-- 모르는 것은 "데이터가 없어 답변 불가" 명시 (단, 데이터가 있는데 못 찾았으면 안됨)
+- 모르는 것은 "데이터가 없어 답변 불가" 또는 "코드 직접 확인 필요" 명시 (단, 데이터/코드 맵이 있는데 못 찾았으면 안됨)
 - "모니터링 하세요" 같은 추상적 답변 금지
+- 추측 답변 금지 — 파일명/라인 번호 정확하게
 - 수치 + 정상 범위 비교
 - 상류 공정 영향 가능성 분석
 - 3가지 구체적 액션 제안 (해당 시)
@@ -838,6 +847,20 @@ async function _sendChatMsg() {
 - 마크다운 X, 일반 텍스트
 - "이번달", "저번달" = 오늘 기준 ${today.slice(0,7)}월, 그 전월
 - "최근 N일" 같은 표현은 오늘에서 역산해서 정확한 날짜로 환산해 답변
+
+[사고 진단 흐름 — 운영 이상 증상 시]
+1. 증상 정확히 묘사 (사용자 표현 그대로)
+2. DB 데이터로 실제 값 확인
+3. 물리적으로 가능한지 검토 (수율 100% 초과 등은 즉시 의심)
+4. 분자/분모 추적
+5. 사고 케이스집(04)에서 유사 사례 찾기
+6. 근본 원인 + 즉시 해결 + 향후 예방 동시 제시
+
+[코딩 질문 응답 흐름]
+1. 코드 맵(05)에서 정확한 파일/함수 위치 안내
+2. 관련 룰 (예: thawing.date 룰, wagons 매칭 룰) 함께 설명
+3. 룰 변경 이력은 사고 케이스집(04) 참조
+4. 모르면 "코드 직접 확인 필요" 명시 (라인 번호 추측 금지)
 
 ${knowledgeBase ? '[도메인 지식]\n' + knowledgeBase + '\n\n' : ''}
 [실제 회사 공정 데이터 — 최근 60일]
