@@ -768,10 +768,22 @@ function _renderChatLog() {
     const align = isUser ? 'flex-end' : 'flex-start';
     const icon = isUser ? '👤' : '🤖';
     const escText = (m.text||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
+
+    // 첨부 표시 (사용자 메시지만)
+    let attachHtml = '';
+    if(isUser && Array.isArray(m.attachments) && m.attachments.length){
+      const items = m.attachments.map(a => {
+        const icon = a.kind==='image' ? '🖼️' : a.kind==='spreadsheet' ? '📊' : '📄';
+        return `<span style="display:inline-block;background:rgba(255,255,255,0.2);border-radius:4px;padding:2px 6px;font-size:11px;margin:2px 2px 0 0">${icon} ${a.name}</span>`;
+      }).join('');
+      attachHtml = `<div style="margin-bottom:4px">${items}</div>`;
+    }
+
     return `
       <div style="display:flex;justify-content:${align};margin-bottom:10px">
         <div style="max-width:80%;padding:10px 14px;background:${bgColor};color:${textColor};border-radius:10px;border:${isUser?'none':'1px solid #e5e7eb'};box-shadow:0 1px 2px rgba(0,0,0,0.03)">
           <div style="font-size:11px;opacity:0.7;margin-bottom:4px">${icon} ${isUser?'사용자':'AI'}</div>
+          ${attachHtml}
           <div>${escText}</div>
         </div>
       </div>
@@ -780,20 +792,189 @@ function _renderChatLog() {
   logEl.scrollTop = logEl.scrollHeight;
 }
 
+// ============================================================
+// 챗봇 파일 첨부 기능 (이미지/엑셀/CSV/PDF/텍스트)
+// ============================================================
+let _aiChatAttachments = [];  // [{name, type, content/dataURL, size, kind: 'image'|'text'|'spreadsheet'}]
+
+async function _aiChatHandleFiles(event){
+  const files = Array.from(event.target.files || []);
+  if(!files.length) return;
+
+  for(const file of files){
+    // 5MB 제한 (Gemini Flash 입력 제한 + 사용자 경험)
+    if(file.size > 5 * 1024 * 1024){
+      alert(`파일 너무 큼: ${file.name} (${(file.size/1024/1024).toFixed(1)}MB > 5MB)`);
+      continue;
+    }
+    try {
+      const att = await _aiProcessFile(file);
+      if(att) _aiChatAttachments.push(att);
+    } catch(e){
+      console.error('파일 처리 오류', e);
+      alert(`파일 처리 실패: ${file.name} — ${e.message}`);
+    }
+  }
+  _aiRenderAttachPreview();
+  // input 리셋 (같은 파일 다시 첨부 가능하도록)
+  event.target.value = '';
+}
+window._aiChatHandleFiles = _aiChatHandleFiles;
+
+async function _aiProcessFile(file){
+  const name = file.name;
+  const type = (file.type || '').toLowerCase();
+  const ext = name.split('.').pop().toLowerCase();
+
+  // 1) 이미지 → base64 (Gemini multimodal)
+  if(type.startsWith('image/')){
+    const dataURL = await _aiReadAsDataURL(file);
+    const base64 = dataURL.split(',')[1];
+    return {
+      name, kind:'image', mimeType: type, size: file.size,
+      base64: base64, previewURL: dataURL
+    };
+  }
+
+  // 2) 엑셀 / CSV → 텍스트 (시트별 표)
+  if(['xlsx','xls','csv','tsv'].includes(ext)){
+    const text = await _aiReadSpreadsheet(file);
+    return {
+      name, kind:'spreadsheet', size: file.size, text: text
+    };
+  }
+
+  // 3) 텍스트 파일 (txt, md, json, log 등)
+  if(type.startsWith('text/') || ['txt','md','json','log','csv'].includes(ext)){
+    const text = await _aiReadAsText(file);
+    return {
+      name, kind:'text', size: file.size, text: text.slice(0, 100000)
+    };
+  }
+
+  // 4) PDF → 텍스트 추출 시도 (간단히 base64로 보내고 AI에게 OCR 시도하게)
+  if(ext === 'pdf' || type === 'application/pdf'){
+    const dataURL = await _aiReadAsDataURL(file);
+    const base64 = dataURL.split(',')[1];
+    return {
+      name, kind:'image', mimeType: 'application/pdf', size: file.size,
+      base64: base64, previewURL: null
+    };
+  }
+
+  // 기타 — 텍스트로 시도
+  try {
+    const text = await _aiReadAsText(file);
+    return { name, kind:'text', size: file.size, text: text.slice(0, 100000) };
+  } catch(e){
+    throw new Error('지원하지 않는 파일 형식: ' + ext);
+  }
+}
+
+function _aiReadAsDataURL(file){
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result);
+    r.onerror = () => reject(new Error('파일 읽기 실패'));
+    r.readAsDataURL(file);
+  });
+}
+
+function _aiReadAsText(file){
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result);
+    r.onerror = () => reject(new Error('파일 읽기 실패'));
+    r.readAsText(file, 'UTF-8');
+  });
+}
+
+async function _aiReadSpreadsheet(file){
+  const ext = file.name.split('.').pop().toLowerCase();
+  if(ext === 'csv' || ext === 'tsv'){
+    return await _aiReadAsText(file);
+  }
+  // XLSX → 시트별로 텍스트 변환
+  if(typeof XLSX === 'undefined'){
+    throw new Error('XLSX 라이브러리 미로드');
+  }
+  const arrayBuffer = await new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result);
+    r.onerror = () => reject(new Error('파일 읽기 실패'));
+    r.readAsArrayBuffer(file);
+  });
+  const wb = XLSX.read(new Uint8Array(arrayBuffer), {type:'array'});
+  const parts = [];
+  for(const sheetName of wb.SheetNames){
+    const sheet = wb.Sheets[sheetName];
+    const csv = XLSX.utils.sheet_to_csv(sheet);
+    if(csv && csv.trim()){
+      parts.push(`=== 시트: ${sheetName} ===\n${csv.slice(0, 30000)}`);
+    }
+  }
+  return parts.join('\n\n');
+}
+
+function _aiRenderAttachPreview(){
+  const el = document.getElementById('aiChatAttachPreview');
+  if(!el) return;
+  if(!_aiChatAttachments.length){
+    el.style.display = 'none';
+    el.innerHTML = '';
+    return;
+  }
+  el.style.display = 'block';
+  const items = _aiChatAttachments.map((a, idx) => {
+    const icon = a.kind==='image' ? (a.mimeType==='application/pdf' ? '📕' : '🖼️')
+                : a.kind==='spreadsheet' ? '📊' : '📄';
+    const sizeKB = (a.size/1024).toFixed(1);
+    const preview = (a.kind==='image' && a.previewURL)
+      ? `<img src="${a.previewURL}" style="width:32px;height:32px;object-fit:cover;border-radius:4px;vertical-align:middle;margin-right:6px">`
+      : '';
+    return `
+      <span style="display:inline-flex;align-items:center;gap:4px;background:#fff;border:1px solid #cbd5e1;border-radius:6px;padding:4px 8px;margin:2px;font-size:12px">
+        ${preview}${icon} ${a.name} <span style="color:#94a3b8">(${sizeKB}KB)</span>
+        <button onclick="_aiRemoveAttachment(${idx})" style="background:none;border:none;color:#dc2626;font-weight:700;cursor:pointer;padding:0 4px;font-size:14px">×</button>
+      </span>
+    `;
+  });
+  el.innerHTML = `<div style="margin-bottom:4px;color:#475569;font-weight:600">첨부 (${_aiChatAttachments.length}개):</div>${items.join('')}`;
+}
+window._aiRemoveAttachment = function(idx){
+  _aiChatAttachments.splice(idx, 1);
+  _aiRenderAttachPreview();
+};
+
 async function _sendChatMsg() {
   const input = document.getElementById('aiChatInput');
   const sendBtn = document.getElementById('aiChatSend');
   if(!input) return;
   const text = input.value.trim();
-  if(!text) return;
+  // 텍스트만 비어있어도 첨부 있으면 전송 허용
+  if(!text && !_aiChatAttachments.length) return;
+
+  // 첨부 정보 같이 저장 (UI 표시용)
+  const attachInfo = _aiChatAttachments.map(a => ({
+    name: a.name, kind: a.kind, size: a.size
+  }));
 
   // UI: 사용자 메시지 즉시 표시
-  _aiChatHistory.push({role:'user', text:text, createdAt: new Date()});
+  const userText = text || '(파일 첨부)';
+  _aiChatHistory.push({
+    role:'user', text: userText, createdAt: new Date(),
+    attachments: attachInfo
+  });
   _renderChatLog();
   input.value = '';
   input.disabled = true;
   sendBtn.disabled = true;
   sendBtn.textContent = '답변 중...';
+
+  // 첨부 보존 (전송용) + UI에서 미리보기 제거
+  const attachmentsForSend = _aiChatAttachments.slice();
+  _aiChatAttachments = [];
+  _aiRenderAttachPreview();
 
   // 로딩 메시지 표시
   _aiChatHistory.push({role:'assistant', text:'⏳ 데이터 수집 + 답변 생성 중...', createdAt: new Date(), _pending:true});
@@ -867,16 +1048,39 @@ ${knowledgeBase ? '[도메인 지식]\n' + knowledgeBase + '\n\n' : ''}
 ${dataSummary}
 `;
 
-    const fullPrompt = systemPrompt + '\n\n' + 
-      (conversationContext ? '[이전 대화]\n' + conversationContext + '\n\n' : '') +
-      '[사용자 새 질문]\n' + text;
+    // 첨부 파일을 prompt에 포함
+    // - 이미지/PDF: Gemini parts에 inlineData로
+    // - 엑셀/CSV/텍스트: 시스템 프롬프트 뒤에 텍스트로 첨부
+    let attachmentsText = '';
+    const inlineParts = [];
+    for(const a of attachmentsForSend){
+      if(a.kind === 'image'){
+        inlineParts.push({
+          inlineData: { mimeType: a.mimeType, data: a.base64 }
+        });
+      } else if(a.kind === 'spreadsheet'){
+        attachmentsText += `\n\n[첨부 엑셀/CSV: ${a.name}]\n${a.text}\n`;
+      } else if(a.kind === 'text'){
+        attachmentsText += `\n\n[첨부 텍스트 파일: ${a.name}]\n${a.text}\n`;
+      }
+    }
+
+    const userPromptText = (attachmentsText ? '[첨부 파일 내용]' + attachmentsText + '\n\n' : '')
+      + '[사용자 새 질문]\n' + (text || '(파일을 첨부했습니다. 위 내용을 분석해주세요.)');
+
+    const fullPromptText = systemPrompt + '\n\n'
+      + (conversationContext ? '[이전 대화]\n' + conversationContext + '\n\n' : '')
+      + userPromptText;
+
+    // 메시지 parts 구성: 텍스트 + 이미지(있으면)
+    const userParts = [{text: fullPromptText}, ...inlineParts];
 
     const apiUrl = 'https://generativelanguage.googleapis.com/v1beta/models/' + _AI_GEMINI_MODEL + ':generateContent?key=' + apiKey;
     const res = await fetch(apiUrl, {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
       body: JSON.stringify({
-        contents: [{parts: [{text: fullPrompt}]}],
+        contents: [{parts: userParts}],
         generationConfig: { temperature: 0.4, maxOutputTokens: 3000 }
       })
     });

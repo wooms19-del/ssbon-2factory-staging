@@ -85,10 +85,18 @@ function _renderAIPage(el){
 
       <!-- 탭 2: 챗봇 -->
       <div id="aiTabPanel_chat" style="display:none">
-        <div style="color:#64748b;font-size:13px;margin-bottom:12px">공정 데이터/도메인 지식 기반 자유 질문이 가능합니다.</div>
+        <div style="color:#64748b;font-size:13px;margin-bottom:12px">공정 데이터/도메인 지식 기반 자유 질문이 가능합니다. 📎 버튼으로 이미지/엑셀/PDF 첨부 가능.</div>
         <div id="aiChatLog" style="background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;padding:12px;height:480px;overflow-y:auto;font-size:14px;line-height:1.5"></div>
-        <div style="display:flex;gap:8px;margin-top:10px">
-          <input type="text" id="aiChatInput" placeholder="질문을 입력하세요 (예: 5월 수율 떨어진 원인이 뭐야?)" 
+
+        <!-- 첨부 파일 미리보기 영역 -->
+        <div id="aiChatAttachPreview" style="display:none;margin-top:8px;padding:8px;background:#f1f5f9;border:1px dashed #cbd5e1;border-radius:6px;font-size:12px"></div>
+
+        <div style="display:flex;gap:8px;margin-top:10px;align-items:center">
+          <!-- 파일 첨부 버튼 -->
+          <label for="aiChatFileInput" style="cursor:pointer;padding:10px 12px;background:#fff;color:#64748b;border:1px solid #cbd5e1;border-radius:6px;font-size:14px;display:flex;align-items:center;justify-content:center" title="파일 첨부 (이미지/엑셀/PDF)">📎</label>
+          <input type="file" id="aiChatFileInput" accept="image/*,.xlsx,.xls,.csv,.pdf,.txt,.md" multiple style="display:none" onchange="_aiChatHandleFiles(event)">
+
+          <input type="text" id="aiChatInput" placeholder="질문을 입력하세요 (예: 5월 수율 떨어진 원인이 뭐야?)"
             onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault(); _sendChatMsg();}"
             style="flex:1;padding:10px 12px;border:1px solid #cbd5e1;border-radius:6px;font-size:14px">
           <button onclick="_sendChatMsg()" id="aiChatSend" style="padding:10px 20px;background:#6366f1;color:#fff;border:none;border-radius:6px;font-size:14px;font-weight:600;cursor:pointer">전송</button>
