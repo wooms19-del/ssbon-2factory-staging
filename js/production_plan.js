@@ -18,8 +18,19 @@
 // 자동 fetch로 갱신됨
 var PP_STD = {
   preprocess_kg_per_manhour: 79,   // 전처리 1인시간당 kg
-  cooking_workers_per_batch: 2,    // 자숙 회차당 인원
-  cooking_batch_minutes: 120,      // 자숙 회차 시간 (2시간)
+  cooking: {
+    tanks_total: 6,              // 자숙 탱크 총 6대
+    tanks_pressure: 2,           // 그중 가압 탱크 2대 (가압회차 시간 단축)
+    kg_per_tank: 800,            // 탱크당 최대 800kg
+    minutes_pressure: 150,       // 가압 회차 = 2시간 30분
+    minutes_normal: 240,         // 비가압 회차 = 4시간
+    workers_per_batch: 2,        // 회차당 2명
+    // 제품별 가압 가능 여부 (false = 가압 불가, FC만)
+    pressure_allowed: {
+      'FC 장조림 3KG': false,
+      '기본값': true
+    }
+  },
   shredding_kg_per_manhour: 18.5,  // 파쇄 1인시간당 kg
   packing_ea_per_manhour: {        // 내포장 제품별 EA/인시
     '코스트코 장조림 170g': 291,
@@ -55,26 +66,42 @@ var PP_STD = {
 // 입력 검증 + 시뮬레이션 진입점
 // ============================================================
 async function _ppRunSimulation(){
-  var startStr = document.getElementById('pp_startTime').value || '06:00';
-  var maxEndStr = document.getElementById('pp_maxEnd').value || '18:00';
-  var availWorkers = parseInt(document.getElementById('pp_workers').value, 10) || 28;
+  // 시간대별 출근 수집
+  var shifts = [];
+  document.querySelectorAll('.pp-shift-row').forEach(function(row){
+    var time = row.querySelector('.pp-shift-time').value;
+    var w = parseInt(row.querySelector('.pp-shift-workers').value, 10) || 0;
+    if(time && w > 0) shifts.push({ time: time, workers: w });
+  });
+  if(!shifts.length){
+    alert('출근 시간대를 1개 이상 입력하세요.');
+    return;
+  }
+  // 시간순 정렬
+  shifts.sort(function(a,b){ return _ppToMin(a.time) - _ppToMin(b.time); });
 
-  // 제품 수량 수집
+  var maxEndStr = document.getElementById('pp_maxEnd').value || '18:00';
+
+  // 제품 + 원육 kg 수집
   var products = [];
   document.querySelectorAll('.pp-prod-row').forEach(function(row){
     var name = row.querySelector('.pp-prod-name').value;
-    var qty = parseInt(row.querySelector('.pp-prod-qty').value, 10) || 0;
-    if(name && qty > 0) products.push({ name: name, qty: qty });
+    var rawKg = parseFloat(row.querySelector('.pp-prod-rawkg').value) || 0;
+    if(name && rawKg > 0) products.push({ name: name, rawKg: rawKg });
   });
   if(!products.length){
-    alert('제품을 1개 이상 입력하세요.');
+    alert('생산 작업을 1개 이상 입력하세요.');
     return;
   }
 
+  // 총 가용 인원 (시간대 합계)
+  var totalWorkers = shifts.reduce(function(s,sh){return s + sh.workers;}, 0);
+
   var input = {
-    startTime: startStr,
+    shifts: shifts,            // [{time, workers}, ...]
+    startTime: shifts[0].time, // 가장 빠른 출근 = 작업 시작
     maxEnd: maxEndStr,
-    workers: availWorkers,
+    workers: totalWorkers,
     products: products
   };
 
@@ -91,125 +118,115 @@ async function _ppRunSimulation(){
 function _ppSimulate(input, mode){
   var startMin = _ppToMin(input.startTime);
   var maxEndMin = _ppToMin(input.maxEnd);
-  var totalQty = input.products.reduce(function(s,p){return s + p.qty;}, 0);
 
-  // 1. 필요 파쇄 kg 역산 (제품 EA × kg/EA / 공정수율)
-  var totalPackKg = 0;
+  // 1. 입력은 원육 kg → 각 공정 산출 kg 정방향 계산
+  var rawKg = input.products.reduce(function(s,p){return s + p.rawKg;}, 0);
+  var ppOutKg = rawKg * PP_STD.yield.preprocess;       // 원육 → 전처리
+  var cookOutKg = ppOutKg * PP_STD.yield.cooking;      // 전처리 → 자숙
+  var shredOutKg = cookOutKg * PP_STD.yield.shredding; // 자숙 → 파쇄
+  // 내포장 EA = 파쇄 kg / kgEA (제품별 분배는 입력 비율로)
+  var totalPackKg = shredOutKg;
+  // 제품별 EA 환산 (kgEA 사용)
+  var totalQty = 0;
+  var prodEa = [];
   input.products.forEach(function(p){
     var prod = (L.products||[]).find(function(x){return x.name === p.name;});
     var kgEa = prod ? prod.kgea : 0.025;
-    totalPackKg += p.qty * kgEa;
+    // 이 제품의 비율
+    var ratio = rawKg > 0 ? p.rawKg / rawKg : 0;
+    var pkKg = totalPackKg * ratio;
+    var ea = Math.round(pkKg / kgEa);
+    prodEa.push({ name: p.name, qty: ea, kgea: kgEa });
+    totalQty += ea;
   });
-  // 파쇄 산출 = 내포장 사용 kg (공정수율 99% 가정)
-  var shredOutKg = totalPackKg / 0.99;
-  // 자숙 산출 = 파쇄 산출 / 자숙→파쇄 수율
-  var cookOutKg = shredOutKg / PP_STD.yield.shredding;
-  // 전처리 산출 = 자숙 산출 / 전처리→자숙 수율
-  var ppOutKg = cookOutKg / PP_STD.yield.cooking;
-  // 원육 = 전처리 산출 / 전처리 수율
-  var rawKg = ppOutKg / PP_STD.yield.preprocess;
 
-  // 2. 각 공정 소요시간 (인원 배분 후 결정)
-  // 자숙: 회차 수 = ceil(전처리산출 / 회차당처리량). 자숙 자체는 회차당 120분 고정.
-  // 일단 자숙 한 회차당 처리량 = 약 300kg(타사 평균이지만 데이터 기반 추정)
-  var cookKgPerBatch = 350; // 자숙 한 회차당 kg (대략)
-  var cookBatches = Math.ceil(ppOutKg / cookKgPerBatch);
+  // 2. 자숙 회차 계산 — 제품별로 가압가능/불가 분리
+  var ckRule = PP_STD.cooking;
+  var prodPressureKg = 0, prodNormalKg = 0;
+  input.products.forEach(function(p){
+    var canPressure = ckRule.pressure_allowed[p.name];
+    if(canPressure === undefined) canPressure = ckRule.pressure_allowed['기본값'];
+    var pkProdCookKg = p.rawKg * PP_STD.yield.preprocess;
+    if(canPressure) prodPressureKg += pkProdCookKg;
+    else prodNormalKg += pkProdCookKg;
+  });
+  var pressureTankCapacity = ckRule.tanks_pressure * ckRule.kg_per_tank;     // 1600
+  var allTankCapacity = ckRule.tanks_total * ckRule.kg_per_tank;             // 4800
+  var pressureBatches = prodPressureKg > 0 ? Math.ceil(prodPressureKg / pressureTankCapacity) : 0;
+  var normalBatches = prodNormalKg > 0 ? Math.ceil(prodNormalKg / allTankCapacity) : 0;
+  var cookHours = (pressureBatches * ckRule.minutes_pressure + normalBatches * ckRule.minutes_normal) / 60;
+  var cookBatches = pressureBatches + normalBatches;
 
-  // 3. 인원 배분 — 시작 시점 (전처리 + 자숙)
-  // 모드별로 내포장 시작 시점 달라짐
-  // - morning: 파쇄 1대차(~96EA, 약 25kg) 쌓이면 즉시 내포장 시작
-  // - afternoon: 파쇄 충분히(전체의 30~50%) 쌓인 후 내포장 시작
-
-  // 공정 작업 시간 계산 (인원 1명 기준 시간, 실제는 N명으로 분담)
-  var cookWorkers = PP_STD.cooking_workers_per_batch; // 2명 고정
-  var retortWorkers = PP_STD.retort.workers_per_batch; // 2명 고정
-
-  // 전처리 + 파쇄 + 내포장 인원 분배
-  // 가용 인원 - 자숙 2 - 레토르트 2 = 나머지로 전처리/파쇄/내포장
+  // 3. 인원 배분 — 가용 인원 = 출근 시간대 합계
+  var cookWorkers = ckRule.workers_per_batch;
+  var retortWorkers = PP_STD.retort.workers_per_batch;
   var flexWorkers = input.workers - cookWorkers - retortWorkers;
   if(flexWorkers <= 0){
     return { feasible: false, reason: '가용 인원 부족 (자숙 2명 + 레토르트 2명 + 나머지 공정 필요)' };
   }
 
-  // ★ 모드별 인원 분배 전략
-  // morning: 전처리 적게, 내포장 일찍 시작 + 많이
-  // afternoon: 전처리 풀, 내포장 오후 시작
+  // 모드별 인원 분배
   var alloc;
   if(mode === 'morning'){
-    // 전처리 30% / 파쇄 25% / 내포장 45%
     alloc = {
       preprocess: Math.max(2, Math.round(flexWorkers * 0.30)),
       shredding:  Math.max(2, Math.round(flexWorkers * 0.25)),
       packing:    Math.max(4, Math.round(flexWorkers * 0.45))
     };
   } else {
-    // 전처리 45% / 파쇄 25% / 내포장 30%
     alloc = {
       preprocess: Math.max(2, Math.round(flexWorkers * 0.45)),
       shredding:  Math.max(2, Math.round(flexWorkers * 0.25)),
       packing:    Math.max(4, Math.round(flexWorkers * 0.30))
     };
   }
-  // 합계 조정 (반올림 오차)
   var allocSum = alloc.preprocess + alloc.shredding + alloc.packing;
   while(allocSum > flexWorkers){
     if(alloc.packing > 2){ alloc.packing--; allocSum--; }
     else if(alloc.preprocess > 2){ alloc.preprocess--; allocSum--; }
     else break;
   }
-
-  // 잉여 인력 (외포장 등)
   var leftover = input.workers - cookWorkers - retortWorkers - alloc.preprocess - alloc.shredding - alloc.packing;
 
-  // 4. 공정별 소요시간 계산
-  // 전처리: kg / (kg/인시 × 인원)
+  // 4. 공정별 소요시간
   var ppHours = ppOutKg / (PP_STD.preprocess_kg_per_manhour * alloc.preprocess);
-  // 자숙: 회차 수 × 회차시간 (자숙은 직렬, 회차당 120분)
-  var cookHours = cookBatches * (PP_STD.cooking_batch_minutes / 60);
-  // 파쇄: kg / (kg/인시 × 인원)
   var shHours = shredOutKg / (PP_STD.shredding_kg_per_manhour * alloc.shredding);
-  // 내포장: EA / (EA/인시 × 인원) - 제품별 가중평균
-  var pkRateAvg = _ppAvgPackRate(input.products);
+  var pkRateAvg = _ppAvgPackRate(prodEa);
   var pkHours = totalQty / (pkRateAvg * alloc.packing);
 
-  // 5. 공정 시작 시점 (Flow-based)
-  // 전처리 시작 = startMin
-  // 자숙 시작 = 전처리 첫 케이지 분량 (~250kg) 쌓이면 시작 (전체의 약 15%)
-  // 파쇄 시작 = 자숙 첫 와건 (~150kg) 쌓이면 시작 (자숙 회차 1회 후)
-  // 내포장 시작 (mode별):
-  //   morning: 파쇄 1대차(~25kg) 쌓이는 시점
-  //   afternoon: 파쇄 50% 쌓이는 시점
-
+  // 5. 공정 시작 시점 — 시간대별 출근 고려
+  // 전처리 시작: 첫 출근 시간 + 전처리 인원이 충분히 모인 시점
+  // 단순화: 첫 출근 시점부터 전처리 시작 (조출이 전처리 담당 가정)
   var ppStart = startMin;
   var ppEnd = ppStart + ppHours * 60;
 
-  // 자숙: 전처리 첫 케이지 분량 쌓이면 즉시. 첫 케이지 = ppOutKg의 15% 가정
-  var cookFirstBatchReady = ppStart + (ppHours * 60) * 0.15;
-  var cookStart = cookFirstBatchReady;
+  // 자숙: 전처리 첫 케이지 분량 쌓이면 (전체의 15%)
+  var cookStart = ppStart + (ppHours * 60) * 0.15;
   var cookEnd = cookStart + cookHours * 60;
 
-  // 파쇄: 자숙 첫 회차 끝나면 시작 (= cookStart + 120분)
-  var shStart = cookStart + PP_STD.cooking_batch_minutes;
+  // 파쇄: 자숙 첫 회차 끝나면 (가압 회차 있으면 가압 우선이라 150분, 없으면 240분)
+  var firstBatchMin = pressureBatches > 0 ? ckRule.minutes_pressure : ckRule.minutes_normal;
+  var shStart = cookStart + firstBatchMin;
   var shEnd = shStart + shHours * 60;
 
   // 내포장
   var pkStart;
   if(mode === 'morning'){
-    pkStart = shStart + (shHours * 60) * 0.05;  // 파쇄 5% (1대차) 쌓이면
+    pkStart = shStart + (shHours * 60) * 0.05;
   } else {
-    pkStart = shStart + (shHours * 60) * 0.50;  // 파쇄 50% 쌓이면
+    pkStart = shStart + (shHours * 60) * 0.50;
   }
   var pkEnd = pkStart + pkHours * 60;
 
-  // 레토르트: 내포장 첫 회차(4대차) 쌓이면 시작. 첫 회차 = 전체 EA의 약 15%
+  // 레토르트
   var retortStart = pkStart + (pkHours * 60) * 0.15;
-  // 레토르트 회차 수
-  var firstRetortCarts = Math.ceil(totalQty / Object.values(PP_STD.retort.ea_per_cart)[0]); // 일단 첫 제품 기준
+  var firstRetortEaPerCart = (PP_STD.retort.ea_per_cart[input.products[0].name] || PP_STD.retort.ea_per_cart['기본값']);
+  var firstRetortCarts = Math.ceil(totalQty / firstRetortEaPerCart);
   var retortBatches = Math.ceil(firstRetortCarts / (PP_STD.retort.machines * PP_STD.retort.carts_per_batch));
   var retortHours = retortBatches * (PP_STD.retort.minutes_per_batch / 60);
   var retortEnd = retortStart + retortHours * 60;
 
-  var endTime = pkEnd; // 사용자 기준: 내포장 종료 = 최종 종료시간
+  var endTime = pkEnd;
   var feasible = endTime <= maxEndMin;
 
   return {
@@ -225,7 +242,10 @@ function _ppSimulate(input, mode){
     shredOutKg: shredOutKg,
     totalPackKg: totalPackKg,
     totalQty: totalQty,
+    prodEa: prodEa,
     cookBatches: cookBatches,
+    pressureBatches: pressureBatches,
+    normalBatches: normalBatches,
     retortBatches: retortBatches,
     timeline: {
       pp: { start: ppStart, end: ppEnd },
@@ -239,10 +259,10 @@ function _ppSimulate(input, mode){
   };
 }
 
-function _ppAvgPackRate(products){
-  var totalQty = products.reduce(function(s,p){return s+p.qty;}, 0);
+function _ppAvgPackRate(prodEa){
+  var totalQty = prodEa.reduce(function(s,p){return s+p.qty;}, 0);
   var weighted = 0;
-  products.forEach(function(p){
+  prodEa.forEach(function(p){
     var rate = PP_STD.packing_ea_per_manhour[p.name] || PP_STD.packing_ea_per_manhour['기본값'];
     weighted += rate * p.qty;
   });
@@ -363,11 +383,19 @@ function _ppRenderTimeline(sc){
 }
 
 function _ppRenderWorkforceReason(input, sc){
-  var prodList = input.products.map(function(p){return p.name+' '+p.qty.toLocaleString()+'EA';}).join(' + ');
+  var prodList = input.products.map(function(p){return p.name+' 원육 '+p.rawKg.toLocaleString()+'kg';}).join(' + ');
+  var shiftList = input.shifts.map(function(s){return s.time+'('+s.workers+'명)';}).join(' / ');
   var html = '<div style="font-size:13px;line-height:1.9;color:#334155">';
-  html += '<div style="margin-bottom:6px"><b>작업량:</b> '+prodList+' (총 '+sc.totalQty.toLocaleString()+'EA)</div>';
-  html += '<div style="margin-bottom:6px"><b>원육 필요:</b> 약 '+sc.rawKg.toFixed(0)+' kg (수율 역산)</div>';
-  html += '<div style="margin-bottom:14px"><b>가용 인원:</b> '+input.workers+'명</div>';
+  html += '<div style="margin-bottom:6px"><b>작업량:</b> '+prodList+' (원육 총 '+sc.rawKg.toFixed(0)+'kg → 완제품 '+sc.totalQty.toLocaleString()+'EA)</div>';
+  html += '<div style="margin-bottom:6px"><b>출근 시간대:</b> '+shiftList+' (총 '+input.workers+'명)</div>';
+
+  // 자숙 회차 상세
+  if(sc.pressureBatches > 0 || sc.normalBatches > 0){
+    var batchDetail = [];
+    if(sc.pressureBatches > 0) batchDetail.push('가압 회차 '+sc.pressureBatches+'회 (2시간 30분/회)');
+    if(sc.normalBatches > 0) batchDetail.push('비가압 회차 '+sc.normalBatches+'회 (4시간/회)');
+    html += '<div style="margin-bottom:14px"><b>자숙 회차:</b> '+batchDetail.join(' + ')+'</div>';
+  }
 
   html += '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:6px;padding:12px;margin-bottom:8px">';
   html += '<div style="font-weight:600;color:#1e40af;margin-bottom:8px">공정별 인원 배치 근거</div>';
@@ -375,7 +403,8 @@ function _ppRenderWorkforceReason(input, sc){
   html += '<div style="margin-bottom:4px">• <b>레토르트 '+sc.retortWorkers+'명</b> — 표준값 (회차당 2명 고정)</div>';
   html += '<div style="margin-bottom:4px">• <b>전처리 '+sc.alloc.preprocess+'명</b> — '+sc.ppOutKg.toFixed(0)+'kg 처리 / '+PP_STD.preprocess_kg_per_manhour+'kg/인시 = 약 '+(sc.ppOutKg/PP_STD.preprocess_kg_per_manhour/sc.alloc.preprocess).toFixed(1)+'시간 소요</div>';
   html += '<div style="margin-bottom:4px">• <b>파쇄 '+sc.alloc.shredding+'명</b> — '+sc.shredOutKg.toFixed(0)+'kg 처리 / '+PP_STD.shredding_kg_per_manhour+'kg/인시 = 약 '+(sc.shredOutKg/PP_STD.shredding_kg_per_manhour/sc.alloc.shredding).toFixed(1)+'시간 소요</div>';
-  html += '<div style="margin-bottom:4px">• <b>내포장 '+sc.alloc.packing+'명</b> — '+sc.totalQty.toLocaleString()+'EA 처리 / 약 '+_ppAvgPackRate(input.products).toFixed(0)+'EA/인시 = 약 '+(sc.totalQty/_ppAvgPackRate(input.products)/sc.alloc.packing).toFixed(1)+'시간 소요</div>';
+  var pkRate = _ppAvgPackRate(sc.prodEa);
+  html += '<div style="margin-bottom:4px">• <b>내포장 '+sc.alloc.packing+'명</b> — '+sc.totalQty.toLocaleString()+'EA 처리 / 약 '+pkRate.toFixed(0)+'EA/인시 = 약 '+(sc.totalQty/pkRate/sc.alloc.packing).toFixed(1)+'시간 소요</div>';
   if(sc.leftover > 0){
     html += '<div style="margin-top:8px;color:#16a34a">✓ <b>잉여 '+sc.leftover+'명</b> — 외포장·제수 작업에 자동 투입 가능</div>';
   } else if(sc.leftover === 0){
@@ -385,11 +414,10 @@ function _ppRenderWorkforceReason(input, sc){
   }
   html += '</div>';
 
-  // 가능 여부 판정
   if(sc.feasible){
     html += '<div style="background:#dcfce7;border:1px solid #86efac;border-radius:6px;padding:10px 14px;color:#15803d;font-weight:600">✅ 이 작업은 '+input.workers+'명으로 가능합니다. 종료 예정: '+_ppToTime(sc.endTime)+'</div>';
   } else {
-    var addWorkers = Math.ceil(sc.overrun / 30); // 30분 단축당 1명 추가 가정 (rough)
+    var addWorkers = Math.ceil(sc.overrun / 30);
     html += '<div style="background:#fef3c7;border:1px solid #fcd34d;border-radius:6px;padding:10px 14px;color:#92400e">';
     html += '⚠️ <b>이 작업은 무리</b> — 종료시간이 '+_ppToTime(_ppToMin(input.maxEnd))+'을 '+Math.round(sc.overrun)+'분 초과 ('+_ppToTime(sc.endTime)+' 종료 예상)<br>';
     html += '<span style="font-size:12px">대안: 인원 약 '+addWorkers+'명 추가 / 수량 감소 / 시작시간 앞당기기</span>';
@@ -407,14 +435,6 @@ function renderProductionPlan(){
   var pg = document.getElementById('p-production_plan');
   if(!pg) return;
 
-  // 가용 인원 자동 (오늘 출퇴근 기반) — 일단 기본 28
-  var defWorkers = 28;
-  try {
-    if(typeof db !== 'undefined' && db && typeof tod === 'function'){
-      // attendance 비동기 fetch는 별도, 일단 기본값
-    }
-  } catch(e){}
-
   var productOptions = (L.products || []).map(function(p){
     return '<option value="'+p.name+'">'+p.name+'</option>';
   }).join('');
@@ -423,24 +443,34 @@ function renderProductionPlan(){
     + '<div style="max-width:1200px;margin:0 auto;padding:0 8px">'
     + '  <div style="background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:18px;margin-bottom:14px">'
     + '    <h2 style="margin:0 0 14px;font-size:16px;color:#1e293b">📅 생산 계획 시뮬레이션</h2>'
-    + '    <p style="margin:0 0 16px;font-size:12px;color:#64748b">시작·종료시간과 제품·수량을 입력하면 두 가지 시나리오(내포장 오전 시작 vs 오후 시작)를 시뮬레이션하여 추천합니다.</p>'
+    + '    <p style="margin:0 0 16px;font-size:12px;color:#64748b">시간대별 출근 인원과 원육 kg을 입력하면 두 시나리오(내포장 오전 시작 vs 오후 시작)를 시뮬레이션하여 추천합니다.</p>'
 
-    + '    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:14px">'
-    + '      <div><label style="font-size:12px;color:#64748b;display:block;margin-bottom:4px">시작 시간</label>'
-    + '        <input id="pp_startTime" type="time" value="06:00" style="width:100%;padding:8px 10px;border:1px solid #cbd5e1;border-radius:5px"></div>'
-    + '      <div><label style="font-size:12px;color:#64748b;display:block;margin-bottom:4px">최대 종료시간 (내포장 기준)</label>'
-    + '        <input id="pp_maxEnd" type="time" value="18:00" style="width:100%;padding:8px 10px;border:1px solid #cbd5e1;border-radius:5px"></div>'
-    + '      <div><label style="font-size:12px;color:#64748b;display:block;margin-bottom:4px">가용 인원</label>'
-    + '        <input id="pp_workers" type="number" value="'+defWorkers+'" min="1" style="width:100%;padding:8px 10px;border:1px solid #cbd5e1;border-radius:5px"></div>'
-    + '    </div>'
-
+    // 시간대별 출근
     + '    <div style="margin-bottom:14px">'
     + '      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">'
-    + '        <label style="font-size:12px;color:#64748b;font-weight:600">생산 제품 목록</label>'
-    + '        <button onclick="_ppAddProdRow()" style="background:#fff;border:1px solid #cbd5e1;padding:5px 12px;border-radius:5px;font-size:12px;color:#1e40af;cursor:pointer">+ 제품 추가</button>'
+    + '        <label style="font-size:12px;color:#64748b;font-weight:600">출근 시간대별 인원</label>'
+    + '        <button onclick="_ppAddShiftRow()" style="background:#fff;border:1px solid #cbd5e1;padding:5px 12px;border-radius:5px;font-size:12px;color:#1e40af;cursor:pointer">+ 시간대 추가</button>'
+    + '      </div>'
+    + '      <div id="pp_shiftList">'
+    + _ppShiftRowHtml('06:00', 6)
+    + _ppShiftRowHtml('08:00', 22)
+    + '      </div>'
+    + '    </div>'
+
+    // 최대 종료시간
+    + '    <div style="margin-bottom:14px;max-width:360px">'
+    + '      <label style="font-size:12px;color:#64748b;display:block;margin-bottom:4px">최대 종료시간 (내포장 기준)</label>'
+    + '      <input id="pp_maxEnd" type="time" value="18:00" style="width:100%;padding:8px 10px;border:1px solid #cbd5e1;border-radius:5px">'
+    + '    </div>'
+
+    // 생산 작업 (원육 kg)
+    + '    <div style="margin-bottom:14px">'
+    + '      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">'
+    + '        <label style="font-size:12px;color:#64748b;font-weight:600">생산 작업 (원육 kg 기준)</label>'
+    + '        <button onclick="_ppAddProdRow()" style="background:#fff;border:1px solid #cbd5e1;padding:5px 12px;border-radius:5px;font-size:12px;color:#1e40af;cursor:pointer">+ 작업 추가</button>'
     + '      </div>'
     + '      <div id="pp_prodList">'
-    + _ppProdRowHtml(productOptions, '시그니처 장조림 130g', 8000)
+    + _ppProdRowHtml(productOptions, '시그니처 장조림 130g', 1500)
     + '      </div>'
     + '    </div>'
 
@@ -451,11 +481,32 @@ function renderProductionPlan(){
     + '</div>';
 }
 
-function _ppProdRowHtml(productOptions, defName, defQty){
+function _ppShiftRowHtml(time, workers){
+  return ''
+    + '<div class="pp-shift-row" style="display:grid;grid-template-columns:160px 1fr 40px;gap:8px;margin-bottom:6px;align-items:center">'
+    + '  <input class="pp-shift-time" type="time" value="'+time+'" style="padding:7px 9px;border:1px solid #cbd5e1;border-radius:5px;font-size:13px">'
+    + '  <input class="pp-shift-workers" type="number" placeholder="인원 수" value="'+(workers||'')+'" min="1" style="padding:7px 9px;border:1px solid #cbd5e1;border-radius:5px;font-size:13px">'
+    + '  <button onclick="this.parentElement.remove()" style="background:#fee2e2;border:none;border-radius:5px;color:#dc2626;font-weight:700;cursor:pointer;height:34px">×</button>'
+    + '</div>';
+}
+
+function _ppAddShiftRow(){
+  var list = document.getElementById('pp_shiftList');
+  if(!list) return;
+  var div = document.createElement('div');
+  div.innerHTML = _ppShiftRowHtml('08:00', '');
+  list.appendChild(div.firstElementChild);
+}
+
+function _ppProdRowHtml(productOptions, defName, defRawKg){
+  var opts = productOptions || '';
+  if(defName){
+    opts = opts.replace('value="'+defName+'"', 'value="'+defName+'" selected');
+  }
   return ''
     + '<div class="pp-prod-row" style="display:grid;grid-template-columns:1fr 140px 40px;gap:8px;margin-bottom:6px">'
-    + '  <select class="pp-prod-name" style="padding:7px 9px;border:1px solid #cbd5e1;border-radius:5px;font-size:13px">'+(productOptions ? productOptions.replace('value="'+defName+'"', 'value="'+defName+'" selected') : '')+'</select>'
-    + '  <input class="pp-prod-qty" type="number" placeholder="EA 수량" value="'+(defQty||'')+'" min="1" style="padding:7px 9px;border:1px solid #cbd5e1;border-radius:5px;font-size:13px">'
+    + '  <select class="pp-prod-name" style="padding:7px 9px;border:1px solid #cbd5e1;border-radius:5px;font-size:13px">'+opts+'</select>'
+    + '  <input class="pp-prod-rawkg" type="number" placeholder="원육 kg" value="'+(defRawKg||'')+'" min="1" style="padding:7px 9px;border:1px solid #cbd5e1;border-radius:5px;font-size:13px">'
     + '  <button onclick="this.parentElement.remove()" style="background:#fee2e2;border:none;border-radius:5px;color:#dc2626;font-weight:700;cursor:pointer">×</button>'
     + '</div>';
 }
@@ -474,3 +525,4 @@ function _ppAddProdRow(){
 window.renderProductionPlan = renderProductionPlan;
 window._ppRunSimulation = _ppRunSimulation;
 window._ppAddProdRow = _ppAddProdRow;
+window._ppAddShiftRow = _ppAddShiftRow;
