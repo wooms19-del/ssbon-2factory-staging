@@ -342,17 +342,23 @@ function _ppSimulate(input, mode){
     if(canPressure) prodPressureKg += ck;
     else prodNormalKg += ck;
   });
-  // 회차 수 — 실측 패턴: 회차당 약 400kg (운영자가 작게 자주 나눠서 빨리 종료)
-  // 단, 탱크 가용성(가압 2대/비가압 4대)도 고려
+  // 회차 수 — 실측 패턴 (4월 데이터 분석):
+  //   800kg 이하 → 1회차 (4-03 시그800: 1회차로 처리)
+  //   800~1200kg → 2회차 (각 약 400~600kg)
+  //   1200~1800kg → 2~3회차 (각 약 400~600kg)
+  //   1800kg+ → 3~4회차
+  // 운영자가 무조건 균등 분배하는 게 아니라 탱크 용량 한도 내에서 적정 분배
   function _calcCycles(total, isPressure){
     if(total <= 0) return 0;
-    var target = ckRule.target_kg_per_batch; // 400kg
+    // 800kg 이하면 1회차 (탱크 1개 사용)
+    if(total <= ckRule.kg_per_tank) return 1;
+    // 그 이상이면 600kg 기준으로 분배 (실측: 회차당 평균 400~500kg)
+    var target = 600;
     var n = Math.ceil(total / target);
-    // 탱크 가용 제약 — 동시 가용 탱크 수보다 너무 많은 회차는 의미 없음 (가용 후 다음 회차로 순환)
+    // 캡: 가압은 탱크 2대, 비가압은 탱크 4대 동시 가용
     var maxTanks = isPressure ? ckRule.tanks_pressure : (ckRule.tanks_total - ckRule.tanks_pressure);
-    // 회차 수 = min(목표분할수, 적정 캡)
-    // 실측: 1500kg+ 케이스도 2~4회차. 5회 이상은 비현실 (탱크 회전 시간 고려)
-    n = Math.max(1, Math.min(n, 4));
+    // 실측: 1500kg = 2회차, 1600kg+ = 2~3회차. 최대 4회차 캡
+    n = Math.max(2, Math.min(n, 4));
     return n;
   }
   var pressureCycles = _calcCycles(prodPressureKg, true);
@@ -958,7 +964,7 @@ function _ppRenderTimeline(sc){
     start: t.pp.start, end: t.pp.end,
     w: ppEstWorkers > 0 ? '~'+ppEstWorkers : '-',
     color: '#fbbf24',
-    tooltip: '전처리\\n시간: '+_ppFmtDur(ppDurMin)+'\\n처리량: '+Math.round(sc.ppOutKg)+'kg (산출 기준)\\n생산성: '+ppRate+' kg/인시\\n평균 인원: 약 '+ppEstWorkers+'명'
+    tooltip: '전처리\n시간: '+_ppFmtDur(ppDurMin)+'\n처리량: '+Math.round(sc.ppOutKg)+'kg (산출 기준)\n생산성: '+ppRate+' kg/인시\n평균 인원: 약 '+ppEstWorkers+'명'
   });
 
   // 자숙 — 회차별 분할
@@ -970,7 +976,7 @@ function _ppRenderTimeline(sc){
         name: '🍲 자숙 #'+(i+1)+' ('+typeLabel+')',
         start: c.inTime, end: c.outTime,
         w: sc.cookWorkers, color: c.type === 'pressure' ? '#f87171' : '#fca5a5',
-        tooltip: '자숙 #'+(i+1)+' ('+typeLabel+')\\n시간: '+_ppFmtDur(c.outTime - c.inTime)+'\\n탱크: '+tankLabel+'\\n투입량: '+Math.round(c.kg)+'kg\\n산출량: '+Math.round(c.kg * PP_STD.yield.cooking)+'kg (수율 '+(PP_STD.yield.cooking*100).toFixed(0)+'%)\\n인원: '+sc.cookWorkers+'명/회차 고정'
+        tooltip: '자숙 #'+(i+1)+' ('+typeLabel+')\n시간: '+_ppFmtDur(c.outTime - c.inTime)+'\n탱크: '+tankLabel+'\n투입량: '+Math.round(c.kg)+'kg\n산출량: '+Math.round(c.kg * PP_STD.yield.cooking)+'kg (수율 '+(PP_STD.yield.cooking*100).toFixed(0)+'%)\n인원: '+sc.cookWorkers+'명/회차 고정'
       });
     });
   }
@@ -983,7 +989,7 @@ function _ppRenderTimeline(sc){
     start: t.sh.start, end: t.sh.end,
     w: '~'+sc.alloc.shredding,
     color: '#a78bfa',
-    tooltip: '파쇄\\n시간: '+_ppFmtDur(shDurMin)+'\\n처리량: '+Math.round(sc.cookOutKg)+'kg → 산출 '+Math.round(sc.shredOutKg)+'kg\\n생산성: '+shRate+' kg/인시\\n최대 인원: '+PP_STD.shredding_max_workers+'명 (그 이상은 효율 X)\\n점심엔 절반 교대'
+    tooltip: '파쇄\n시간: '+_ppFmtDur(shDurMin)+'\n처리량: '+Math.round(sc.cookOutKg)+'kg → 산출 '+Math.round(sc.shredOutKg)+'kg\n생산성: '+shRate+' kg/인시\n최대 인원: '+PP_STD.shredding_max_workers+'명 (그 이상은 효율 X)\n점심엔 절반 교대'
   });
 
   // 내포장 — 호기별 분할
@@ -996,7 +1002,7 @@ function _ppRenderTimeline(sc){
         start: l.startMin || t.pk.start, end: l.endMin || t.pk.end,
         w: l.workers,
         color: '#34d399',
-        tooltip: l.name+'\\n제품: '+(prodNames||'-')+'\\n시간: '+_ppFmtDur(lineDurMin)+'\\n처리량: '+l.ea.toLocaleString()+' EA\\n분당: '+l.ea_per_min+' EA/min\\n인시 생산성: '+l.eaPerPersonHour+' EA/인시\\n인원: '+l.workers+'명 + 이송 '+PP_STD.transfer_workers_per_line+'명'
+        tooltip: l.name+'\n제품: '+(prodNames||'-')+'\n시간: '+_ppFmtDur(lineDurMin)+'\n처리량: '+l.ea.toLocaleString()+' EA\n분당: '+l.ea_per_min+' EA/min\n인시 생산성: '+l.eaPerPersonHour+' EA/인시\n인원: '+l.workers+'명 + 이송 '+PP_STD.transfer_workers_per_line+'명'
       });
     });
   }
@@ -1008,7 +1014,7 @@ function _ppRenderTimeline(sc){
     start: t.retort.start, end: t.retort.end,
     w: sc.retortWorkers,
     color: '#fb923c',
-    tooltip: '레토르트\\n시간: '+_ppFmtDur(rtDurMin)+'\\n회차: '+sc.retortBatches+'회 × '+(sc.retortProfile?sc.retortProfile.minutes:120)+'분\\n대차당: '+(sc.retortProfile?sc.retortProfile.eaPerCart:'-')+' EA\\n3대 병렬 가동\\n인원: '+sc.retortWorkers+'명 고정'
+    tooltip: '레토르트\n시간: '+_ppFmtDur(rtDurMin)+'\n회차: '+sc.retortBatches+'회 × '+(sc.retortProfile?sc.retortProfile.minutes:120)+'분\n대차당: '+(sc.retortProfile?sc.retortProfile.eaPerCart:'-')+' EA\n3대 병렬 가동\n인원: '+sc.retortWorkers+'명 고정'
   });
 
   var minT = Math.min.apply(null, rows.map(function(r){return r.start;}));
@@ -1026,21 +1032,54 @@ function _ppRenderTimeline(sc){
   rows.forEach(function(r){
     var leftPct = Math.max(0, (r.start - minT) / span * 100);
     var widthPct = Math.max(0.5, (r.end - r.start) / span * 100);
-    var tipEsc = r.tooltip ? r.tooltip.replace(/"/g,'&quot;') : '';
-    html += '<tr style="border-bottom:1px solid #f1f5f9" title="'+tipEsc+'">';
+    var tipText = r.tooltip || '';
+    var tipEsc = tipText.replace(/"/g,'&quot;').replace(/'/g,"&#39;");
+    var mouseAttrs = 'onmouseover="_ppShowTip(event, this.dataset.tip)" onmouseout="_ppHideTip()" data-tip="'+tipEsc+'"';
+    html += '<tr style="border-bottom:1px solid #f1f5f9;cursor:help" '+mouseAttrs+'>';
     html += '<td style="padding:8px;font-weight:600">'+r.name+'</td>';
     html += '<td style="text-align:center;padding:8px;color:#475569">'+_ppToTime(r.start)+' ~ '+_ppToTime(r.end)+'</td>';
     html += '<td style="text-align:center;padding:8px;font-weight:600">'+r.w+'명</td>';
     html += '<td style="padding:6px"><div style="position:relative;height:18px;background:#f1f5f9;border-radius:4px">';
     if(lunchVisible){
-      html += '<div style="position:absolute;left:'+lunchLeft+'%;width:'+lunchWidth+'%;height:100%;background:repeating-linear-gradient(45deg,rgba(0,0,0,0.06),rgba(0,0,0,0.06) 4px,transparent 4px,transparent 8px);border-radius:4px" title="점심 반반 교대"></div>';
+      html += '<div style="position:absolute;left:'+lunchLeft+'%;width:'+lunchWidth+'%;height:100%;background:repeating-linear-gradient(45deg,rgba(0,0,0,0.06),rgba(0,0,0,0.06) 4px,transparent 4px,transparent 8px);border-radius:4px"></div>';
     }
-    html += '<div style="position:absolute;left:'+leftPct+'%;width:'+widthPct+'%;height:100%;background:'+r.color+';border-radius:4px;opacity:0.92" title="'+tipEsc+'"></div>';
+    html += '<div style="position:absolute;left:'+leftPct+'%;width:'+widthPct+'%;height:100%;background:'+r.color+';border-radius:4px;opacity:0.92"></div>';
     html += '</div></td></tr>';
   });
   html += '</tbody></table>';
   return html;
 }
+
+// 커스텀 툴팁 (줄바꿈 지원)
+function _ppShowTip(e, tipText){
+  if(!tipText) return;
+  var tip = document.getElementById('pp_tooltip');
+  if(!tip){
+    tip = document.createElement('div');
+    tip.id = 'pp_tooltip';
+    tip.style.cssText = 'position:fixed;background:#1f2937;color:#fff;padding:10px 14px;border-radius:6px;font-size:12px;line-height:1.6;pointer-events:none;z-index:99999;white-space:pre-line;box-shadow:0 4px 12px rgba(0,0,0,0.25);max-width:320px';
+    document.body.appendChild(tip);
+  }
+  // \\n 문자열을 진짜 줄바꿈으로
+  tip.textContent = tipText.replace(/\\n/g, '\n');
+  tip.style.display = 'block';
+  var x = e.clientX + 14;
+  var y = e.clientY + 14;
+  // 화면 오른쪽 넘침 방지
+  setTimeout(function(){
+    var w = tip.offsetWidth, h = tip.offsetHeight;
+    if(x + w > window.innerWidth) x = e.clientX - w - 14;
+    if(y + h > window.innerHeight) y = e.clientY - h - 14;
+    tip.style.left = x + 'px';
+    tip.style.top = y + 'px';
+  }, 0);
+}
+function _ppHideTip(){
+  var tip = document.getElementById('pp_tooltip');
+  if(tip) tip.style.display = 'none';
+}
+window._ppShowTip = _ppShowTip;
+window._ppHideTip = _ppHideTip;
 
 // 시간 포맷 (분 → "Xh Ym")
 function _ppFmtDur(mins){
