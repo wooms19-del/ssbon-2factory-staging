@@ -146,7 +146,8 @@ function _ppSimulate(input, mode){
     totalQty += ea;
   });
 
-  // 2. 자숙
+  // 2. 자숙 회차 (탱크 800kg씩, A모드: 잔량 먼저 → 빨리 시작)
+  // 가압 가능 / 불가 분리 처리
   var prodPressureKg = 0, prodNormalKg = 0;
   input.products.forEach(function(p){
     var canPressure = ckRule.pressure_allowed[p.name];
@@ -155,11 +156,26 @@ function _ppSimulate(input, mode){
     if(canPressure) prodPressureKg += ck;
     else prodNormalKg += ck;
   });
-  var pressureCap = ckRule.tanks_pressure * ckRule.kg_per_tank;
-  var allCap = ckRule.tanks_total * ckRule.kg_per_tank;
-  var pressureBatches = prodPressureKg > 0 ? Math.ceil(prodPressureKg / pressureCap) : 0;
-  var normalBatches = prodNormalKg > 0 ? Math.ceil(prodNormalKg / allCap) : 0;
-  var cookTotalMin = pressureBatches * ckRule.minutes_pressure + normalBatches * ckRule.minutes_normal;
+  // 회차 = 탱크당 800kg, 잔량 먼저 분배
+  var pressureCycles = prodPressureKg > 0 ? Math.ceil(prodPressureKg / ckRule.kg_per_tank) : 0;
+  var normalCycles = prodNormalKg > 0 ? Math.ceil(prodNormalKg / ckRule.kg_per_tank) : 0;
+
+  // 각 회차의 투입 kg (잔량 먼저 모드)
+  function _makeTankKgs(totalKg, cycles){
+    if(cycles === 0) return [];
+    if(cycles === 1) return [totalKg];
+    var arr = [];
+    var remainder = Math.max(0, totalKg - (cycles - 1) * ckRule.kg_per_tank);
+    arr.push(remainder); // 첫 회차 = 잔량 (작게)
+    for(var i = 1; i < cycles; i++) arr.push(ckRule.kg_per_tank);
+    return arr;
+  }
+  var pressureTankKgs = _makeTankKgs(prodPressureKg, pressureCycles);
+  var normalTankKgs = _makeTankKgs(prodNormalKg, normalCycles);
+
+  // 회차 수 (호환용)
+  var pressureBatches = pressureCycles;
+  var normalBatches = normalCycles;
   var cookBatches = pressureBatches + normalBatches;
 
   // 3. 내포장 호기 배정
@@ -213,25 +229,64 @@ function _ppSimulate(input, mode){
   var shPureMin = (shredOutKg / PP_STD.shredding_kg_per_manhour / alloc.shredding) * 60;
   var pkPureMin = pkInfo.runtimeMin;
 
-  // 6. 공정 타임라인
+  // 6. 공정 타임라인 — 전처리 누적량과 연동
   var ppStart = startMin;
   var ppEnd = _ppWorkWithLunch(ppStart, ppPureMin);
+  // 전처리 시간당 산출 = preprocess_kg_per_manhour × 인원
+  var ppKgPerMin = PP_STD.preprocess_kg_per_manhour * alloc.preprocess / 60;
+  // 점심 시간대엔 절반
+  // 단순화: 전체 ppOutKg을 ppPureMin에 풀어, 시점 t의 누적 산출 = ratio 계산
+  // 누적 N kg에 도달하는 시점 = ppStart + (N / ppOutKg) × ppPureMin (점심 미반영, 단순화)
+  function ppTimeAtKg(targetKg){
+    if(targetKg <= 0) return ppStart;
+    if(targetKg >= ppOutKg) return ppEnd;
+    var ratio = targetKg / ppOutKg;
+    return _ppWorkWithLunch(ppStart, ppPureMin * ratio);
+  }
 
-  var cookStart = ppStart + (ppEnd - ppStart) * 0.15;
-  var cookEnd = cookStart + cookTotalMin;
+  // 자숙 회차별 투입 시각 (가압 회차 + 비가압 회차 합쳐서 시간순)
+  // 누적 자숙 투입 kg 계산: 가압 먼저 → 비가압
+  var cookSchedule = []; // [{batchIdx, type:'pressure'|'normal', kg, inTime, outTime}]
+  var cumKg = 0;
+  pressureTankKgs.forEach(function(kg, i){
+    cumKg += kg;
+    var inT = ppTimeAtKg(cumKg);
+    var outT = inT + ckRule.minutes_pressure;
+    cookSchedule.push({ type:'pressure', kg:kg, inTime: inT, outTime: outT });
+  });
+  normalTankKgs.forEach(function(kg, i){
+    cumKg += kg;
+    var inT = ppTimeAtKg(cumKg);
+    var outT = inT + ckRule.minutes_normal;
+    cookSchedule.push({ type:'normal', kg:kg, inTime: inT, outTime: outT });
+  });
 
-  var firstBatchMin = pressureBatches > 0 ? ckRule.minutes_pressure : ckRule.minutes_normal;
-  var shStart = cookStart + firstBatchMin;
-  var shEnd = _ppWorkWithLunch(shStart, shPureMin);
+  var cookStart = cookSchedule.length ? cookSchedule[0].inTime : ppStart;
+  var cookEnd = cookSchedule.length ? Math.max.apply(null, cookSchedule.map(function(s){return s.outTime;})) : ppEnd;
+  var cookTotalMin = cookEnd - cookStart;
 
+  // 파쇄: 자숙 첫 회차 종료 시점부터
+  var shStart = cookSchedule.length ? cookSchedule[0].outTime : ppEnd;
+  // 파쇄도 자숙 마지막 회차 산출량 처리하려면 그 시점 이후까지 진행
+  var shEndByWork = _ppWorkWithLunch(shStart, shPureMin);
+  // 자숙 마지막 회차 종료 + 그 회차 산출량 파쇄 시간
+  var lastCookOut = cookSchedule.length ? cookSchedule[cookSchedule.length-1].outTime : ppEnd;
+  var lastShredKg = cookSchedule.length ? cookSchedule[cookSchedule.length-1].kg * PP_STD.yield.shredding : 0;
+  var lastShredMin = (lastShredKg / PP_STD.shredding_kg_per_manhour / alloc.shredding) * 60;
+  var shEndByLastBatch = lastCookOut + lastShredMin;
+  var shEnd = Math.max(shEndByWork, shEndByLastBatch);
+
+  // 내포장
   var pkStart;
   if(mode === 'morning'){
-    pkStart = shStart + (shEnd - shStart) * 0.05;
+    // 파쇄 1대차 분량 쌓이면 (약 96EA)
+    pkStart = shStart + 30; // 파쇄 시작 30분 후 정도 (1대차 분량 쌓임)
   } else {
     pkStart = shStart + (shEnd - shStart) * 0.50;
   }
   var pkEnd = _ppWorkWithLunch(pkStart, pkPureMin);
 
+  // 레토르트
   var retortStart = pkStart + pkPureMin * 0.15;
   var firstProd = input.products[0].name;
   var eaPerCart = PP_STD.retort.ea_per_cart[firstProd] || PP_STD.retort.ea_per_cart['기본값'];
@@ -259,6 +314,9 @@ function _ppSimulate(input, mode){
     cookBatches: cookBatches,
     pressureBatches: pressureBatches,
     normalBatches: normalBatches,
+    cookSchedule: cookSchedule,
+    pressureTankKgs: pressureTankKgs,
+    normalTankKgs: normalTankKgs,
     retortBatches: retortBatches,
     pkInfo: pkInfo,
     timeline: {
@@ -473,7 +531,17 @@ function _ppRenderWorkforceReason(input, sc){
     var bd = [];
     if(sc.pressureBatches > 0) bd.push('가압 회차 '+sc.pressureBatches+'회 (2.5h/회)');
     if(sc.normalBatches > 0) bd.push('비가압 회차 '+sc.normalBatches+'회 (4h/회)');
-    html += '<div style="margin-bottom:14px"><b>자숙 회차:</b> '+bd.join(' + ')+'</div>';
+    html += '<div style="margin-bottom:6px"><b>자숙 회차:</b> '+bd.join(' + ')+'</div>';
+    // 회차별 투입량 (잔량 먼저)
+    if(sc.cookSchedule && sc.cookSchedule.length){
+      var details = sc.cookSchedule.map(function(s, i){
+        var typeLabel = s.type === 'pressure' ? '가압' : '비가압';
+        return '#'+(i+1)+' '+typeLabel+' '+s.kg.toFixed(0)+'kg ('+_ppToTime(s.inTime)+'→'+_ppToTime(s.outTime)+')';
+      }).join(' / ');
+      html += '<div style="margin-bottom:14px;font-size:12px;color:#64748b">↳ '+details+'</div>';
+    } else {
+      html += '<div style="margin-bottom:14px"></div>';
+    }
   }
 
   html += '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:6px;padding:12px;margin-bottom:8px">';
