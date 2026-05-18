@@ -24,24 +24,37 @@ var PP_STD = {
     }
   },
   shredding_kg_per_manhour: 18.5,
-  shredding_max_workers: 20,  // 이 이상 투입해도 설비 한계로 효율 안 늘어남 (실측: 19명 이상부터 급락)
+  shredding_max_workers: 20,
+  wagon_min: 30, // 와건 시간
+  // 내포장 호기 — 실측 기반 (4-03 등 데이터 분석)
+  // 호기 1대당 분당 EA = 약 5명 기준; 인원/속도 모두 호기당 고정
   packing_lines: [
-    { id:1, name:'1호기', workers:12, ea_per_min:45 },
-    { id:2, name:'2호기', workers:8,  ea_per_min:8  },
-    { id:3, name:'3호기', workers:8,  ea_per_min:23 },
-    { id:4, name:'4호기', workers:8,  ea_per_min:23 }
+    { id:1, name:'1호기 (미니)',    workers:6, ea_per_min:30, productMatch:function(n){return n.indexOf('미니')>=0;} },
+    { id:2, name:'2호기 (FC)',      workers:6, ea_per_min:5,  productMatch:function(n){return n.indexOf('FC')===0 || n.indexOf('FC ')>=0;} },
+    { id:3, name:'3호기 (일반)',    workers:6, ea_per_min:27, productMatch:null },  // 시그·코스트코·트레이더스 등
+    { id:4, name:'4호기 (일반)',    workers:6, ea_per_min:27, productMatch:null }
   ],
+  transfer_workers_per_line: 2, // 호기 1대당 이송 인원
   retort: {
     machines: 3,
     carts_per_batch: 4,
-    minutes_per_batch: 150,
-    workers_per_batch: 2,
-    ea_per_cart: {
-      '시그니처 장조림 130g': 800,
-      '시그니처 장조림 130g 마트용': 800,
-      '코스트코 장조림 170g': 800,
-      'FC 장조림 3KG': 96,
-      '기본값': 500
+    max_carts: 8,
+    workers_total: 1, // 외포장조에서 1명 차출
+    // 제품별 (실측/메모리):
+    //   FC 3KG: 대차당 380 EA, 150분
+    //   시그/코스트코/시그마트용: 대차당 1024 EA, 120분
+    //   미니: 대차당 1280 EA, 120분
+    //   트레이더스 460g: 대차당 380 EA, 120분
+    profile: {
+      'FC 장조림 3KG':              { eaPerCart: 380,  minutes: 150 },
+      '시그니처 장조림 130g':       { eaPerCart: 1024, minutes: 120 },
+      '시그니처 장조림 130g 마트용':{ eaPerCart: 1024, minutes: 120 },
+      '시그니처 장조림 120g':       { eaPerCart: 1024, minutes: 120 },
+      '코스트코 장조림 170g':       { eaPerCart: 1024, minutes: 120 },
+      '미니쇠고기장조림 70g 5입':   { eaPerCart: 1280, minutes: 120 },
+      '미니쇠고기장조림 70g 낱개':  { eaPerCart: 1280, minutes: 120 },
+      '트레이더스 장조림 460g':     { eaPerCart: 380,  minutes: 120 },
+      '기본값':                     { eaPerCart: 500,  minutes: 120 }
     }
   },
   yield: {
@@ -50,33 +63,42 @@ var PP_STD = {
     shredding: 0.97
   },
   lunch: {
-    startMin: 11*60 + 30,
-    endMin: 13*60 + 30,
-    workerRatio: 0.5
-  }
+    // 반반 교대: 11:30~12:30 1차 (half1 식사), 12:30~13:30 2차 (half2 식사)
+    // 식사 중이 아닌 인원은 계속 작업 (파쇄/내포장 등)
+    lunch1_s: 11*60 + 30,
+    lunch1_e: 12*60 + 30,
+    lunch2_s: 12*60 + 30,
+    lunch2_e: 13*60 + 30
+  },
+  manager_workers: 1 // 관리자 1명 (전공정 항상 1명 점유)
 };
 
 // ============================================================
-// 점심 교대 반영한 종료시각 계산
+// 점심 시간 = 반반 교대 (전체 가동, 인원만 반)
+// 작업 시간 → 점심 통과 시 50% 속도 (1차 + 2차 합쳐 1시간씩, 총 2시간 = 1시간만큼 손실)
 // ============================================================
 function _ppWorkWithLunch(startMin, totalWorkMinutes){
   var LL = PP_STD.lunch;
+  var LS = LL.lunch1_s; // 11:30
+  var LE = LL.lunch2_e; // 13:30
   var t = startMin;
   var remain = totalWorkMinutes;
-  if(t < LL.startMin){
-    var beforeLunch = Math.min(LL.startMin - t, remain);
+  // 점심 전
+  if(t < LS){
+    var beforeLunch = Math.min(LS - t, remain);
     remain -= beforeLunch;
     t += beforeLunch;
   }
-  if(remain > 0 && t < LL.endMin){
-    var lunchAvail = LL.endMin - t;
-    var effectiveWork = lunchAvail * LL.workerRatio;
+  // 점심 중: 작업 진행되지만 절반 속도 (절반은 식사, 절반은 일)
+  if(remain > 0 && t < LE){
+    var lunchAvail = LE - t;
+    var effectiveWork = lunchAvail * 0.5; // 절반 속도
     if(effectiveWork >= remain){
-      var portionUsed = remain / LL.workerRatio;
+      var portionUsed = remain / 0.5;
       return t + portionUsed;
     } else {
       remain -= effectiveWork;
-      t = LL.endMin;
+      t = LE;
     }
   }
   return t + remain;
@@ -120,29 +142,24 @@ async function _ppRunSimulation(){
   _ppRenderResult(input, scA, scB);
 }
 
-
 // ============================================================
-// 시뮬레이션 엔진 v4 — 구간 계산 모델
+// 시뮬레이션 엔진 v5 — timetable.js + timetable_test.js 기반
 // ============================================================
-// 알고리즘:
-//   1) 산출량 (yield)
-//   2) 자숙 회차 분배 (잔량 먼저, 가압/비가압)
-//   3) 호기 배정
-//   4) 전처리 종료시각 — 시간대별 출근 인원 (자숙 active시 -2명)
-//   5) 자숙 회차 시각 — 전처리 누적량 기반
-//   6) 파쇄 종료시각 — 2구간 모델 (내포장 시작 전: 풀인원 / 후: 축소인원), 점심 50%
-//   7) 내포장 시작시점 = 파쇄 종료시각 - 호기 자체 가동시간 (점심반영) 으로 역산
-//      → 파쇄가 미리 충분히 쌓이고 종료 동기화되는 시점
-//   8) 인원 부족 체크 — 내포장 가동 구간 필요인원 vs 가용
-//   9) 시간대별 슬롯 출력
+// 핵심 룰 (정확한 도메인 모델):
+//   1. 외포장은 별도 점유 X (잉여 인력 자동 흡수)
+//   2. 점심: 반반 교대 (11:30~12:30 1차 / 12:30~13:30 2차), 작업은 계속 (절반 속도)
+//   3. 호기 ea_per_min은 호기 1대당 실측값 (시그 27, 미니 30, FC 5)
+//   4. 레토르트 EA/대차 & 시간은 제품별 (PP_STD.retort.profile)
+//   5. 자숙: 회차당 2명 고정, 가압 150분/비가압 240분
+//   6. 파쇄: 분당 18.5 kg/인시, 최대 20명
+//   7. 내포장: 가용 인원이 호기 풀가동에 충분하면 그 시점 시작 (오전), 또는 13:30 (오후)
 // ============================================================
 function _ppSimulate(input, mode){
   var startMin = _ppToMin(input.startTime);
   var maxEndMin = _ppToMin(input.maxEnd);
   var ckRule = PP_STD.cooking;
-  var LUNCH_S = PP_STD.lunch.startMin;
-  var LUNCH_E = PP_STD.lunch.endMin;
-  var LUNCH_R = PP_STD.lunch.workerRatio;
+  var L1S = PP_STD.lunch.lunch1_s; // 11:30
+  var L2E = PP_STD.lunch.lunch2_e; // 13:30
   var SH_MAX_W = PP_STD.shredding_max_workers;
   var SH_KGPH = PP_STD.shredding_kg_per_manhour;
   var PP_KGPH = PP_STD.preprocess_kg_per_manhour;
@@ -153,6 +170,7 @@ function _ppSimulate(input, mode){
   var cookOutKg = ppOutKg * PP_STD.yield.cooking;
   var shredOutKg = cookOutKg * PP_STD.yield.shredding;
 
+  // 제품별 EA (kgea 정확 사용)
   var prodEa = [];
   var totalQty = 0;
   input.products.forEach(function(p){
@@ -165,7 +183,7 @@ function _ppSimulate(input, mode){
     totalQty += ea;
   });
 
-  // ── 2. 자숙 회차 분배 ──
+  // ── 2. 자숙 회차 분배 (잔량 먼저, 가압/비가압) ──
   var prodPressureKg = 0, prodNormalKg = 0;
   input.products.forEach(function(p){
     var canPressure = ckRule.pressure_allowed[p.name];
@@ -189,49 +207,7 @@ function _ppSimulate(input, mode){
   var normalTankKgs   = _tankKgs(prodNormalKg,   normalCycles);
   var cookBatches = pressureCycles + normalCycles;
 
-  // ── 3. 호기 배정 ──
-  var lineAssignment = _ppAssignToLines(prodEa);
-  var pkInfo = _ppCalcPackingHours(lineAssignment);
-  var activeLineCount = pkInfo.lines.length;
-  var packingWorkers = pkInfo.totalWorkers;
-  var outerWorkers = activeLineCount * 2;
-  var retortWorkers = 1;
-  var cookWorkersFixed = ckRule.workers_per_batch;
-  // 내포장 가동 구간 필요인원 (자숙 active 가능성 고려해서 +2)
-  var pkConsumeWorkers = packingWorkers + outerWorkers + retortWorkers;
-
-  // 시간대별 누적 출근 인원
-  function workersAt(t){
-    var n = 0;
-    for(var i = 0; i < input.shifts.length; i++){
-      var sh = input.shifts[i];
-      if(t >= _ppToMin(sh.time)) n += sh.workers;
-      else break;
-    }
-    return n;
-  }
-  // 점심 시간 가용
-  function availableAt(t){
-    var w = workersAt(t);
-    if(t >= LUNCH_S && t < LUNCH_E) w = Math.floor(w * LUNCH_R);
-    return w;
-  }
-
-  // ── 4. 전처리 종료시각 ──
-  // 시간대별 가용 인원에서 자숙 시작 후엔 -2명, 점심 50%
-  // 전처리 시작 시점부터 1분씩 처리량 누적
-  // (자숙 회차 시각은 전처리 누적량에 의존하므로 동시에 계산 — 단순화: 전처리 진행 중에 자숙 회차들이 차례로 시작)
-  // 이 단계에선 자숙 시작 영향은 미미하다고 가정하고 일단 전처리만 계산
-  // 점심 통과 케이스도 분당 누적으로 처리
-  var ppStart = startMin;
-  var ppRemain = ppOutKg;
-  var ppCumKg = 0;
-  var ppCumByMin = []; // [{t, cumKg}] — 자숙 회차 투입 시점 역산용
-  var ppEndMin = -1;
-  // 자숙 active 추적용 (전처리 단계에서 자숙 active 인원 차감 반영)
-  var cookActiveCount = 0;
-  var cookActiveUntil = []; // [outTime, outTime, ...] 정렬됨
-  // 자숙 회차 큐
+  // 회차 큐 (가압 먼저 → 비가압, 전처리 누적 충족 순)
   var cookQueue = [];
   var cumNeed = 0;
   pressureTankKgs.forEach(function(kg){
@@ -242,18 +218,54 @@ function _ppSimulate(input, mode){
     cumNeed += kg;
     cookQueue.push({type:'normal', kg:kg, ppCumNeed:cumNeed, durMin:ckRule.minutes_normal});
   });
+
+  // ── 3. 호기 배정 ──
+  var lineAssignment = _ppAssignToLines(prodEa);
+  var pkInfo = _ppCalcPackingHours(lineAssignment);
+  var packingWorkers = pkInfo.totalWorkers;
+  var transferWorkers = pkInfo.lines.length * PP_STD.transfer_workers_per_line;
+  var retortWorkers = PP_STD.retort.workers_total; // 1명
+  var managerWorkers = PP_STD.manager_workers;     // 1명
+  var cookWorkersFixed = ckRule.workers_per_batch; // 2명/회차
+
+  // 내포장 가동 시 최소 필요 인원 (호기 본 + 이송 + 레토르트 1 + 관리 1)
+  var pkConsumeWorkers = packingWorkers + transferWorkers + retortWorkers + managerWorkers;
+
+  // 시간대별 누적 출근
+  function workersAt(t){
+    var n = 0;
+    for(var i = 0; i < input.shifts.length; i++){
+      var sh = input.shifts[i];
+      if(t >= _ppToMin(sh.time)) n += sh.workers;
+      else break;
+    }
+    return n;
+  }
+
+  // ── 4. 전처리 + 자숙 회차 시뮬레이션 (1분 단위) ──
+  // 전처리 = 전 인원에서 자숙 점유분 빼고 처리
+  // 자숙 = 전처리 누적량 충족 시 투입 (회차당 2명)
+  var ppStart = startMin;
+  var ppRemain = ppOutKg;
+  var ppCumKg = 0;
+  var ppEndMin = -1;
+  var cookActiveUntil = [];
   var nextCookIdx = 0;
-  var cookSchedule = []; // {type, kg, inTime, outTime}
+  var cookSchedule = [];
 
   var MAX_T = 26 * 60;
   for(var t = ppStart; t <= MAX_T; t++){
-    // 자숙 active 마감
+    // 자숙 회차 마감
     cookActiveUntil = cookActiveUntil.filter(function(ot){ return ot > t; });
-    cookActiveCount = cookActiveUntil.length;
+    var cookActiveCount = cookActiveUntil.length;
 
-    // 가용 인원 - 자숙 점유분
-    var avail = availableAt(t);
-    var ppAvail = Math.max(0, avail - cookActiveCount * cookWorkersFixed);
+    var avail = workersAt(t);
+    // 점심 시간엔 절반만 가용 (반반 교대)
+    var isLunch = (t >= L1S && t < L2E);
+    var effAvail = isLunch ? Math.floor(avail * 0.5) : avail;
+
+    // 자숙 점유 차감
+    var ppAvail = Math.max(0, effAvail - cookActiveCount * cookWorkersFixed - managerWorkers);
 
     // 전처리 처리
     if(ppRemain > 0 && ppAvail > 0){
@@ -262,16 +274,15 @@ function _ppSimulate(input, mode){
       ppRemain -= ppDone;
       ppCumKg += ppDone;
     }
-    ppCumByMin.push({t:t, cumKg:ppCumKg});
 
-    // 자숙 회차 투입 (전처리 누적 충족 + 인력 2명 가용 + 동시 가용 = 자숙 6대 한계 미만)
+    // 자숙 회차 투입
     while(nextCookIdx < cookQueue.length){
       var nx = cookQueue[nextCookIdx];
       if(ppCumKg < nx.ppCumNeed - 0.5) break;
-      if(cookActiveCount >= ckRule.tanks_total) break; // 탱크 한계
-      // 인력 체크: 이 시점 가용 인원이 자숙 + 다른 회차 + 전처리(최소 1) 가능한지
-      if(avail < (cookActiveCount + 1) * cookWorkersFixed) break;
-      // 투입
+      if(cookActiveCount >= ckRule.tanks_total) break;
+      // 인력 2명 가용?
+      var availForCook = effAvail - cookActiveCount * cookWorkersFixed - managerWorkers;
+      if(availForCook < cookWorkersFixed) break;
       var inT = t;
       var outT = t + nx.durMin;
       cookSchedule.push({type:nx.type, kg:nx.kg, inTime:inT, outTime:outT});
@@ -281,81 +292,49 @@ function _ppSimulate(input, mode){
     }
 
     if(ppRemain <= 0.5 && ppEndMin < 0){ ppEndMin = t + 1; }
-    if(ppRemain <= 0.5 && nextCookIdx >= cookQueue.length && cookActiveCount === 0){
-      // 전처리도 끝나고 자숙도 끝났으면 break (자숙 종료 시각 위해 계속)
-      // 여기선 자숙 종료 시각까지 알아야 함
-    }
-    // 자숙 진행은 계속 — 마지막 자숙 종료까지 ppCumByMin도 채워야 함
     if(ppRemain <= 0.5 && nextCookIdx >= cookQueue.length && cookActiveUntil.length === 0) break;
   }
   if(ppEndMin < 0) ppEndMin = MAX_T;
-  // 자숙 종료 시각
   var lastCookOutTime = cookSchedule.length ? Math.max.apply(null, cookSchedule.map(function(c){return c.outTime;})) : ppEndMin;
+  var firstCookOut = cookSchedule.length ? Math.min.apply(null, cookSchedule.map(function(c){return c.outTime;})) : ppEndMin;
   var cookStartMin = cookSchedule.length ? cookSchedule[0].inTime : ppStart;
   var cookEndMin = lastCookOutTime;
 
-  // ── 5. 마지막 자숙 회차 산출 (파쇄 들어갈 마지막 분량) ──
-  var lastCookKgOut = cookSchedule.length ? cookSchedule[cookSchedule.length-1].kg * PP_STD.yield.cooking : 0;
+  // 파쇄 시작 = 자숙 1호 종료 + 와건 30분
+  var shStart = firstCookOut + PP_STD.wagon_min;
 
-  // ── 6. 파쇄 종료시각 계산 (2구간 모델) ──
-  // 파쇄 입력 총량 (= 자숙 산출 총합) = cookOutKg
-  // 파쇄 산출 총량 = shredOutKg = cookOutKg × 0.97
-  // 파쇄 시작 = 자숙 1호 종료 시점
-  // 파쇄가 처리할 수 있는 양은 시점 t까지 자숙 누적 산출 (FIFO)
-  // 시점 t의 파쇄 인원 = min(SH_MAX_W, 가용 - 자숙 active*2 - (내포장 active면 호기+외포장+레토르트))
-  //
-  // 파쇄 종료시각을 내포장 시작시각의 함수로 두고 반복 수렴:
-  //   초기: 내포장 시작 = pkStartGuess (오전: 자숙 첫 종료 + 30분, 오후: 13:30)
-  //   파쇄 종료 = sim_shred_end(pkStart)
-  //   pkStart_new = 파쇄 종료 - pkSelfMin (호기 자체 가동시간 점심반영) + α
-  //   수렴까지 반복 (5회 정도면 충분)
-  //
-  // 호기 자체 가동시간 (점심 50% 손실 반영):
-  //   pkSelfMin(start, totalEaPerMin, totalQty) — 점심 구간 통과 시 추가 시간 계산
-  function pkSelfMinFrom(start, lineSpeedSum, qty){
-    // qty / lineSpeedSum 분 동안 처리, 점심 구간 50%
-    var remain = qty;
-    var t2 = start;
-    var iter = 0;
-    while(remain > 0 && iter < 24*60){
-      var spd = lineSpeedSum;
-      if(t2 >= LUNCH_S && t2 < LUNCH_E) spd = spd * LUNCH_R;
-      remain -= spd;
-      t2++;
-      iter++;
-    }
-    return t2 - start;
-  }
-
+  // ── 5. 파쇄 종료시각 계산 + 내포장 시작 결정 ──
+  // 파쇄 처리해야 할 총 kg = cookOutKg (자숙 산출 = 파쇄 입력)
+  // 분당 처리 = min(SH_MAX_W, 가용 인원) × 18.5 / 60 kg/min
+  // 점심 시간엔 가용 인원 절반
+  // 내포장 가동 시 인력 차감
   function shredEnd(pkStartGuess){
-    // 파쇄 시뮬 (분 단위, 자숙 회차 종료마다 +kg, 인력은 내포장 active 여부에 따라 변동)
-    var shStart = cookSchedule.length ? cookSchedule[0].outTime : ppEndMin;
+    var idx = 0;
+    var sortedCook = cookSchedule.slice().sort(function(a,b){return a.outTime - b.outTime;});
     var shRemainKg = 0;
-    var shInputTotalKg = cookOutKg;
     var shProcessedKg = 0;
-    var idx = 0; // 다음 자숙 회차 인덱스 (출시 순)
-    var sortedCookByOut = cookSchedule.slice().sort(function(a,b){return a.outTime - b.outTime;});
-
+    var totalShIn = cookOutKg;
+    var lastInputT = sortedCook.length ? sortedCook[sortedCook.length-1].outTime + PP_STD.wagon_min : shStart;
     for(var t = shStart; t <= MAX_T; t++){
-      // 자숙 회차 종료분 추가
-      while(idx < sortedCookByOut.length && sortedCookByOut[idx].outTime <= t){
-        shRemainKg += sortedCookByOut[idx].kg * PP_STD.yield.cooking;
+      // 자숙 회차 종료 + 와건시간 후 산출 가능
+      while(idx < sortedCook.length && sortedCook[idx].outTime + PP_STD.wagon_min <= t){
+        shRemainKg += sortedCook[idx].kg * PP_STD.yield.cooking;
         idx++;
       }
-      if(shRemainKg <= 0 && shProcessedKg >= shInputTotalKg - 0.5) return t;
+      if(shRemainKg <= 0 && shProcessedKg >= totalShIn - 0.5 && t >= lastInputT) return t;
 
-      // 시점 t의 가용
-      var avail = availableAt(t);
-      // 자숙 active 차감
-      var cookActiveNow = sortedCookByOut.filter(function(c){return c.inTime <= t && c.outTime > t;}).length;
-      var reserved = cookActiveNow * cookWorkersFixed;
-      // 내포장 active 차감
+      var avail = workersAt(t);
+      var isLunch = (t >= L1S && t < L2E);
+      var effAvail = isLunch ? Math.floor(avail * 0.5) : avail;
+
+      // 점유 차감
+      var cookActiveNow = sortedCook.filter(function(c){return c.inTime <= t && c.outTime > t;}).length;
+      var reserved = cookActiveNow * cookWorkersFixed + managerWorkers;
       if(t >= pkStartGuess) reserved += pkConsumeWorkers;
-      var shAvail = Math.max(0, avail - reserved);
+      var shAvail = Math.max(0, effAvail - reserved);
       var shW = Math.min(SH_MAX_W, shAvail);
 
       var shDone = (SH_KGPH / 60) * shW;
-      if(t >= LUNCH_S && t < LUNCH_E) shDone = shDone * LUNCH_R;
       if(shDone > shRemainKg) shDone = shRemainKg;
       shRemainKg -= shDone;
       shProcessedKg += shDone;
@@ -363,134 +342,134 @@ function _ppSimulate(input, mode){
     return MAX_T;
   }
 
-  // 호기 속도 합
-  var lineSpeedSum = pkInfo.lines.reduce(function(s,l){return s + l.ea_per_min;}, 0);
+  // 내포장 호기 자체 가동시간 (점심 50%, 반반 교대)
+  function pkSelfMin(startGuess){
+    return _ppWorkWithLunch(startGuess, totalQty / pkInfo.lineSpeedSum);
+  }
 
-  // ── 7. 내포장 시작시점 역산 ──
-  // 초기 추정
-  var firstCookOut = cookSchedule.length ? cookSchedule[0].outTime : ppEndMin;
-  var pkStartGuess;
-  if(mode === 'morning'){
-    // 자숙 첫 회차 종료 + 약간 (파쇄 산출 시작)
-    pkStartGuess = firstCookOut + 30;
+  // 호기 분당 처리 합
+  pkInfo.lineSpeedSum = pkInfo.lines.reduce(function(s,l){return s + l.ea_per_min;}, 0);
+
+  // ── 6. 내포장 시작 시각 결정 ──
+  // 오전 모드: 자숙 1호 와건 종료 후 일정 시간 (파쇄 산출 누적) + 가용 인원 충분 시
+  // 오후 모드: 13:30 강제 시작
+  var pkStart;
+  if(mode === 'afternoon'){
+    pkStart = Math.max(L2E, shStart + 30);
   } else {
-    // 오후 모드: 13:30 강제
-    pkStartGuess = Math.max(13*60 + 30, firstCookOut + 30);
-  }
-
-  // 반복 수렴 (최대 6회)
-  var pkStart, pkEnd, shEnd, pkSelfMin;
-  for(var iter = 0; iter < 6; iter++){
-    shEnd = shredEnd(pkStartGuess);
-    // 내포장 호기 자체 가동시간 (역방향으로 계산: shEnd에서 끝나려면 언제 시작?)
-    // 단순화: pkStartGuess부터 호기 자체 시뮬 (점심반영)
-    pkSelfMin = pkSelfMinFrom(pkStartGuess, lineSpeedSum, totalQty);
-    pkEnd = pkStartGuess + pkSelfMin;
-    // 파쇄 산출이 내포장에 충분히 공급되는지 확인 — 두 종료 시점이 비슷하면 OK
-    // 두 종료 시점 차이를 줄이는 방향으로 pkStart 조정
-    // pkEnd < shEnd → 내포장이 빨리 끝남 (정상 아님 — 파쇄 산출 못 받음)
-    //   → pkStart를 늦춤 (더 늦게 시작)
-    // pkEnd > shEnd → 내포장이 늦게 끝남 (정상, 마지막 산출분 처리)
-    //   → pkStart 그대로 또는 약간 앞당김
-    var diff = pkEnd - shEnd;
-    if(mode === 'afternoon'){
-      // 오후 모드는 강제 13:30 시작이므로 한 번만 계산
-      break;
-    }
-    if(Math.abs(diff) <= 5) break; // 5분 이내면 수렴
-    if(pkEnd < shEnd){
-      // 내포장이 너무 빨리 끝남 → 시작을 늦춤
-      pkStartGuess += Math.min(60, shEnd - pkEnd);
-    } else {
-      // 내포장이 너무 늦게 끝남 → 시작을 앞당김 (단 파쇄 첫 산출 이후만)
-      pkStartGuess = Math.max(firstCookOut + 10, pkStartGuess - Math.min(30, diff - 5));
+    // 파쇄 시작 후 30분 (산출 일부 쌓임) + 가용 인원 체크
+    pkStart = shStart + 30;
+    // 가용 인원이 pkConsumeWorkers + 자숙 점유 + 관리 + 파쇄최소1 = pkConsumeWorkers + 2 + 1 + 1
+    // 안 되면 늦춤
+    while(pkStart < L2E + 60){
+      var aval = workersAt(pkStart);
+      var isLunch = (pkStart >= L1S && pkStart < L2E);
+      var effAval = isLunch ? Math.floor(aval * 0.5) : aval;
+      var cookNow = cookSchedule.filter(function(c){return c.inTime <= pkStart && c.outTime > pkStart;}).length;
+      var need = pkConsumeWorkers + cookNow * cookWorkersFixed + 1; // +1 = 파쇄 최소
+      if(effAval >= need) break;
+      pkStart += 5;
     }
   }
-  pkStart = pkStartGuess;
 
-  // 마지막 파쇄 산출분 처리 시간 (호기 자체 속도로 lastCookKgOut × yShred 만큼 추가)
-  var lastShredOutKg = lastCookKgOut * PP_STD.yield.shredding;
-  var avgKgPerEa = totalQty > 0 ? shredOutKg / totalQty : 0.13;
-  var lastEa = avgKgPerEa > 0 ? lastShredOutKg / avgKgPerEa : 0;
-  // 파쇄 종료 후 마지막 분량 호기 통과 시간
-  var alphaMin = lineSpeedSum > 0 ? Math.ceil(lastEa / lineSpeedSum) : 0;
-  // 내포장 종료 = max(자기 가동 종료, 파쇄 종료 + α)
-  var pkEndAdjusted = Math.max(pkEnd, shEnd + alphaMin);
+  // 파쇄 종료 시각
+  var shEnd = shredEnd(pkStart);
 
-  // 레토르트: 내포장 시작 ~ 내포장 종료 + 마지막 회차 살균
-  var retortStart = pkStart;
-  var retortEnd = pkEndAdjusted + Math.round(PP_STD.retort.minutes_per_batch * 0.3);
+  // 내포장 종료 = pkStart + 자체 가동시간 (단 파쇄 종료 + 마지막 산출분 처리 시간보다 늦어야)
+  var avgKgPerEa = totalQty > 0 ? shredOutKg / totalQty : 0.025;
+  var lastCookKg = cookSchedule.length ? cookSchedule[cookSchedule.length-1].kg : 0;
+  var lastShredOutKg = lastCookKg * PP_STD.yield.cooking * PP_STD.yield.shredding / PP_STD.yield.cooking; // = lastCookKg × 0.97
+  var lastEa = avgKgPerEa > 0 ? Math.round(lastShredOutKg * PP_STD.yield.cooking / avgKgPerEa) : 0;
+  // 단순화: 파쇄 종료 후 마지막 산출분이 호기 통과 시간 = lastEa / 호기속도
+  var tailMin = pkInfo.lineSpeedSum > 0 ? Math.ceil(lastEa / pkInfo.lineSpeedSum) : 0;
+
+  var pkSelfEnd = Math.round(pkSelfMin(pkStart));
+  var pkEnd = Math.max(pkSelfEnd, shEnd + tailMin);
+
+  // ── 7. 레토르트 (제품별 EA/대차 + 시간) ──
+  // 회차 균등 분배 + 대차 8 한도 + 3대 병렬
+  var firstProd = prodEa[0] ? prodEa[0].name : '기본값';
+  var rtProf = PP_STD.retort.profile[firstProd] || PP_STD.retort.profile['기본값'];
+  var EA_PER_CART = rtProf.eaPerCart;
+  var RT_MIN = rtProf.minutes;
+  var MAX_EA_PER_BATCH = EA_PER_CART * PP_STD.retort.carts_per_batch;
+  var retortCycles = Math.max(1, Math.ceil(totalQty / MAX_EA_PER_BATCH));
+  var retortStart = pkStart + 30; // 첫 산출 후 시작 (단순화)
+  var retortEnd = retortStart + retortCycles * RT_MIN; // 단순: 순차 (실제 3대 병렬이지만 안전쪽)
+  // 더 정확: 3대 병렬 회차 = ceil(cycles/3) × RT_MIN
+  var retortEndParallel = retortStart + Math.ceil(retortCycles / PP_STD.retort.machines) * RT_MIN;
+  retortEnd = Math.max(retortEndParallel, pkEnd + Math.round(RT_MIN * 0.3)); // 내포장 종료 후 마지막 회차도 살균 필요
 
   // ── 8. 인원 부족 체크 ──
-  // 내포장 가동 구간(pkStart~pkEndAdjusted) 동안 매 시점 가용 ≥ 필요?
-  // 필요 인원: pkConsumeWorkers + cookActive(2명/회차) + 파쇄 최소 1명
+  // 내포장 가동 중 매 10분마다 가용 vs 필요 비교
   var shortage = null;
-  for(var tc = pkStart; tc < pkEndAdjusted; tc += 10){
-    var availNow = availableAt(tc);
-    var cookCount = cookSchedule.filter(function(c){return c.inTime <= tc && c.outTime > tc;}).length;
-    var needNow = pkConsumeWorkers + cookCount * cookWorkersFixed + 1; // +1 = 파쇄 최소
-    if(availNow < needNow){
-      if(!shortage){
-        shortage = { time: tc, avail: availNow, need: needNow };
-      }
+  for(var tc = pkStart; tc < pkEnd; tc += 10){
+    var av = workersAt(tc);
+    var isLunch = (tc >= L1S && tc < L2E);
+    var effAv = isLunch ? Math.floor(av * 0.5) : av;
+    var cookNow = cookSchedule.filter(function(c){return c.inTime <= tc && c.outTime > tc;}).length;
+    var need = pkConsumeWorkers + cookNow * cookWorkersFixed + 1; // +1 파쇄 최소
+    if(effAv < need){
+      if(!shortage) shortage = { time: tc, avail: effAv, need: need, isLunch: isLunch };
     }
   }
 
-  // ── 9. 시간대별 슬롯 (출력용) ──
-  // 핵심 변화 시점들: 출근 시간, 전처리 끝, 자숙 회차 in/out, 파쇄 시작/끝, 내포장 시작/끝, 점심 시작/끝
+  // ── 9. 시간대별 슬롯 (timetable_test 방식: 의미있는 경계만) ──
   var checkpoints = [ppStart];
   input.shifts.forEach(function(sh){ checkpoints.push(_ppToMin(sh.time)); });
-  checkpoints.push(LUNCH_S, LUNCH_E);
+  checkpoints.push(L1S, PP_STD.lunch.lunch1_e, L2E);
   cookSchedule.forEach(function(c){ checkpoints.push(c.inTime, c.outTime); });
-  checkpoints.push(ppEndMin, firstCookOut, shEnd, pkStart, pkEndAdjusted, retortEnd);
+  checkpoints.push(ppEndMin, firstCookOut, shStart, shEnd, pkStart, pkEnd, retortEnd);
   checkpoints = checkpoints.filter(function(x){return x>=ppStart && x<=retortEnd+30;});
   checkpoints.sort(function(a,b){return a-b;});
-  // 중복 제거
   var uniq = [];
   checkpoints.forEach(function(x){ if(uniq.length === 0 || uniq[uniq.length-1] !== x) uniq.push(x); });
 
   var slots = uniq.map(function(t){
-    var avail = availableAt(t);
-    var cookCount = cookSchedule.filter(function(c){return c.inTime <= t && c.outTime > t;}).length;
-    var aCook = cookCount * cookWorkersFixed;
-    var aPk = 0, aOuter = 0, aRetort = 0;
-    if(t >= pkStart && t < pkEndAdjusted){
-      aPk = packingWorkers; aOuter = outerWorkers; aRetort = retortWorkers;
+    var av = workersAt(t);
+    var isLunch = (t >= L1S && t < L2E);
+    var effAv = isLunch ? Math.floor(av * 0.5) : av;
+    var aLunch = isLunch ? (av - effAv) : 0;
+    var cookNow = cookSchedule.filter(function(c){return c.inTime <= t && c.outTime > t;}).length;
+    var aCook = cookNow * cookWorkersFixed;
+    var aMgr = managerWorkers;
+    var aPk = 0, aTrans = 0, aRetort = 0;
+    if(t >= pkStart && t < pkEnd){
+      aPk = packingWorkers; aTrans = transferWorkers; aRetort = retortWorkers;
     }
-    var rem = avail - aCook - aPk - aOuter - aRetort;
-    // 파쇄: 자숙 종료 후~파쇄 종료까지 가용 인원
+    var rem = effAv - aCook - aMgr - aPk - aTrans - aRetort;
     var aSh = 0;
-    if(t >= firstCookOut && t < shEnd){
+    if(t >= shStart && t < shEnd){
       aSh = Math.min(SH_MAX_W, Math.max(0, rem));
       rem -= aSh;
     }
-    // 전처리: 전처리 진행 중이면 나머지 인원
     var aPp = 0;
     if(t < ppEndMin){
       aPp = Math.max(0, rem);
       rem = 0;
     }
-    var aIdle = Math.max(0, rem);
-    return {tMin:t, avail:avail, alloc:{pp:aPp, sh:aSh, pk:aPk, outer:aOuter, retort:aRetort, cook:aCook, idle:aIdle}};
+    var aIdle = Math.max(0, rem); // 잉여 = 외포장/제수로 자동 흡수
+    return {tMin:t, avail:av, effAvail:effAv, lunch:aLunch, alloc:{pp:aPp, sh:aSh, pk:aPk, trans:aTrans, retort:aRetort, cook:aCook, mgr:aMgr, idle:aIdle}};
   });
 
   // 평균 잉여 (의미 있는 슬롯들)
   var idleSum = 0, idleCnt = 0;
-  slots.forEach(function(s){ if(s.tMin >= ppStart && s.tMin < pkEndAdjusted){ idleSum += s.alloc.idle; idleCnt++; } });
+  slots.forEach(function(s){ if(s.tMin >= ppStart && s.tMin < pkEnd){ idleSum += s.alloc.idle; idleCnt++; } });
   var avgIdle = idleCnt > 0 ? Math.round(idleSum / idleCnt) : 0;
 
-  // 대표 alloc (내포장 가동 중 시점)
-  var repSlot = slots.find(function(s){return s.tMin >= pkStart + 10 && s.tMin < pkEndAdjusted;}) || slots[Math.floor(slots.length/2)] || slots[0];
+  // 대표 alloc (내포장 가동 중)
+  var repSlot = slots.find(function(s){return s.tMin >= pkStart + 10 && s.tMin < pkEnd;}) || slots[Math.floor(slots.length/2)] || slots[0];
   var allocRep = repSlot ? {
     preprocess: repSlot.alloc.pp, shredding: repSlot.alloc.sh, packing: repSlot.alloc.pk,
-    outer: repSlot.alloc.outer, retort: repSlot.alloc.retort, cook: repSlot.alloc.cook, idle: repSlot.alloc.idle
-  } : { preprocess:0, shredding:0, packing:packingWorkers, outer:outerWorkers, retort:retortWorkers, cook:0, idle:0 };
+    trans: repSlot.alloc.trans, retort: repSlot.alloc.retort, cook: repSlot.alloc.cook, mgr: repSlot.alloc.mgr, idle: repSlot.alloc.idle
+  } : { preprocess:0, shredding:0, packing:packingWorkers, trans:transferWorkers, retort:retortWorkers, cook:0, mgr:managerWorkers, idle:0 };
 
-  var feasible = pkEndAdjusted <= maxEndMin && !shortage;
+  var feasible = pkEnd <= maxEndMin && !shortage;
   var reason = null;
   if(shortage){
     feasible = false;
-    reason = _ppToTime(shortage.time) + ' 시점 ' + shortage.need + '명 필요 (가용 ' + shortage.avail + '명, 부족 ' + (shortage.need - shortage.avail) + '명)';
+    var hint = shortage.isLunch ? ' (점심 시간대 절반만 가용)' : '';
+    reason = _ppToTime(shortage.time) + ' 시점 ' + shortage.need + '명 필요 (가용 ' + shortage.avail + '명, 부족 ' + (shortage.need - shortage.avail) + '명)' + hint;
   }
 
   return {
@@ -500,7 +479,8 @@ function _ppSimulate(input, mode){
     alloc: allocRep,
     cookWorkers: cookWorkersFixed,
     retortWorkers: retortWorkers,
-    outerWorkers: outerWorkers,
+    transferWorkers: transferWorkers,
+    managerWorkers: managerWorkers,
     leftover: avgIdle,
     rawKg: rawKg,
     ppOutKg: ppOutKg,
@@ -514,35 +494,41 @@ function _ppSimulate(input, mode){
     cookSchedule: cookSchedule,
     pressureTankKgs: pressureTankKgs,
     normalTankKgs: normalTankKgs,
-    retortBatches: Math.ceil(totalQty / ((PP_STD.retort.ea_per_cart[input.products[0].name] || PP_STD.retort.ea_per_cart['기본값']) * PP_STD.retort.machines * PP_STD.retort.carts_per_batch)),
+    retortBatches: retortCycles,
+    retortProfile: { product: firstProd, eaPerCart: EA_PER_CART, minutes: RT_MIN },
     pkInfo: pkInfo,
     timeline: {
       pp: { start: ppStart, end: ppEndMin },
       cook: { start: cookStartMin, end: cookEndMin },
-      sh: { start: firstCookOut, end: shEnd },
-      pk: { start: pkStart, end: pkEndAdjusted },
+      sh: { start: shStart, end: shEnd },
+      pk: { start: pkStart, end: pkEnd },
       retort: { start: retortStart, end: retortEnd }
     },
-    endTime: pkEndAdjusted,
-    overrun: feasible ? 0 : Math.max(0, pkEndAdjusted - maxEndMin),
+    endTime: pkEnd,
+    overrun: feasible ? 0 : Math.max(0, pkEnd - maxEndMin),
     shifts: slots,
     shortage: shortage
   };
 }
 
-// 호기 배정
+// 호기 배정 (productMatch 사용)
 function _ppAssignToLines(prodEa){
   var lines = PP_STD.packing_lines.map(function(l){
-    return { id:l.id, name:l.name, products:[], totalEa:0, workers:l.workers, ea_per_min:l.ea_per_min };
+    return { id:l.id, name:l.name, products:[], totalEa:0, workers:l.workers, ea_per_min:l.ea_per_min, productMatch:l.productMatch };
   });
   prodEa.forEach(function(p){
-    if(p.name.indexOf('미니') >= 0){
-      lines[0].products.push({name:p.name, qty:p.qty});
-      lines[0].totalEa += p.qty;
-    } else if(p.name.indexOf('FC') === 0 || p.name.indexOf('FC ') >= 0){
-      lines[1].products.push({name:p.name, qty:p.qty});
-      lines[1].totalEa += p.qty;
-    } else {
+    // 1호기 미니, 2호기 FC, 그 외는 3·4호기 균등 분할
+    var matched = false;
+    for(var i = 0; i < 2; i++){ // 1·2호기 (특수)
+      if(lines[i].productMatch && lines[i].productMatch(p.name)){
+        lines[i].products.push({name:p.name, qty:p.qty});
+        lines[i].totalEa += p.qty;
+        matched = true;
+        break;
+      }
+    }
+    if(!matched){
+      // 3·4호기 균등 분할
       var half = Math.ceil(p.qty / 2);
       lines[2].products.push({name:p.name, qty:half});
       lines[2].totalEa += half;
@@ -623,7 +609,7 @@ function _ppRenderResult(input, scA, scB){
     html += '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:18px;margin-bottom:18px">';
     html += '<h3 style="margin:0 0 14px;font-size:15px;color:#1e293b;font-weight:700">📋 추천 시나리오 상세 — '+recLabel+'</h3>';
     html += _ppRenderTimeline(rec);
-    html += '<div style="margin-top:8px;font-size:11px;color:#94a3b8">※ 점심 교대 11:30~13:30 (작업속도 50%) 반영됨 (사선 음영). 전처리·파쇄는 시간대별로 인원 변동.</div>';
+    html += '<div style="margin-top:8px;font-size:11px;color:#94a3b8">※ 점심 11:30~13:30 = 반반 교대 (사선 음영, 절반 속도). 전처리·파쇄는 시간대별로 인원 변동.</div>';
     html += '</div>';
   }
 
@@ -632,7 +618,7 @@ function _ppRenderResult(input, scA, scB){
     html += '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:18px;margin-bottom:18px">';
     html += '<h3 style="margin:0 0 12px;font-size:15px;color:#1e293b;font-weight:700">👥 시간대별 인력 배치</h3>';
     html += _ppRenderShifts(rec);
-    html += '<div style="margin-top:8px;font-size:11px;color:#94a3b8">※ 가용 = 그 시점 출근 누적 (점심엔 50%). 인력은 자숙→내포장+외포장+레토르트→파쇄→전처리 우선순위로 배치.</div>';
+    html += '<div style="margin-top:8px;font-size:11px;color:#94a3b8">※ 점심 11:30~13:30 = 반반 교대 (절반 식사 / 절반 작업 계속, 가용 절반). 외포장은 잉여 인력으로 자동 투입.</div>';
     html += '</div>';
   }
 
@@ -663,7 +649,7 @@ function _ppRenderScenarioCard(sc, title, isRec){
   html += '<div>내포장 시작: <b>'+_ppToTime(sc.timeline.pk.start)+'</b></div>';
   html += '<div style="font-size:12px;color:#64748b">대표시점 배치 (내포장 가동중):</div>';
   html += '<div>· 전처리 '+sc.alloc.preprocess+' / 파쇄 '+sc.alloc.shredding+' / 자숙 '+sc.alloc.cook+'</div>';
-  html += '<div>· 내포장 '+sc.alloc.packing+' / 외포장 '+sc.alloc.outer+' / 레토르트 '+sc.alloc.retort+'</div>';
+  html += '<div>· 내포장 '+sc.alloc.packing+' / 이송 '+sc.alloc.trans+' / 레토르트 '+sc.alloc.retort+' / 관리 '+sc.alloc.mgr+'</div>';
   html += '<div>평균 잉여: <b style="color:'+(sc.leftover>=0?'#16a34a':'#dc2626')+'">'+sc.leftover+'명</b> (외포장/제수 가용)</div>';
   html += '</div></div>';
   return html;
@@ -698,15 +684,15 @@ function _ppRenderTimeline(sc){
     { name: '🍲 자숙',   start: t.cook.start, end: t.cook.end, w: sc.cookWorkers, color: '#f87171' },
     { name: '🔪 파쇄',   start: t.sh.start, end: t.sh.end, w: '~'+sc.alloc.shredding, color: '#a78bfa' },
     { name: '📦 내포장', start: t.pk.start, end: t.pk.end, w: sc.alloc.packing, color: '#34d399' },
-    { name: '📤 외포장', start: t.pk.start, end: t.pk.end, w: sc.outerWorkers, color: '#60a5fa' },
+    { name: '🚚 이송',   start: t.pk.start, end: t.pk.end, w: sc.transferWorkers, color: '#60a5fa' },
     { name: '🔥 레토르트', start: t.retort.start, end: t.retort.end, w: sc.retortWorkers, color: '#fb923c' }
   ];
   var minT = Math.min.apply(null, rows.map(function(r){return r.start;}));
   var maxT = Math.max.apply(null, rows.map(function(r){return r.end;}));
   var span = Math.max(1, maxT - minT);
 
-  var lunchStart = PP_STD.lunch.startMin;
-  var lunchEnd = PP_STD.lunch.endMin;
+  var lunchStart = PP_STD.lunch.lunch1_s;
+  var lunchEnd = PP_STD.lunch.lunch2_e;
   var lunchVisible = lunchStart >= minT && lunchEnd <= maxT;
   var lunchLeft = (lunchStart - minT) / span * 100;
   var lunchWidth = (lunchEnd - lunchStart) / span * 100;
@@ -742,7 +728,7 @@ function _ppRenderShifts(sc){
     if(displayed.length === 0){ displayed.push(s); continue; }
     var prev = displayed[displayed.length - 1];
     var p = prev.alloc, c = s.alloc;
-    var sameAlloc = prev.avail === s.avail && p.pp === c.pp && p.sh === c.sh && p.pk === c.pk && p.outer === c.outer && p.retort === c.retort && p.cook === c.cook;
+    var sameAlloc = prev.avail === s.avail && prev.lunch === s.lunch && p.pp === c.pp && p.sh === c.sh && p.pk === c.pk && p.trans === c.trans && p.retort === c.retort && p.cook === c.cook && p.mgr === c.mgr;
     if(!sameAlloc || (s.tMin - prev.tMin) >= 30){
       displayed.push(s);
     }
@@ -751,7 +737,7 @@ function _ppRenderShifts(sc){
   var lastShift = slots[slots.length - 1];
   if(displayed[displayed.length - 1] !== lastShift) displayed.push(lastShift);
 
-  var html = '<div style="overflow-x:auto"><table style="width:100%;font-size:12px;border-collapse:collapse;min-width:760px">';
+  var html = '<div style="overflow-x:auto"><table style="width:100%;font-size:12px;border-collapse:collapse;min-width:820px">';
   html += '<thead><tr style="background:#f1f5f9">';
   html += '<th style="text-align:center;padding:6px;border-bottom:1px solid #cbd5e1;width:60px">시각</th>';
   html += '<th style="text-align:center;padding:6px;border-bottom:1px solid #cbd5e1;width:50px">가용</th>';
@@ -759,8 +745,10 @@ function _ppRenderShifts(sc){
   html += '<th style="text-align:center;padding:6px;border-bottom:1px solid #cbd5e1">자숙</th>';
   html += '<th style="text-align:center;padding:6px;border-bottom:1px solid #cbd5e1">파쇄</th>';
   html += '<th style="text-align:center;padding:6px;border-bottom:1px solid #cbd5e1">내포장</th>';
-  html += '<th style="text-align:center;padding:6px;border-bottom:1px solid #cbd5e1">외포장</th>';
+  html += '<th style="text-align:center;padding:6px;border-bottom:1px solid #cbd5e1">이송</th>';
   html += '<th style="text-align:center;padding:6px;border-bottom:1px solid #cbd5e1">레토르트</th>';
+  html += '<th style="text-align:center;padding:6px;border-bottom:1px solid #cbd5e1">관리</th>';
+  html += '<th style="text-align:center;padding:6px;border-bottom:1px solid #cbd5e1">점심</th>';
   html += '<th style="text-align:center;padding:6px;border-bottom:1px solid #cbd5e1">잉여</th>';
   html += '</tr></thead><tbody>';
   displayed.forEach(function(s){
@@ -773,8 +761,10 @@ function _ppRenderShifts(sc){
     html += '<td style="text-align:center;padding:6px">'+(a.cook||'-')+'</td>';
     html += '<td style="text-align:center;padding:6px">'+(a.sh||'-')+'</td>';
     html += '<td style="text-align:center;padding:6px;color:#15803d;font-weight:600">'+(a.pk||'-')+'</td>';
-    html += '<td style="text-align:center;padding:6px;color:#1e40af">'+(a.outer||'-')+'</td>';
+    html += '<td style="text-align:center;padding:6px;color:#1e40af">'+(a.trans||'-')+'</td>';
     html += '<td style="text-align:center;padding:6px;color:#ea580c">'+(a.retort||'-')+'</td>';
+    html += '<td style="text-align:center;padding:6px;color:#64748b">'+(a.mgr||'-')+'</td>';
+    html += '<td style="text-align:center;padding:6px;color:#a16207">'+(s.lunch>0?s.lunch+'명':'-')+'</td>';
     html += '<td style="text-align:center;padding:6px;color:'+idleColor+';font-weight:'+(a.idle>0?'700':'400')+'">'+(a.idle||0)+'</td>';
     html += '</tr>';
   });
@@ -807,15 +797,19 @@ function _ppRenderWorkforceReason(input, sc){
   }
 
   html += '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:6px;padding:12px;margin-bottom:8px">';
-  html += '<div style="font-weight:600;color:#1e40af;margin-bottom:8px">공정별 인원 배치 근거 (동적 모델)</div>';
+  html += '<div style="font-weight:600;color:#1e40af;margin-bottom:8px">공정별 인원 배치 근거</div>';
   html += '<div style="margin-bottom:4px">• <b>자숙 '+sc.cookWorkers+'명</b> (고정) — 회차당 2명, 회차 중에만 점유</div>';
-  html += '<div style="margin-bottom:4px">• <b>내포장 '+sc.alloc.packing+'명</b> — 호기별 인원 합 (1호기 12 / 2호기 8 / 3·4호기 8씩 중 가동 호기)</div>';
-  html += '<div style="margin-bottom:4px">• <b>외포장 '+sc.outerWorkers+'명</b> — 가동 호기 '+(sc.pkInfo?sc.pkInfo.lines.length:0)+'대 × 2명</div>';
-  html += '<div style="margin-bottom:4px">• <b>레토르트 '+sc.retortWorkers+'명</b> — 내포장 가동 중 고정 1명</div>';
-  html += '<div style="margin-bottom:4px">• <b>전처리/파쇄</b> — 시간대별 가용 인원 동적 배치 (전처리는 산출 누적, 파쇄는 자숙 회차 종료마다 FIFO 처리)</div>';
+  html += '<div style="margin-bottom:4px">• <b>내포장 '+sc.alloc.packing+'명</b> — 호기별 인원 합 ('+(sc.pkInfo?sc.pkInfo.lines.map(function(l){return l.name+' '+l.workers;}).join(' / '):'')+')</div>';
+  html += '<div style="margin-bottom:4px">• <b>이송 '+sc.transferWorkers+'명</b> — 가동 호기 '+(sc.pkInfo?sc.pkInfo.lines.length:0)+'대 × 2명</div>';
+  html += '<div style="margin-bottom:4px">• <b>레토르트 '+sc.retortWorkers+'명</b> — 내포장 가동 중 1명 고정</div>';
+  html += '<div style="margin-bottom:4px">• <b>관리 '+sc.managerWorkers+'명</b> — 전 공정 항상 1명</div>';
+  html += '<div style="margin-bottom:4px">• <b>전처리/파쇄</b> — 시간대별 가용 인원 동적 배치, 점심엔 반반 교대 (절반 식사, 절반 일)</div>';
   html += '<div style="margin-bottom:4px;color:#64748b;font-size:12px">↳ 산출량: 전처리 '+sc.ppOutKg.toFixed(0)+'kg / 자숙 '+sc.cookOutKg.toFixed(0)+'kg / 파쇄 '+sc.shredOutKg.toFixed(0)+'kg / 내포장 '+sc.totalQty.toLocaleString()+'EA</div>';
+  if(sc.retortProfile){
+    html += '<div style="margin-bottom:4px;color:#64748b;font-size:12px">↳ 레토르트: '+sc.retortBatches+'회차 × '+sc.retortProfile.minutes+'분 (대차당 '+sc.retortProfile.eaPerCart+' EA)</div>';
+  }
   if(sc.leftover > 0){
-    html += '<div style="margin-top:8px;color:#16a34a">✓ 평균 잉여 <b>'+sc.leftover+'명</b> — 외포장·제수 추가 작업 가능</div>';
+    html += '<div style="margin-top:8px;color:#16a34a">✓ 평균 잉여 <b>'+sc.leftover+'명</b> — 외포장·제수 자동 투입</div>';
   } else if(sc.leftover === 0){
     html += '<div style="margin-top:8px;color:#64748b">○ 가용 인원 모두 본 공정에 투입됨</div>';
   } else {
