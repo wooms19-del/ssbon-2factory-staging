@@ -230,6 +230,10 @@ function clearStaleLocalData(){
 
 function init(){
   if(!L) L = loadL(); // 여기서 초기화
+  // ★ Firestore에서 gtinMap 동기화 (디바이스 간 공유)
+  if(typeof syncGtinMapFromFirestore === 'function'){
+    syncGtinMapFromFirestore().catch(e => console.warn('[gtinMap sync]', e));
+  }
   // 일지 출력 날짜 기본값
   const upDate = document.getElementById('up_date');
   if(upDate) upDate.value = tod();

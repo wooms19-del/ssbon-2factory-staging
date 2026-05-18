@@ -70,6 +70,8 @@ async function renderStock(){
     _stockData.thawing = R[3] || [];
     _stockFetchedFrom = stockInFrom;  // 캐시 시작 기록
     _renderStockShell();
+    // ★ 미등록 GTIN 자동 검사 후 배너
+    _checkUnknownGtinsBanner();
   } catch(e){
     pg.innerHTML = '<div style="padding:20px;color:#c0392b">로드 오류: '+(e.message||e)+'</div>';
   } finally {
@@ -504,6 +506,129 @@ async function _stockFetchOlder(newFrom){
 
 window._stockMonthShift = _stockMonthShift;
 window._stockMonthSet = _stockMonthSet;
+
+// ============================================================
+// 미등록 GTIN 자동 검사 + 등록 모달 + 부적합 재판정
+// ============================================================
+async function _checkUnknownGtinsBanner(){
+  var pg = document.getElementById('p-stock');
+  if(!pg) return;
+  // 기존 배너 제거
+  var oldBanner = document.getElementById('gtinBanner');
+  if(oldBanner) oldBanner.remove();
+  if(typeof findUnknownGtins !== 'function') return;
+  try {
+    var unknown = await findUnknownGtins();
+    if(!unknown || !unknown.length) return;
+    // 배너 생성
+    var banner = document.createElement('div');
+    banner.id = 'gtinBanner';
+    var totalCnt = unknown.reduce(function(s,u){return s + u.count;}, 0);
+    banner.innerHTML = ''
+      + '<div style="background:#fef3c7;border:1px solid #fbbf24;border-radius:8px;padding:14px 18px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;gap:12px">'
+      + '  <div>'
+      + '    <div style="font-size:14px;font-weight:700;color:#92400e">⚠️ 미등록 GTIN ' + unknown.length + '개 발견 (총 ' + totalCnt + '건 부적합)</div>'
+      + '    <div style="font-size:12px;color:#78350f;margin-top:3px">새로 들어온 원육 박스 GTIN이 시스템에 등록되지 않아 부적합으로 표시되고 있습니다.</div>'
+      + '  </div>'
+      + '  <button onclick="_openGtinRegisterModal()" style="background:#f59e0b;color:#fff;border:none;border-radius:6px;padding:9px 16px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">등록하고 정리하기</button>'
+      + '</div>';
+    pg.insertBefore(banner, pg.firstChild);
+  } catch(e){
+    console.warn('[gtinBanner] 검사 실패:', e);
+  }
+}
+
+async function _openGtinRegisterModal(){
+  if(typeof findUnknownGtins !== 'function'){
+    alert('GTIN 관리 기능 미로드'); return;
+  }
+  var unknown = await findUnknownGtins();
+  if(!unknown.length){
+    alert('미등록 GTIN이 없습니다.'); return;
+  }
+  // 모달 생성
+  var modal = document.createElement('div');
+  modal.id = 'gtinModal';
+  modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+  var rowsHtml = unknown.map(function(u, i){
+    return ''
+      + '<tr>'
+      + '  <td style="padding:8px;font-family:monospace;font-size:13px;border-bottom:1px solid #e5e7eb">' + u.gtin + '</td>'
+      + '  <td style="padding:8px;text-align:center;color:#dc2626;font-weight:600;border-bottom:1px solid #e5e7eb">' + u.count + '건</td>'
+      + '  <td style="padding:8px;text-align:center;border-bottom:1px solid #e5e7eb">'
+      + '    <select id="gtinPart_' + i + '" data-gtin="' + u.gtin + '" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:5px;font-size:13px">'
+      + '      <option value="">선택...</option>'
+      + '      <option value="설도">설도</option>'
+      + '      <option value="우둔">우둔</option>'
+      + '      <option value="홍두깨">홍두깨</option>'
+      + '    </select>'
+      + '  </td>'
+      + '</tr>';
+  }).join('');
+  modal.innerHTML = ''
+    + '<div style="background:#fff;border-radius:12px;max-width:700px;width:100%;max-height:90vh;overflow:auto;padding:24px">'
+    + '  <h2 style="margin:0 0 6px;font-size:18px;color:#1e293b">미등록 GTIN 등록</h2>'
+    + '  <p style="margin:0 0 16px;font-size:13px;color:#64748b">아래 GTIN의 부위를 선택하고 [등록]을 누르세요. 같은 GTIN의 부적합 record는 모두 자동으로 정상화됩니다.</p>'
+    + '  <table style="width:100%;border-collapse:collapse;font-size:13px">'
+    + '    <thead><tr style="background:#f8fafc">'
+    + '      <th style="padding:10px;text-align:left;border-bottom:2px solid #cbd5e1">GTIN</th>'
+    + '      <th style="padding:10px;text-align:center;border-bottom:2px solid #cbd5e1">부적합 건수</th>'
+    + '      <th style="padding:10px;text-align:center;border-bottom:2px solid #cbd5e1">부위 선택</th>'
+    + '    </tr></thead>'
+    + '    <tbody>' + rowsHtml + '</tbody>'
+    + '  </table>'
+    + '  <div style="display:flex;gap:8px;margin-top:20px;justify-content:flex-end">'
+    + '    <button onclick="_closeGtinModal()" style="padding:9px 18px;background:#fff;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;cursor:pointer">취소</button>'
+    + '    <button onclick="_submitGtinRegister(' + unknown.length + ')" style="padding:9px 22px;background:#16a34a;color:#fff;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer">등록 + 자동 정정</button>'
+    + '  </div>'
+    + '</div>';
+  document.body.appendChild(modal);
+}
+
+function _closeGtinModal(){
+  var modal = document.getElementById('gtinModal');
+  if(modal) modal.remove();
+}
+
+async function _submitGtinRegister(cnt){
+  // 선택된 부위 수집
+  var toRegister = [];
+  for(var i = 0; i < cnt; i++){
+    var el = document.getElementById('gtinPart_' + i);
+    if(!el) continue;
+    var gtin = el.dataset.gtin;
+    var part = el.value;
+    if(!part){ continue; }  // 미선택은 스킵
+    toRegister.push({ gtin: gtin, part: part });
+  }
+  if(!toRegister.length){
+    alert('부위를 1개 이상 선택하세요.'); return;
+  }
+  try {
+    // 1) GTIN 등록 (Firestore + 로컬)
+    for(var k = 0; k < toRegister.length; k++){
+      await registerGtin(toRegister[k].gtin, toRegister[k].part);
+    }
+    // 2) 부적합 재판정
+    var result = await rejudgeBarcodes();
+    var msg = 'GTIN ' + toRegister.length + '개 등록 완료\n'
+      + '✓ 자동 정정: ' + result.fixed + '건\n';
+    if(result.stillUnknown && Object.keys(result.stillUnknown).length){
+      msg += '⚠ 미해결: ' + Object.values(result.stillUnknown).reduce(function(s,n){return s+n;},0) + '건 (다른 미등록 GTIN)\n';
+    }
+    alert(msg);
+    _closeGtinModal();
+    // 페이지 갱신
+    if(typeof renderStock === 'function') renderStock();
+  } catch(e){
+    alert('등록 실패: ' + (e.message || e));
+  }
+}
+
+window._openGtinRegisterModal = _openGtinRegisterModal;
+window._closeGtinModal = _closeGtinModal;
+window._submitGtinRegister = _submitGtinRegister;
+window._checkUnknownGtinsBanner = _checkUnknownGtinsBanner;
 
 window.renderStock = renderStock;
 window.stockAdd = stockAdd;

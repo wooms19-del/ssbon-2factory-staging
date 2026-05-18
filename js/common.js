@@ -411,6 +411,133 @@ function nL(){
 }
 
 // ============================================================
+// GTIN 마스터 — Firestore 공유 저장소
+// _config/gtin_map: { map: {gtin: part, ...} }
+// ============================================================
+async function syncGtinMapFromFirestore(){
+  try {
+    if(typeof db === 'undefined' || !db){ return false; }
+    const doc = await db.collection('_config').doc('gtin_map').get();
+    if(!doc.exists){
+      // Firestore에 없으면 현재 로컬 값으로 초기화
+      await db.collection('_config').doc('gtin_map').set({
+        map: L.gtinMap || {},
+        updatedAt: new Date().toISOString()
+      });
+      return true;
+    }
+    const data = doc.data() || {};
+    const remoteMap = data.map || {};
+    if(!L) L = nL();
+    // Firestore가 진실의 출처 — 로컬은 폴백
+    L.gtinMap = Object.assign({}, L.gtinMap, remoteMap);
+    saveL();
+    return true;
+  } catch(e){
+    console.warn('[gtinMap] Firestore sync 실패 (로컬 폴백 사용):', e);
+    return false;
+  }
+}
+
+// 신규 GTIN 등록
+async function registerGtin(gtin, part){
+  gtin = String(gtin||'').trim();
+  part = String(part||'').trim();
+  if(!gtin || !part) throw new Error('GTIN과 부위는 필수입니다');
+  if(!L) L = nL();
+  L.gtinMap[gtin] = part;
+  saveL();
+  // Firestore 업데이트
+  if(typeof db !== 'undefined' && db){
+    await db.collection('_config').doc('gtin_map').set({
+      map: L.gtinMap,
+      updatedAt: new Date().toISOString()
+    });
+  }
+  return true;
+}
+
+// GTIN 삭제
+async function unregisterGtin(gtin){
+  gtin = String(gtin||'').trim();
+  if(!gtin) return false;
+  if(!L) L = nL();
+  delete L.gtinMap[gtin];
+  saveL();
+  if(typeof db !== 'undefined' && db){
+    await db.collection('_config').doc('gtin_map').set({
+      map: L.gtinMap,
+      updatedAt: new Date().toISOString()
+    });
+  }
+  return true;
+}
+
+// 부적합/확인필요 barcode record 자동 재판정
+// 반환: { fixed: N, stillUnknown: M, unknownGtins: [...] }
+async function rejudgeBarcodes(){
+  if(typeof db === 'undefined' || !db) throw new Error('Firestore 미연결');
+  if(!L) L = nL();
+
+  // 1) 부적합/확인필요 record 찾기 (status='부적합' OR part='확인필요' OR type='')
+  // Firestore는 OR 쿼리 제한 있어서 두 번 fetch 후 merge
+  const set = {};
+  const q1 = await db.collection('barcode').where('status','==','부적합').get();
+  q1.forEach(d => { set[d.id] = d.data(); });
+  const q2 = await db.collection('barcode').where('part','==','확인필요').get();
+  q2.forEach(d => { set[d.id] = d.data(); });
+
+  let fixed = 0;
+  const stillUnknown = {};
+  for(const [docId, rec] of Object.entries(set)){
+    const ic = String(rec.importCode || '');
+    const gtin = ic.startsWith('01') ? ic.slice(2,16) : '';
+    const newPart = L.gtinMap[gtin];
+    if(!newPart){
+      if(gtin) stillUnknown[gtin] = (stillUnknown[gtin]||0) + 1;
+      continue;
+    }
+    // 재판정: part, type, status, reason 필드 업데이트
+    await db.collection('barcode').doc(docId).update({
+      part: newPart,
+      type: newPart,
+      status: '적합',
+      reason: ''
+    });
+    fixed++;
+  }
+  return { fixed, stillUnknown };
+}
+
+// 미등록 GTIN 자동 추출 (현재 부적합 record에서)
+async function findUnknownGtins(){
+  if(typeof db === 'undefined' || !db) return [];
+  if(!L) L = nL();
+  const set = {};
+  const q1 = await db.collection('barcode').where('status','==','부적합').get();
+  q1.forEach(d => { set[d.id] = d.data(); });
+  const q2 = await db.collection('barcode').where('part','==','확인필요').get();
+  q2.forEach(d => { set[d.id] = d.data(); });
+  const counts = {};
+  for(const rec of Object.values(set)){
+    const ic = String(rec.importCode || '');
+    const gtin = ic.startsWith('01') ? ic.slice(2,16) : '';
+    if(!gtin) continue;
+    if(L.gtinMap[gtin]) continue;  // 이미 등록된 건 제외
+    counts[gtin] = (counts[gtin]||0) + 1;
+  }
+  return Object.entries(counts).map(([gtin, cnt]) => ({ gtin, count: cnt }));
+}
+
+// 전역 노출
+window.syncGtinMapFromFirestore = syncGtinMapFromFirestore;
+window.registerGtin = registerGtin;
+window.unregisterGtin = unregisterGtin;
+window.rejudgeBarcodes = rejudgeBarcodes;
+window.findUnknownGtins = findUnknownGtins;
+
+
+// ============================================================
 // 유틸
 // ============================================================
 function tod(){
