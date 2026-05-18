@@ -10,11 +10,14 @@
 // ============================================================
 
 var PP_STD = {
-  preprocess_kg_per_manhour: 79,
+  // 전처리 인시 — 실측 (4월 22일 평균): 5명 98kg/인시, 7명 84kg/인시, 인원 늘수록 약간 감소
+  preprocess_kg_per_manhour: 98,         // 5명 기준 표준
+  preprocess_kg_per_manhour_large: 84,   // 7명 이상일 때
   cooking: {
     tanks_total: 6,
     tanks_pressure: 2,
     kg_per_tank: 800,
+    target_kg_per_batch: 400,  // 실측: 회차당 약 400kg 분배 (운영자가 작게 자주)
     minutes_pressure: 150,
     minutes_normal: 240,
     workers_per_batch: 2,
@@ -213,7 +216,80 @@ async function _ppRunSimulation(){
 
   var scA = _ppSimulate(input, 'morning');
   var scB = _ppSimulate(input, 'afternoon');
-  _ppRenderResult(input, scA, scB);
+
+  // 둘 다 안 되면 → 인원 부족: 추천 인원 자동 탐색
+  var recommendation = null;
+  if(!scA.feasible && !scB.feasible){
+    recommendation = _ppFindMinimalCrew(input);
+  }
+
+  _ppRenderResult(input, scA, scB, recommendation);
+}
+
+// ============================================================
+// 추천 인원 탐색 — 입력 물량을 최대 종료시각 안에 끝낼 수 있는 최소 인원 조합 찾기
+// 전략:
+//   1. 조출(첫 시간대) 인원을 5,7,10,12,14명으로 키워가며 한국인 합류 조정
+//   2. 각 조합으로 시뮬 돌려서 feasible & endTime ≤ maxEnd 만족하는 가장 적은 인원
+//   3. 시간대 구조는 사용자 입력 그대로 유지 (조출 + 한국인 합류)
+// ============================================================
+function _ppFindMinimalCrew(originalInput){
+  var maxEnd = _ppToMin(originalInput.maxEnd);
+  var shifts = originalInput.shifts;
+  if(!shifts || shifts.length === 0) return null;
+
+  // 조출 인원 후보 (첫 시간대)
+  var firstShift = shifts[0];
+  var laterShifts = shifts.slice(1);
+  var laterTotal = laterShifts.reduce(function(s,sh){return s + sh.workers;}, 0);
+
+  // 1단계: 조출 인원 키우기 (5~16명)
+  // 2단계: 한국인 추가 (laterTotal + 0,2,4,...,12명)
+  var candidates = [];
+  for(var early = Math.max(5, firstShift.workers); early <= 18; early += 1){
+    for(var laterExtra = 0; laterExtra <= 16; laterExtra += 2){
+      var newShifts = [{time: firstShift.time, workers: early}];
+      laterShifts.forEach(function(sh, i){
+        var extra = (i === 0) ? laterExtra : 0; // 한국인 합류 시간대에만 추가
+        newShifts.push({time: sh.time, workers: sh.workers + extra});
+      });
+      var testInput = {
+        shifts: newShifts,
+        startTime: originalInput.startTime,
+        maxEnd: originalInput.maxEnd,
+        workers: early + laterTotal + laterExtra,
+        products: originalInput.products
+      };
+      var scM = _ppSimulate(testInput, 'morning');
+      var scA2 = _ppSimulate(testInput, 'afternoon');
+      var best = null;
+      if(scM.feasible && scA2.feasible){
+        best = scM.endTime <= scA2.endTime ? scM : scA2;
+      } else if(scM.feasible){ best = scM; }
+      else if(scA2.feasible){ best = scA2; }
+
+      if(best && best.feasible){
+        candidates.push({
+          totalWorkers: testInput.workers,
+          earlyExtra: early - firstShift.workers,
+          laterExtra: laterExtra,
+          shifts: newShifts,
+          endTime: best.endTime,
+          mode: best.mode,
+          original: {early: firstShift.workers, later: laterTotal}
+        });
+        break; // 이 조출 인원에서 만족하는 첫 번째 한국인 추가량을 찾음 → 다음 조출로
+      }
+    }
+  }
+
+  if(candidates.length === 0) return null;
+  // 가장 적은 총 인원 추천
+  candidates.sort(function(a,b){
+    if(a.totalWorkers !== b.totalWorkers) return a.totalWorkers - b.totalWorkers;
+    return a.endTime - b.endTime;
+  });
+  return candidates[0];
 }
 
 // ============================================================
@@ -266,15 +342,27 @@ function _ppSimulate(input, mode){
     if(canPressure) prodPressureKg += ck;
     else prodNormalKg += ck;
   });
-  var pressureCycles = prodPressureKg > 0 ? Math.ceil(prodPressureKg / ckRule.kg_per_tank) : 0;
-  var normalCycles   = prodNormalKg   > 0 ? Math.ceil(prodNormalKg   / ckRule.kg_per_tank) : 0;
+  // 회차 수 — 실측 패턴: 회차당 약 400kg (운영자가 작게 자주 나눠서 빨리 종료)
+  // 단, 탱크 가용성(가압 2대/비가압 4대)도 고려
+  function _calcCycles(total, isPressure){
+    if(total <= 0) return 0;
+    var target = ckRule.target_kg_per_batch; // 400kg
+    var n = Math.ceil(total / target);
+    // 탱크 가용 제약 — 동시 가용 탱크 수보다 너무 많은 회차는 의미 없음 (가용 후 다음 회차로 순환)
+    var maxTanks = isPressure ? ckRule.tanks_pressure : (ckRule.tanks_total - ckRule.tanks_pressure);
+    // 회차 수 = min(목표분할수, 적정 캡)
+    // 실측: 1500kg+ 케이스도 2~4회차. 5회 이상은 비현실 (탱크 회전 시간 고려)
+    n = Math.max(1, Math.min(n, 4));
+    return n;
+  }
+  var pressureCycles = _calcCycles(prodPressureKg, true);
+  var normalCycles   = _calcCycles(prodNormalKg, false);
   function _tankKgs(total, n){
     if(n === 0) return [];
     if(n === 1) return [total];
+    var each = total / n;
     var arr = [];
-    var rem = Math.max(0, total - (n-1)*ckRule.kg_per_tank);
-    arr.push(rem);
-    for(var i = 1; i < n; i++) arr.push(ckRule.kg_per_tank);
+    for(var j = 0; j < n; j++) arr.push(each);
     return arr;
   }
   var pressureTankKgs = _tankKgs(prodPressureKg, pressureCycles);
@@ -297,13 +385,15 @@ function _ppSimulate(input, mode){
   var lineAssignment = _ppAssignToLines(prodEa);
   var pkInfo = _ppCalcPackingHours(lineAssignment);
   var packingWorkers = pkInfo.totalWorkers;
-  var transferWorkers = pkInfo.lines.length * PP_STD.transfer_workers_per_line;
-  var retortWorkers = PP_STD.retort.workers_total; // 1명
+  var transferWorkers = pkInfo.lines.length * PP_STD.transfer_workers_per_line; // 표시용
+  var retortWorkers = PP_STD.retort.workers_total; // 1명 (표시용)
   var managerWorkers = PP_STD.manager_workers;     // 1명
   var cookWorkersFixed = ckRule.workers_per_batch; // 2명/회차
 
-  // 내포장 가동 시 최소 필요 인원 (호기 본 + 이송 + 레토르트 1 + 관리 1)
-  var pkConsumeWorkers = packingWorkers + transferWorkers + retortWorkers + managerWorkers;
+  // 내포장 가동 시 점유 인원 — 실측 패턴:
+  //   호기 본 인원만 점유 (이송·외포장·레토르트는 잉여 인력이 자동 흡수)
+  //   즉 28명 중 호기 6명만 빠지면 나머지 22명이 파쇄/외포장/이송/제수 등에 자유롭게 흐름
+  var pkConsumeWorkers = packingWorkers + managerWorkers;
 
   // 시간대별 누적 출근
   function workersAt(t){
@@ -341,9 +431,11 @@ function _ppSimulate(input, mode){
     // 자숙 점유 차감
     var ppAvail = Math.max(0, effAvail - cookActiveCount * cookWorkersFixed - managerWorkers);
 
-    // 전처리 처리
+    // 전처리 처리 — 인원에 따라 인시 다름 (실측 4월 기준)
     if(ppRemain > 0 && ppAvail > 0){
-      var ppDone = (PP_KGPH / 60) * ppAvail;
+      // 5명일 때 98 kg/인시, 7명 이상일 때 84 kg/인시
+      var ppKgPH = ppAvail >= 7 ? PP_STD.preprocess_kg_per_manhour_large : PP_STD.preprocess_kg_per_manhour;
+      var ppDone = (ppKgPH / 60) * ppAvail;
       if(ppDone > ppRemain) ppDone = ppRemain;
       ppRemain -= ppDone;
       ppCumKg += ppDone;
@@ -499,17 +591,40 @@ function _ppSimulate(input, mode){
   retortEnd = Math.max(retortEndParallel, pkEnd + Math.round(RT_MIN * 0.3)); // 내포장 종료 후 마지막 회차도 살균 필요
 
   // ── 8. 인원 부족 체크 ──
-  // 내포장 가동 중 매 10분마다 가용 vs 필요 비교
+  // (1) 내포장 가동 중 매 10분 가용 vs 필요
+  // (2) 파쇄가 비현실적으로 늘어진 경우 (= 내포장 종료보다 1시간 이상 늦음 → 내포장이 파쇄 기다리느라 정지)
   var shortage = null;
   for(var tc = pkStart; tc < pkEnd; tc += 10){
-    var av = workersAt(tc);
+    // 점심 시간은 체크 안함 — 점심 시 50% 속도는 자연스러운 운영
     var isLunch = (tc >= L1S && tc < L2E);
-    var effAv = isLunch ? Math.floor(av * 0.5) : av;
+    if(isLunch) continue;
+    var av = workersAt(tc);
     var cookNow = cookSchedule.filter(function(c){return c.inTime <= tc && c.outTime > tc;}).length;
     var need = pkConsumeWorkers + cookNow * cookWorkersFixed + 1; // +1 파쇄 최소
-    if(effAv < need){
-      if(!shortage) shortage = { time: tc, avail: effAv, need: need, isLunch: isLunch };
+    if(av < need){
+      if(!shortage) shortage = { time: tc, avail: av, need: need, isLunch: false, type:'workers' };
     }
+  }
+  // 파쇄가 못 따라가면 → 자연스럽게 endTime이 늘어나서 maxEnd 초과로 reject됨
+  // 별도 shred_lag 체크는 불필요 (이중 처리)
+  // 자숙 동시 진행 시 인력 부족도 사전 체크 (자숙 회차 다 펼쳐서 동시 active 시점)
+  var maxConcurrentCook = 0;
+  cookSchedule.forEach(function(c){
+    var concurrent = cookSchedule.filter(function(c2){return c2.inTime <= c.inTime && c2.outTime > c.inTime;}).length;
+    maxConcurrentCook = Math.max(maxConcurrentCook, concurrent);
+  });
+  if(!shortage && maxConcurrentCook > 0){
+    // 자숙 시작 시점들에서 인력 체크 — 단 자숙만 가능하면 OK (관리·전처리는 1명 안 들어가도 가능)
+    cookSchedule.forEach(function(c){
+      if(shortage) return;
+      var tc2 = c.inTime;
+      var av2 = workersAt(tc2);
+      var concurrent = cookSchedule.filter(function(c2){return c2.inTime <= tc2 && c2.outTime > tc2;}).length;
+      var need2 = concurrent * cookWorkersFixed; // 자숙 인원만
+      if(av2 < need2){
+        shortage = { time: tc2, avail: av2, need: need2, isLunch:false, type:'cook_concurrent' };
+      }
+    });
   }
 
   // ── 9. 시간대별 슬롯 (timetable_test 방식: 의미있는 경계만) ──
@@ -556,7 +671,17 @@ function _ppSimulate(input, mode){
   var avgIdle = idleCnt > 0 ? Math.round(idleSum / idleCnt) : 0;
 
   // 대표 alloc (내포장 가동 중)
-  var repSlot = slots.find(function(s){return s.tMin >= pkStart + 10 && s.tMin < pkEnd;}) || slots[Math.floor(slots.length/2)] || slots[0];
+  // 대표 alloc 선택: 내포장 + 파쇄 둘 다 가동 중인 시점 우선
+  // 그 시점이 없으면 내포장 가동 중 첫 시점
+  var repSlot = slots.find(function(s){
+    return s.tMin >= pkStart && s.tMin < pkEnd && s.alloc.pk > 0 && s.alloc.sh > 0;
+  });
+  if(!repSlot){
+    repSlot = slots.find(function(s){return s.tMin >= pkStart && s.tMin < pkEnd && s.alloc.pk > 0;});
+  }
+  if(!repSlot){
+    repSlot = slots[Math.floor(slots.length/2)] || slots[0];
+  }
   var allocRep = repSlot ? {
     preprocess: repSlot.alloc.pp, shredding: repSlot.alloc.sh, packing: repSlot.alloc.pk,
     trans: repSlot.alloc.trans, retort: repSlot.alloc.retort, cook: repSlot.alloc.cook, mgr: repSlot.alloc.mgr, idle: repSlot.alloc.idle
@@ -566,8 +691,14 @@ function _ppSimulate(input, mode){
   var reason = null;
   if(shortage){
     feasible = false;
-    var hint = shortage.isLunch ? ' (점심 시간대 절반만 가용)' : '';
-    reason = _ppToTime(shortage.time) + ' 시점 ' + shortage.need + '명 필요 (가용 ' + shortage.avail + '명, 부족 ' + (shortage.need - shortage.avail) + '명)' + hint;
+    if(shortage.type === 'shred_lag'){
+      reason = '파쇄 인원 부족 — 내포장이 '+pkConsumeWorkers+'명 점유 후 파쇄 가용 약 '+shortage.avail+'명 (최대 '+SH_MAX_W+'명 필요). 호기 자체 가동 '+shortage.pkPureMin+'분인데 파쇄 못 따라가서 '+shortage.pkActualMin+'분 소요. 작업량 줄이거나 인원 추가 필요';
+    } else if(shortage.type === 'cook_concurrent'){
+      reason = _ppToTime(shortage.time) + ' 시점 자숙 동시 진행 인력 부족 — 필요 '+shortage.need+'명, 가용 '+shortage.avail+'명 (자숙 회차 분산 필요)';
+    } else {
+      var hint = shortage.isLunch ? ' (점심 시간대 절반만 가용)' : '';
+      reason = _ppToTime(shortage.time) + ' 시점 ' + shortage.need + '명 필요 (가용 ' + shortage.avail + '명, 부족 ' + (shortage.need - shortage.avail) + '명)' + hint;
+    }
   }
 
   return {
@@ -669,7 +800,7 @@ function _ppToTime(m){
 // ============================================================
 // 결과 렌더
 // ============================================================
-function _ppRenderResult(input, scA, scB){
+function _ppRenderResult(input, scA, scB, recommendation){
   var el = document.getElementById('pp_result');
   if(!el) return;
 
@@ -682,15 +813,50 @@ function _ppRenderResult(input, scA, scB){
   var recLabel = rec === scA ? '내포장 오전 시작' : '내포장 오후 시작';
   var recBadge = rec.feasible
     ? '<span style="background:#dcfce7;color:#15803d;border-radius:4px;padding:3px 10px;font-size:12px;font-weight:700">✅ 가능</span>'
-    : '<span style="background:#fee2e2;color:#b91c1c;border-radius:4px;padding:3px 10px;font-size:12px;font-weight:700">❌ 종료시간 초과</span>';
+    : '<span style="background:#fee2e2;color:#b91c1c;border-radius:4px;padding:3px 10px;font-size:12px;font-weight:700">❌ 현재 인원으로 불가</span>';
 
   var html = '';
 
+  // ── 추천 카드 (현재 인원으로 안 되면 → 어떻게 하면 되는지) ──
+  if(recommendation){
+    html += '<div style="background:linear-gradient(135deg,#059669 0%,#10b981 100%);color:#fff;border-radius:12px;padding:20px 24px;margin-bottom:18px;box-shadow:0 4px 14px rgba(16,185,129,0.3)">';
+    html += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px"><span style="font-size:13px;background:rgba(255,255,255,0.25);padding:4px 12px;border-radius:20px;font-weight:700">💡 작업 가능한 방법</span></div>';
+    html += '<div style="font-size:20px;font-weight:700;margin-bottom:10px">총 <b>'+recommendation.totalWorkers+'명</b>으로 가능 — 종료 '+_ppToTime(recommendation.endTime)+'</div>';
+    html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-top:10px">';
+    recommendation.shifts.forEach(function(sh, i){
+      var orig = (i === 0) ? recommendation.original.early : 
+                 (i === 1) ? recommendation.shifts[1].workers - (recommendation.laterExtra||0) : sh.workers;
+      var diff = sh.workers - (i === 0 ? input.shifts[0].workers : (input.shifts[i] ? input.shifts[i].workers : 0));
+      var extraTag = diff > 0 ? '<span style="background:#fbbf24;color:#1f2937;padding:2px 8px;border-radius:10px;font-size:11px;margin-left:6px;font-weight:700">+'+diff+'명</span>' : '';
+      html += '<div style="background:rgba(255,255,255,0.18);border-radius:8px;padding:12px">';
+      html += '<div style="font-size:12px;opacity:0.9">'+sh.time+'</div>';
+      html += '<div style="font-size:24px;font-weight:700;margin-top:4px">'+sh.workers+'명'+extraTag+'</div>';
+      html += '</div>';
+    });
+    html += '</div>';
+    var msg = '';
+    if(recommendation.earlyExtra > 0){
+      msg += '조출 <b>'+recommendation.earlyExtra+'명 추가</b>';
+    }
+    if(recommendation.laterExtra > 0){
+      if(msg) msg += ' + ';
+      msg += '한국인 합류 시 <b>'+recommendation.laterExtra+'명 추가</b>';
+    }
+    if(msg){
+      html += '<div style="margin-top:12px;font-size:14px;background:rgba(0,0,0,0.15);padding:10px 14px;border-radius:6px">↳ '+msg+' 시 작업 가능</div>';
+    }
+    html += '</div>';
+  }
+
+  // ── 현재 입력 시뮬 결과 (참고용) ──
   html += '<div style="background:linear-gradient(135deg,#1e40af 0%,#3b82f6 100%);color:#fff;border-radius:12px;padding:20px 24px;margin-bottom:18px;box-shadow:0 4px 14px rgba(59,130,246,0.25)">';
-  html += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px"><span style="font-size:12px;background:rgba(255,255,255,0.25);padding:3px 10px;border-radius:20px;font-weight:600">추천</span>'+recBadge+'</div>';
+  html += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px"><span style="font-size:12px;background:rgba(255,255,255,0.25);padding:3px 10px;border-radius:20px;font-weight:600">'+(recommendation?'현재 입력':'추천')+'</span>'+recBadge+'</div>';
   html += '<div style="font-size:22px;font-weight:700;margin-bottom:4px">'+recLabel+'</div>';
-  html += '<div style="font-size:14px;opacity:0.9">필요 인원 <b>'+input.workers+'명</b> · 종료 <b>'+_ppToTime(rec.endTime)+'</b>';
-  if(!rec.feasible) html += ' <span style="color:#fbbf24">(최대 '+_ppToTime(_ppToMin(input.maxEnd))+'보다 '+Math.round(rec.overrun)+'분 초과)</span>';
+  html += '<div style="font-size:14px;opacity:0.9">입력 인원 <b>'+input.workers+'명</b> · 종료 <b>'+_ppToTime(rec.endTime)+'</b>';
+  if(!rec.feasible){
+    if(rec.reason) html += '<div style="margin-top:8px;font-size:13px;background:rgba(0,0,0,0.2);padding:8px 12px;border-radius:6px;line-height:1.5">'+rec.reason+'</div>';
+    else html += ' <span style="color:#fbbf24">(최대 '+_ppToTime(_ppToMin(input.maxEnd))+'보다 '+Math.round(rec.overrun)+'분 초과)</span>';
+  }
   html += '</div></div>';
 
   html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:18px">';
