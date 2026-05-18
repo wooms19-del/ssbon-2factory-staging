@@ -144,7 +144,7 @@ window._switchAITab = _switchAITab;
 function showTab(mode,tab){
   if(mode==='i') ITAB=tab; else DTAB=tab;
   const nav=mode==='i'?'inav':'dnav';
-  const tabs=mode==='i'?['barcode','thawing','preprocess','cooking','shredding','packing','sauce','outerpacking','attendance']:['daily','monthly','trace','recipe','timetable','timetable_test','settings'];
+  const tabs=mode==='i'?['barcode','thawing','preprocess','cooking','shredding','packing','sauce','outerpacking','attendance']:['daily','monthly','trace','recipe','timetable','timetable_test','production_plan','settings'];
   document.querySelectorAll(`#${nav} .ti`).forEach((el,i)=>el.classList.toggle('on',tabs[i]===tab));
   document.querySelectorAll('.pg').forEach(p=>p.classList.remove('on'));
   const pg=document.getElementById('p-'+tab); if(pg) pg.classList.add('on');
@@ -213,6 +213,8 @@ function showTab(mode,tab){
     if(typeof ttInit==='function') ttInit();
   } else if(tab==='timetable_test'){
     if(typeof tttInit==='function') tttInit();
+  } else if(tab==='production_plan'){
+    if(typeof renderProductionPlan==='function') renderProductionPlan();
   }
 }
 
