@@ -646,7 +646,10 @@ function _ppCalcPackingHours(lineAssignment){
       var min = l.totalEa / l.ea_per_min;
       maxLineMin = Math.max(maxLineMin, min);
       totalWorkers += l.workers;
-      activeLines.push({ id:l.id, name:l.name, ea:l.totalEa, workers:l.workers, ea_per_min:l.ea_per_min, minutes: min });
+      activeLines.push({
+        id:l.id, name:l.name, ea:l.totalEa, workers:l.workers, ea_per_min:l.ea_per_min,
+        minutes: min, products: l.products || []
+      });
     }
   });
   return {
@@ -821,7 +824,7 @@ function _ppRenderTimeline(sc){
   if(sc.pkInfo && sc.pkInfo.lines){
     sc.pkInfo.lines.forEach(function(l){
       var lineDurMin = (l.endMin || t.pk.end) - (l.startMin || t.pk.start);
-      var prodNames = l.products.map(function(p){return p.name;}).join(', ');
+      var prodNames = (l.products || []).map(function(p){return p.name;}).join(', ');
       rows.push({
         name: '📦 '+l.name,
         start: l.startMin || t.pk.start, end: l.endMin || t.pk.end,
