@@ -73,6 +73,80 @@ var PP_STD = {
   manager_workers: 1 // 관리자 1명 (전공정 항상 1명 점유)
 };
 
+// 기본값 보관 (초기화 버튼용)
+var PP_STD_DEFAULTS = JSON.parse(JSON.stringify(PP_STD));
+
+// ============================================================
+// 파라미터 Firestore 동기화 (_config/production_plan_params)
+// ============================================================
+async function _ppLoadParams(){
+  try {
+    if(typeof db === 'undefined' || !db) return;
+    var doc = await db.collection('_config').doc('production_plan_params').get();
+    if(!doc.exists) return;
+    var data = doc.data();
+    if(!data || !data.params) return;
+    // PP_STD에 덮어쓰기 (deep merge)
+    _ppDeepMerge(PP_STD, data.params);
+    console.log('[PP] params loaded from Firestore');
+  } catch(e){
+    console.warn('[PP] params load failed:', e);
+  }
+}
+async function _ppSaveParams(){
+  try {
+    if(typeof db === 'undefined' || !db){ alert('Firestore 연결 안 됨'); return false; }
+    // packing_lines의 productMatch 함수는 저장 불가 → 직렬화 시 제외
+    var saveable = JSON.parse(JSON.stringify(PP_STD, function(k,v){
+      if(typeof v === 'function') return undefined;
+      return v;
+    }));
+    await db.collection('_config').doc('production_plan_params').set({
+      params: saveable,
+      updatedAt: new Date().toISOString()
+    });
+    console.log('[PP] params saved to Firestore');
+    return true;
+  } catch(e){
+    console.warn('[PP] params save failed:', e);
+    alert('파라미터 저장 실패: ' + e.message);
+    return false;
+  }
+}
+function _ppDeepMerge(target, src){
+  for(var k in src){
+    if(src.hasOwnProperty(k)){
+      if(src[k] !== null && typeof src[k] === 'object' && !Array.isArray(src[k]) && typeof target[k] === 'object' && !Array.isArray(target[k])){
+        _ppDeepMerge(target[k], src[k]);
+      } else if(Array.isArray(src[k]) && Array.isArray(target[k])){
+        // packing_lines 같은 배열: 인덱스별 덮어쓰기 (productMatch는 기본값 유지)
+        src[k].forEach(function(item, i){
+          if(target[k][i] && typeof item === 'object'){
+            for(var kk in item){
+              if(item.hasOwnProperty(kk) && kk !== 'productMatch'){
+                target[k][i][kk] = item[kk];
+              }
+            }
+          }
+        });
+      } else {
+        target[k] = src[k];
+      }
+    }
+  }
+}
+function _ppResetParams(){
+  if(!confirm('파라미터를 기본값으로 초기화하시겠습니까? (Firestore에도 반영됨)')) return;
+  // 함수 필드는 보존
+  var pmList = PP_STD.packing_lines.map(function(l){return l.productMatch;});
+  _ppDeepMerge(PP_STD, JSON.parse(JSON.stringify(PP_STD_DEFAULTS)));
+  PP_STD.packing_lines.forEach(function(l,i){ l.productMatch = pmList[i]; });
+  _ppSaveParams().then(function(){
+    _ppRunSimulation(); // 재시뮬
+    renderProductionPlan(); // UI 재렌더
+  });
+}
+
 // ============================================================
 // 점심 시간 = 반반 교대 (전체 가동, 인원만 반)
 // 작업 시간 → 점심 통과 시 50% 속도 (1차 + 2차 합쳐 1시간씩, 총 2시간 = 1시간만큼 손실)
@@ -285,7 +359,20 @@ function _ppSimulate(input, mode){
       if(availForCook < cookWorkersFixed) break;
       var inT = t;
       var outT = t + nx.durMin;
-      cookSchedule.push({type:nx.type, kg:nx.kg, inTime:inT, outTime:outT});
+      // 탱크 번호: 가압은 1·2, 비가압은 3~6 중 가용한 것
+      var usedTanks = cookSchedule.filter(function(c){return c.inTime <= t && c.outTime > t;}).map(function(c){return c.tank;});
+      var tankRange = nx.type === 'pressure' ? [1,2] : [3,4,5,6];
+      var tankNum = null;
+      for(var ti = 0; ti < tankRange.length; ti++){
+        if(usedTanks.indexOf(tankRange[ti]) === -1){ tankNum = tankRange[ti]; break; }
+      }
+      // 가압 가능 탱크 다 사용 중이면 비가압 탱크에 (안전쪽 — 실제 운영에서도 가능)
+      if(tankNum === null){
+        for(var ti2 = 1; ti2 <= ckRule.tanks_total; ti2++){
+          if(usedTanks.indexOf(ti2) === -1){ tankNum = ti2; break; }
+        }
+      }
+      cookSchedule.push({type:nx.type, kg:nx.kg, inTime:inT, outTime:outT, tank:tankNum, durMin:nx.durMin});
       cookActiveUntil.push(outT);
       cookActiveCount++;
       nextCookIdx++;
@@ -385,6 +472,17 @@ function _ppSimulate(input, mode){
 
   var pkSelfEnd = Math.round(pkSelfMin(pkStart));
   var pkEnd = Math.max(pkSelfEnd, shEnd + tailMin);
+
+  // 호기별 가동 시각 (점심 반영) — 행 분할용
+  pkInfo.lines.forEach(function(l){
+    var lineEndPure = pkStart + (l.ea / l.ea_per_min);
+    // 점심 통과 반영
+    var lineEndLunch = _ppWorkWithLunch(pkStart, l.ea / l.ea_per_min);
+    l.startMin = pkStart;
+    l.endMin = Math.round(lineEndLunch);
+    // 인시 생산성 (EA/인시)
+    l.eaPerPersonHour = Math.round(l.ea_per_min * 60 / l.workers);
+  });
 
   // ── 7. 레토르트 (제품별 EA/대차 + 시간) ──
   // 회차 균등 분배 + 대차 8 한도 + 3대 병렬
@@ -649,7 +747,7 @@ function _ppRenderScenarioCard(sc, title, isRec){
   html += '<div>내포장 시작: <b>'+_ppToTime(sc.timeline.pk.start)+'</b></div>';
   html += '<div style="font-size:12px;color:#64748b">대표시점 배치 (내포장 가동중):</div>';
   html += '<div>· 전처리 '+sc.alloc.preprocess+' / 파쇄 '+sc.alloc.shredding+' / 자숙 '+sc.alloc.cook+'</div>';
-  html += '<div>· 내포장 '+sc.alloc.packing+' / 이송 '+sc.alloc.trans+' / 레토르트 '+sc.alloc.retort+' / 관리 '+sc.alloc.mgr+'</div>';
+  html += '<div>· 내포장 '+(sc.alloc.packing + sc.alloc.trans)+' (호기 '+sc.alloc.packing+' + 이송 '+sc.alloc.trans+') / 레토르트 '+sc.alloc.retort+' / 관리 '+sc.alloc.mgr+'</div>';
   html += '<div>평균 잉여: <b style="color:'+(sc.leftover>=0?'#16a34a':'#dc2626')+'">'+sc.leftover+'명</b> (외포장/제수 가용)</div>';
   html += '</div></div>';
   return html;
@@ -679,14 +777,71 @@ function _ppRenderLines(sc){
 
 function _ppRenderTimeline(sc){
   var t = sc.timeline;
-  var rows = [
-    { name: '🥩 전처리', start: t.pp.start, end: t.pp.end, w: '~'+sc.alloc.preprocess, color: '#fbbf24' },
-    { name: '🍲 자숙',   start: t.cook.start, end: t.cook.end, w: sc.cookWorkers, color: '#f87171' },
-    { name: '🔪 파쇄',   start: t.sh.start, end: t.sh.end, w: '~'+sc.alloc.shredding, color: '#a78bfa' },
-    { name: '📦 내포장', start: t.pk.start, end: t.pk.end, w: sc.alloc.packing, color: '#34d399' },
-    { name: '🚚 이송',   start: t.pk.start, end: t.pk.end, w: sc.transferWorkers, color: '#60a5fa' },
-    { name: '🔥 레토르트', start: t.retort.start, end: t.retort.end, w: sc.retortWorkers, color: '#fb923c' }
-  ];
+  // 행 구성 — 자숙은 회차별, 내포장은 호기별로 분할
+  var rows = [];
+
+  // 전처리
+  var ppDurMin = t.pp.end - t.pp.start;
+  var ppRate = PP_STD.preprocess_kg_per_manhour;
+  var ppEstWorkers = ppDurMin > 0 ? Math.round(sc.ppOutKg / (ppRate * ppDurMin / 60)) : 0;
+  rows.push({
+    name: '🥩 전처리',
+    start: t.pp.start, end: t.pp.end,
+    w: ppEstWorkers > 0 ? '~'+ppEstWorkers : '-',
+    color: '#fbbf24',
+    tooltip: '전처리\\n시간: '+_ppFmtDur(ppDurMin)+'\\n처리량: '+Math.round(sc.ppOutKg)+'kg (산출 기준)\\n생산성: '+ppRate+' kg/인시\\n평균 인원: 약 '+ppEstWorkers+'명'
+  });
+
+  // 자숙 — 회차별 분할
+  if(sc.cookSchedule && sc.cookSchedule.length){
+    sc.cookSchedule.forEach(function(c, i){
+      var typeLabel = c.type === 'pressure' ? '가압' : '비가압';
+      var tankLabel = c.tank ? c.tank+'번 탱크' : '-';
+      rows.push({
+        name: '🍲 자숙 #'+(i+1)+' ('+typeLabel+')',
+        start: c.inTime, end: c.outTime,
+        w: sc.cookWorkers, color: c.type === 'pressure' ? '#f87171' : '#fca5a5',
+        tooltip: '자숙 #'+(i+1)+' ('+typeLabel+')\\n시간: '+_ppFmtDur(c.outTime - c.inTime)+'\\n탱크: '+tankLabel+'\\n투입량: '+Math.round(c.kg)+'kg\\n산출량: '+Math.round(c.kg * PP_STD.yield.cooking)+'kg (수율 '+(PP_STD.yield.cooking*100).toFixed(0)+'%)\\n인원: '+sc.cookWorkers+'명/회차 고정'
+      });
+    });
+  }
+
+  // 파쇄
+  var shDurMin = t.sh.end - t.sh.start;
+  var shRate = PP_STD.shredding_kg_per_manhour;
+  rows.push({
+    name: '🔪 파쇄',
+    start: t.sh.start, end: t.sh.end,
+    w: '~'+sc.alloc.shredding,
+    color: '#a78bfa',
+    tooltip: '파쇄\\n시간: '+_ppFmtDur(shDurMin)+'\\n처리량: '+Math.round(sc.cookOutKg)+'kg → 산출 '+Math.round(sc.shredOutKg)+'kg\\n생산성: '+shRate+' kg/인시\\n최대 인원: '+PP_STD.shredding_max_workers+'명 (그 이상은 효율 X)\\n점심엔 절반 교대'
+  });
+
+  // 내포장 — 호기별 분할
+  if(sc.pkInfo && sc.pkInfo.lines){
+    sc.pkInfo.lines.forEach(function(l){
+      var lineDurMin = (l.endMin || t.pk.end) - (l.startMin || t.pk.start);
+      var prodNames = l.products.map(function(p){return p.name;}).join(', ');
+      rows.push({
+        name: '📦 '+l.name,
+        start: l.startMin || t.pk.start, end: l.endMin || t.pk.end,
+        w: l.workers,
+        color: '#34d399',
+        tooltip: l.name+'\\n제품: '+(prodNames||'-')+'\\n시간: '+_ppFmtDur(lineDurMin)+'\\n처리량: '+l.ea.toLocaleString()+' EA\\n분당: '+l.ea_per_min+' EA/min\\n인시 생산성: '+l.eaPerPersonHour+' EA/인시\\n인원: '+l.workers+'명 + 이송 '+PP_STD.transfer_workers_per_line+'명'
+      });
+    });
+  }
+
+  // 레토르트
+  var rtDurMin = t.retort.end - t.retort.start;
+  rows.push({
+    name: '🔥 레토르트',
+    start: t.retort.start, end: t.retort.end,
+    w: sc.retortWorkers,
+    color: '#fb923c',
+    tooltip: '레토르트\\n시간: '+_ppFmtDur(rtDurMin)+'\\n회차: '+sc.retortBatches+'회 × '+(sc.retortProfile?sc.retortProfile.minutes:120)+'분\\n대차당: '+(sc.retortProfile?sc.retortProfile.eaPerCart:'-')+' EA\\n3대 병렬 가동\\n인원: '+sc.retortWorkers+'명 고정'
+  });
+
   var minT = Math.min.apply(null, rows.map(function(r){return r.start;}));
   var maxT = Math.max.apply(null, rows.map(function(r){return r.end;}));
   var span = Math.max(1, maxT - minT);
@@ -698,23 +853,34 @@ function _ppRenderTimeline(sc){
   var lunchWidth = (lunchEnd - lunchStart) / span * 100;
 
   var html = '<table style="width:100%;font-size:12px;border-collapse:collapse">';
-  html += '<thead><tr style="background:#f1f5f9"><th style="text-align:left;padding:6px 8px;border-bottom:1px solid #cbd5e1;width:80px">공정</th><th style="text-align:center;padding:6px;border-bottom:1px solid #cbd5e1;width:130px">시간</th><th style="text-align:center;padding:6px;border-bottom:1px solid #cbd5e1;width:60px">인원</th><th style="padding:6px;border-bottom:1px solid #cbd5e1">바</th></tr></thead><tbody>';
+  html += '<thead><tr style="background:#f1f5f9"><th style="text-align:left;padding:6px 8px;border-bottom:1px solid #cbd5e1;width:170px">공정</th><th style="text-align:center;padding:6px;border-bottom:1px solid #cbd5e1;width:130px">시간</th><th style="text-align:center;padding:6px;border-bottom:1px solid #cbd5e1;width:60px">인원</th><th style="padding:6px;border-bottom:1px solid #cbd5e1">바</th></tr></thead><tbody>';
   rows.forEach(function(r){
-    var leftPct = (r.start - minT) / span * 100;
-    var widthPct = (r.end - r.start) / span * 100;
-    html += '<tr style="border-bottom:1px solid #f1f5f9">';
+    var leftPct = Math.max(0, (r.start - minT) / span * 100);
+    var widthPct = Math.max(0.5, (r.end - r.start) / span * 100);
+    var tipEsc = r.tooltip ? r.tooltip.replace(/"/g,'&quot;') : '';
+    html += '<tr style="border-bottom:1px solid #f1f5f9" title="'+tipEsc+'">';
     html += '<td style="padding:8px;font-weight:600">'+r.name+'</td>';
     html += '<td style="text-align:center;padding:8px;color:#475569">'+_ppToTime(r.start)+' ~ '+_ppToTime(r.end)+'</td>';
     html += '<td style="text-align:center;padding:8px;font-weight:600">'+r.w+'명</td>';
     html += '<td style="padding:6px"><div style="position:relative;height:18px;background:#f1f5f9;border-radius:4px">';
     if(lunchVisible){
-      html += '<div style="position:absolute;left:'+lunchLeft+'%;width:'+lunchWidth+'%;height:100%;background:repeating-linear-gradient(45deg,rgba(0,0,0,0.06),rgba(0,0,0,0.06) 4px,transparent 4px,transparent 8px);border-radius:4px" title="점심 교대"></div>';
+      html += '<div style="position:absolute;left:'+lunchLeft+'%;width:'+lunchWidth+'%;height:100%;background:repeating-linear-gradient(45deg,rgba(0,0,0,0.06),rgba(0,0,0,0.06) 4px,transparent 4px,transparent 8px);border-radius:4px" title="점심 반반 교대"></div>';
     }
-    html += '<div style="position:absolute;left:'+leftPct+'%;width:'+widthPct+'%;height:100%;background:'+r.color+';border-radius:4px;opacity:0.92"></div>';
+    html += '<div style="position:absolute;left:'+leftPct+'%;width:'+widthPct+'%;height:100%;background:'+r.color+';border-radius:4px;opacity:0.92" title="'+tipEsc+'"></div>';
     html += '</div></td></tr>';
   });
   html += '</tbody></table>';
   return html;
+}
+
+// 시간 포맷 (분 → "Xh Ym")
+function _ppFmtDur(mins){
+  mins = Math.max(0, Math.round(mins));
+  var h = Math.floor(mins / 60);
+  var m = mins % 60;
+  if(h === 0) return m+'분';
+  if(m === 0) return h+'시간';
+  return h+'시간 '+m+'분';
 }
 
 // 시간대별 인력 배치 슬롯 표
@@ -737,15 +903,14 @@ function _ppRenderShifts(sc){
   var lastShift = slots[slots.length - 1];
   if(displayed[displayed.length - 1] !== lastShift) displayed.push(lastShift);
 
-  var html = '<div style="overflow-x:auto"><table style="width:100%;font-size:12px;border-collapse:collapse;min-width:820px">';
+  var html = '<div style="overflow-x:auto"><table style="width:100%;font-size:12px;border-collapse:collapse;min-width:760px">';
   html += '<thead><tr style="background:#f1f5f9">';
   html += '<th style="text-align:center;padding:6px;border-bottom:1px solid #cbd5e1;width:60px">시각</th>';
   html += '<th style="text-align:center;padding:6px;border-bottom:1px solid #cbd5e1;width:50px">가용</th>';
   html += '<th style="text-align:center;padding:6px;border-bottom:1px solid #cbd5e1">전처리</th>';
   html += '<th style="text-align:center;padding:6px;border-bottom:1px solid #cbd5e1">자숙</th>';
   html += '<th style="text-align:center;padding:6px;border-bottom:1px solid #cbd5e1">파쇄</th>';
-  html += '<th style="text-align:center;padding:6px;border-bottom:1px solid #cbd5e1">내포장</th>';
-  html += '<th style="text-align:center;padding:6px;border-bottom:1px solid #cbd5e1">이송</th>';
+  html += '<th style="text-align:center;padding:6px;border-bottom:1px solid #cbd5e1" title="호기 + 이송 합계">내포장</th>';
   html += '<th style="text-align:center;padding:6px;border-bottom:1px solid #cbd5e1">레토르트</th>';
   html += '<th style="text-align:center;padding:6px;border-bottom:1px solid #cbd5e1">관리</th>';
   html += '<th style="text-align:center;padding:6px;border-bottom:1px solid #cbd5e1">점심</th>';
@@ -753,6 +918,8 @@ function _ppRenderShifts(sc){
   html += '</tr></thead><tbody>';
   displayed.forEach(function(s){
     var a = s.alloc;
+    var pkTotal = (a.pk||0) + (a.trans||0);
+    var pkTip = a.pk>0 ? '호기 '+a.pk+'명 + 이송 '+a.trans+'명' : '';
     var idleColor = a.idle > 0 ? '#16a34a' : '#94a3b8';
     html += '<tr style="border-bottom:1px solid #f1f5f9">';
     html += '<td style="text-align:center;padding:6px;font-weight:600;color:#1e40af">'+_ppToTime(s.tMin)+'</td>';
@@ -760,8 +927,7 @@ function _ppRenderShifts(sc){
     html += '<td style="text-align:center;padding:6px">'+(a.pp||'-')+'</td>';
     html += '<td style="text-align:center;padding:6px">'+(a.cook||'-')+'</td>';
     html += '<td style="text-align:center;padding:6px">'+(a.sh||'-')+'</td>';
-    html += '<td style="text-align:center;padding:6px;color:#15803d;font-weight:600">'+(a.pk||'-')+'</td>';
-    html += '<td style="text-align:center;padding:6px;color:#1e40af">'+(a.trans||'-')+'</td>';
+    html += '<td style="text-align:center;padding:6px;color:#15803d;font-weight:600" title="'+pkTip+'">'+(pkTotal||'-')+'</td>';
     html += '<td style="text-align:center;padding:6px;color:#ea580c">'+(a.retort||'-')+'</td>';
     html += '<td style="text-align:center;padding:6px;color:#64748b">'+(a.mgr||'-')+'</td>';
     html += '<td style="text-align:center;padding:6px;color:#a16207">'+(s.lunch>0?s.lunch+'명':'-')+'</td>';
@@ -799,8 +965,7 @@ function _ppRenderWorkforceReason(input, sc){
   html += '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:6px;padding:12px;margin-bottom:8px">';
   html += '<div style="font-weight:600;color:#1e40af;margin-bottom:8px">공정별 인원 배치 근거</div>';
   html += '<div style="margin-bottom:4px">• <b>자숙 '+sc.cookWorkers+'명</b> (고정) — 회차당 2명, 회차 중에만 점유</div>';
-  html += '<div style="margin-bottom:4px">• <b>내포장 '+sc.alloc.packing+'명</b> — 호기별 인원 합 ('+(sc.pkInfo?sc.pkInfo.lines.map(function(l){return l.name+' '+l.workers;}).join(' / '):'')+')</div>';
-  html += '<div style="margin-bottom:4px">• <b>이송 '+sc.transferWorkers+'명</b> — 가동 호기 '+(sc.pkInfo?sc.pkInfo.lines.length:0)+'대 × 2명</div>';
+  html += '<div style="margin-bottom:4px">• <b>내포장 '+(sc.alloc.packing + sc.transferWorkers)+'명</b> = 호기 '+sc.alloc.packing+'명 + 이송 '+sc.transferWorkers+'명 (호기 '+(sc.pkInfo?sc.pkInfo.lines.length:0)+'대 × 2명)</div>';
   html += '<div style="margin-bottom:4px">• <b>레토르트 '+sc.retortWorkers+'명</b> — 내포장 가동 중 1명 고정</div>';
   html += '<div style="margin-bottom:4px">• <b>관리 '+sc.managerWorkers+'명</b> — 전 공정 항상 1명</div>';
   html += '<div style="margin-bottom:4px">• <b>전처리/파쇄</b> — 시간대별 가용 인원 동적 배치, 점심엔 반반 교대 (절반 식사, 절반 일)</div>';
@@ -877,8 +1042,196 @@ function renderProductionPlan(){
     + '    <button onclick="_ppRunSimulation()" style="width:100%;background:#3b82f6;color:#fff;border:none;border-radius:6px;padding:12px;font-size:14px;font-weight:700;cursor:pointer">🚀 시뮬레이션 실행</button>'
     + '  </div>'
 
+    + _ppRenderAdvancedSettings()
+
     + '  <div id="pp_result"></div>'
     + '</div>';
+
+  // Firestore에서 파라미터 로드 후 UI 반영
+  _ppLoadParams().then(function(){
+    _ppFillAdvancedInputs();
+  });
+}
+
+// ============================================================
+// 고급 설정 UI (파라미터 편집)
+// ============================================================
+function _ppRenderAdvancedSettings(){
+  return ''
+    + '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:10px;margin-bottom:14px">'
+    + '  <div style="padding:14px 18px;cursor:pointer;display:flex;justify-content:space-between;align-items:center" onclick="_ppToggleAdv()">'
+    + '    <div><span style="font-size:14px;font-weight:700;color:#1e293b">⚙ 고급 설정 (인시·생산성·시간)</span><span style="margin-left:10px;font-size:11px;color:#94a3b8">변경 시 모든 디바이스 공유</span></div>'
+    + '    <div id="pp_adv_arrow" style="font-size:18px;color:#94a3b8">▾</div>'
+    + '  </div>'
+    + '  <div id="pp_adv_body" style="display:none;padding:0 18px 18px;border-top:1px solid #f1f5f9">'
+    + _ppAdvancedSettingsBody()
+    + '  </div>'
+    + '</div>';
+}
+
+function _ppAdvancedSettingsBody(){
+  var html = '';
+  // 전처리/파쇄
+  html += '<div style="margin-top:14px"><div style="font-weight:600;color:#1e40af;margin-bottom:8px;font-size:13px">🥩 전처리 & 🔪 파쇄</div>';
+  html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px">';
+  html += _ppInputCell('pp_p_pre', '전처리 (kg/인시)', 'preprocess_kg_per_manhour', PP_STD.preprocess_kg_per_manhour, 0.1);
+  html += _ppInputCell('pp_p_sh',  '파쇄 (kg/인시)', 'shredding_kg_per_manhour', PP_STD.shredding_kg_per_manhour, 0.1);
+  html += _ppInputCell('pp_p_sh_max', '파쇄 최대 인원', 'shredding_max_workers', PP_STD.shredding_max_workers, 1);
+  html += '</div></div>';
+
+  // 자숙
+  html += '<div style="margin-top:14px"><div style="font-weight:600;color:#1e40af;margin-bottom:8px;font-size:13px">🍲 자숙</div>';
+  html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px">';
+  html += _ppInputCell('pp_p_ck_tank', '탱크당 kg', 'cooking.kg_per_tank', PP_STD.cooking.kg_per_tank, 10);
+  html += _ppInputCell('pp_p_ck_p', '가압 시간(분)', 'cooking.minutes_pressure', PP_STD.cooking.minutes_pressure, 5);
+  html += _ppInputCell('pp_p_ck_n', '비가압 시간(분)', 'cooking.minutes_normal', PP_STD.cooking.minutes_normal, 5);
+  html += _ppInputCell('pp_p_ck_w', '회차당 인원', 'cooking.workers_per_batch', PP_STD.cooking.workers_per_batch, 1);
+  html += _ppInputCell('pp_p_wagon', '와건 시간(분)', 'wagon_min', PP_STD.wagon_min, 5);
+  html += '</div></div>';
+
+  // 내포장 호기
+  html += '<div style="margin-top:14px"><div style="font-weight:600;color:#1e40af;margin-bottom:8px;font-size:13px">📦 내포장 호기 (분당 EA · 인원)</div>';
+  html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px">';
+  PP_STD.packing_lines.forEach(function(l, i){
+    html += '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:10px">';
+    html += '<div style="font-size:12px;font-weight:600;color:#1e40af;margin-bottom:6px">'+l.name+'</div>';
+    html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">';
+    html += '<label style="font-size:11px;color:#64748b">분당 EA<input type="number" data-pp-key="packing_lines['+i+'].ea_per_min" value="'+l.ea_per_min+'" step="0.1" style="width:100%;padding:5px;border:1px solid #cbd5e1;border-radius:4px;margin-top:2px"></label>';
+    html += '<label style="font-size:11px;color:#64748b">인원<input type="number" data-pp-key="packing_lines['+i+'].workers" value="'+l.workers+'" step="1" min="1" style="width:100%;padding:5px;border:1px solid #cbd5e1;border-radius:4px;margin-top:2px"></label>';
+    html += '</div></div>';
+  });
+  html += '</div>';
+  html += '<div style="margin-top:8px">'+_ppInputCell('pp_p_trans', '호기당 이송 인원', 'transfer_workers_per_line', PP_STD.transfer_workers_per_line, 1)+'</div>';
+  html += '</div>';
+
+  // 레토르트 제품별
+  html += '<div style="margin-top:14px"><div style="font-weight:600;color:#1e40af;margin-bottom:8px;font-size:13px">🔥 레토르트 제품별 (대차당 EA · 시간)</div>';
+  html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px">';
+  Object.keys(PP_STD.retort.profile).forEach(function(pname){
+    var prof = PP_STD.retort.profile[pname];
+    html += '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:10px">';
+    html += '<div style="font-size:11px;font-weight:600;color:#1e40af;margin-bottom:6px">'+pname+'</div>';
+    html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">';
+    html += '<label style="font-size:11px;color:#64748b">대차당 EA<input type="number" data-pp-key="retort.profile['+JSON.stringify(pname)+'].eaPerCart" value="'+prof.eaPerCart+'" step="1" style="width:100%;padding:5px;border:1px solid #cbd5e1;border-radius:4px;margin-top:2px"></label>';
+    html += '<label style="font-size:11px;color:#64748b">시간(분)<input type="number" data-pp-key="retort.profile['+JSON.stringify(pname)+'].minutes" value="'+prof.minutes+'" step="5" style="width:100%;padding:5px;border:1px solid #cbd5e1;border-radius:4px;margin-top:2px"></label>';
+    html += '</div></div>';
+  });
+  html += '</div></div>';
+
+  // 수율
+  html += '<div style="margin-top:14px"><div style="font-weight:600;color:#1e40af;margin-bottom:8px;font-size:13px">📊 수율 (원육 대비 누적)</div>';
+  html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px">';
+  html += _ppInputCell('pp_y_pp', '전처리 수율', 'yield.preprocess', PP_STD.yield.preprocess, 0.001);
+  html += _ppInputCell('pp_y_ck', '자숙 수율', 'yield.cooking', PP_STD.yield.cooking, 0.001);
+  html += _ppInputCell('pp_y_sh', '파쇄 수율', 'yield.shredding', PP_STD.yield.shredding, 0.001);
+  html += '</div></div>';
+
+  // 버튼
+  html += '<div style="margin-top:18px;display:flex;gap:10px">';
+  html += '<button onclick="_ppApplyParams()" style="flex:1;background:#16a34a;color:#fff;border:none;border-radius:6px;padding:10px;font-size:13px;font-weight:700;cursor:pointer">💾 적용 & 저장 (Firestore 공유)</button>';
+  html += '<button onclick="_ppResetParams()" style="background:#fff;border:1px solid #cbd5e1;border-radius:6px;padding:10px 16px;font-size:13px;color:#dc2626;cursor:pointer">기본값으로 초기화</button>';
+  html += '</div>';
+
+  return html;
+}
+
+function _ppInputCell(id, label, key, val, step){
+  return '<label style="display:block;font-size:11px;color:#64748b">'+label
+    + '<input id="'+id+'" type="number" data-pp-key="'+key+'" value="'+val+'" step="'+step+'" style="width:100%;padding:6px;border:1px solid #cbd5e1;border-radius:4px;font-size:13px;margin-top:2px">'
+    + '</label>';
+}
+
+function _ppToggleAdv(){
+  var body = document.getElementById('pp_adv_body');
+  var arrow = document.getElementById('pp_adv_arrow');
+  if(!body) return;
+  if(body.style.display === 'none'){
+    body.style.display = 'block';
+    if(arrow) arrow.textContent = '▴';
+  } else {
+    body.style.display = 'none';
+    if(arrow) arrow.textContent = '▾';
+  }
+}
+
+function _ppFillAdvancedInputs(){
+  // 페이지 로드 후 input 값을 현재 PP_STD로 채움
+  document.querySelectorAll('[data-pp-key]').forEach(function(el){
+    var key = el.getAttribute('data-pp-key');
+    var v = _ppGetByKey(PP_STD, key);
+    if(v !== undefined) el.value = v;
+  });
+}
+
+function _ppGetByKey(obj, key){
+  // "cooking.kg_per_tank" 또는 "packing_lines[0].workers" 또는 "retort.profile[\"FC 장조림 3KG\"].eaPerCart"
+  try {
+    var path = key.replace(/\[/g,'.[').split('.').filter(Boolean);
+    var cur = obj;
+    for(var i = 0; i < path.length; i++){
+      var p = path[i];
+      if(p.startsWith('[')){
+        var idx = p.slice(1, -1);
+        if(idx.startsWith('"') || idx.startsWith("'")) idx = JSON.parse(idx);
+        else idx = parseInt(idx);
+        cur = cur[idx];
+      } else {
+        cur = cur[p];
+      }
+      if(cur === undefined) return undefined;
+    }
+    return cur;
+  } catch(e){ return undefined; }
+}
+
+function _ppSetByKey(obj, key, val){
+  try {
+    var path = key.replace(/\[/g,'.[').split('.').filter(Boolean);
+    var cur = obj;
+    for(var i = 0; i < path.length - 1; i++){
+      var p = path[i];
+      if(p.startsWith('[')){
+        var idx = p.slice(1, -1);
+        if(idx.startsWith('"') || idx.startsWith("'")) idx = JSON.parse(idx);
+        else idx = parseInt(idx);
+        cur = cur[idx];
+      } else {
+        cur = cur[p];
+      }
+    }
+    var last = path[path.length - 1];
+    if(last.startsWith('[')){
+      var idx2 = last.slice(1, -1);
+      if(idx2.startsWith('"') || idx2.startsWith("'")) idx2 = JSON.parse(idx2);
+      else idx2 = parseInt(idx2);
+      cur[idx2] = val;
+    } else {
+      cur[last] = val;
+    }
+  } catch(e){ console.warn('set fail', key, e); }
+}
+
+async function _ppApplyParams(){
+  // input들에서 값 수집해서 PP_STD 갱신
+  document.querySelectorAll('[data-pp-key]').forEach(function(el){
+    var key = el.getAttribute('data-pp-key');
+    var v = parseFloat(el.value);
+    if(isFinite(v)) _ppSetByKey(PP_STD, key, v);
+  });
+  var ok = await _ppSaveParams();
+  if(ok){
+    // 시뮬 결과가 이미 있으면 재실행
+    var resultEl = document.getElementById('pp_result');
+    if(resultEl && resultEl.children.length > 0){
+      _ppRunSimulation();
+    }
+    // 토스트
+    var t = document.createElement('div');
+    t.textContent = '✅ 적용됨 (모든 디바이스 공유)';
+    t.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#16a34a;color:#fff;padding:10px 20px;border-radius:6px;font-weight:600;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,0.15)';
+    document.body.appendChild(t);
+    setTimeout(function(){ t.remove(); }, 2000);
+  }
 }
 
 function _ppShiftRowHtml(time, workers){
@@ -922,3 +1275,6 @@ window.renderProductionPlan = renderProductionPlan;
 window._ppRunSimulation = _ppRunSimulation;
 window._ppAddProdRow = _ppAddProdRow;
 window._ppAddShiftRow = _ppAddShiftRow;
+window._ppToggleAdv = _ppToggleAdv;
+window._ppApplyParams = _ppApplyParams;
+window._ppResetParams = _ppResetParams;
