@@ -618,8 +618,9 @@ async function _submitGtinRegister(cnt){
     }
     alert(msg);
     _closeGtinModal();
-    // 페이지 갱신
-    if(typeof renderStock === 'function') renderStock();
+    // 페이지 갱신 - 현재 어느 화면이든 갱신
+    if(typeof renderStock === 'function' && document.getElementById('p-stock')) renderStock();
+    if(typeof renderBC === 'function' && document.getElementById('bcList')) renderBC();
   } catch(e){
     alert('등록 실패: ' + (e.message || e));
   }

@@ -273,7 +273,38 @@ async function renderBC(){
       <button class="bcdel" onclick="delBC('${b.id}','${b.fbId||''}')">×</button>
     </div>`).join('');
   renderBcSummaryCard();
+  // 부적합 1건 이상이면 미등록 GTIN 배너 (어제 만든 기능)
+  _bcCheckUnknownGtinsBanner();
 }
+
+// 부적합 화면 위에 미등록 GTIN 배너 표시 (stock.js의 기능 재사용)
+async function _bcCheckUnknownGtinsBanner(){
+  // 기존 배너 제거
+  var oldBanner = document.getElementById('bcGtinBanner');
+  if(oldBanner) oldBanner.remove();
+  if(typeof findUnknownGtins !== 'function') return;
+  try {
+    var unknown = await findUnknownGtins();
+    if(!unknown || !unknown.length) return;
+    var listEl = document.getElementById('bcList');
+    if(!listEl) return;
+    var banner = document.createElement('div');
+    banner.id = 'bcGtinBanner';
+    var totalCnt = unknown.reduce(function(s,u){return s + u.count;}, 0);
+    banner.innerHTML = ''
+      + '<div style="background:#fef3c7;border:1px solid #fbbf24;border-radius:8px;padding:14px 18px;margin-bottom:14px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">'
+      + '  <div style="flex:1;min-width:200px">'
+      + '    <div style="font-size:14px;font-weight:700;color:#92400e">⚠️ 미등록 GTIN ' + unknown.length + '개 발견 (총 ' + totalCnt + '건 부적합)</div>'
+      + '    <div style="font-size:12px;color:#78350f;margin-top:3px">새로 들어온 원육 박스 GTIN이 시스템에 등록되지 않아 부적합으로 표시되고 있습니다.</div>'
+      + '  </div>'
+      + '  <button onclick="_openGtinRegisterModal()" style="background:#f59e0b;color:#fff;border:none;border-radius:6px;padding:9px 16px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap">등록하고 정리하기</button>'
+      + '</div>';
+    listEl.parentNode.insertBefore(banner, listEl);
+  } catch(e){
+    console.warn('[bcGtinBanner] 검사 실패:', e);
+  }
+}
+window._bcCheckUnknownGtinsBanner = _bcCheckUnknownGtinsBanner;
 
 function delBC(id,fbId){
   const rec = L.barcodes.find(b=>b.id===id);
