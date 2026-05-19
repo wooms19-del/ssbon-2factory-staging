@@ -1827,10 +1827,29 @@ function tttRender() {
     </div>`;
   }
 
-  // dual 모드: ttmRender가 ttt-result를 채움 / 단일 모드: 위에서 이미 채움
+  // dual 모드: ttmRender가 ttt-result를 채움 / 단일 모드: 결과 합성해서 채움
   if (dualMode) {
     document.getElementById('ttt-result').innerHTML = '';
     if (typeof ttmRender === 'function') ttmRender();
+  } else {
+    // 단일 모드 결과 합성
+    const resultEl = document.getElementById('ttt-result');
+    if (resultEl) {
+      // 만들어진 HTML 변수들 모두 합성
+      // conclusion (요약) + planBox (계획) + lunchBg + timelineSvg + wkTbl + splitView + procTbl + whyCards + reportBox + dualBox
+      let html = '';
+      if (typeof conclusion === 'string') html += conclusion;
+      if (typeof planBox === 'string') html += planBox;
+      if (typeof lunchBg === 'string') html += lunchBg;
+      if (typeof timelineSvg === 'string') html += timelineSvg;
+      if (typeof wkTbl === 'string') html += wkTbl;
+      if (typeof splitView === 'string') html += splitView;
+      if (typeof procTbl === 'string') html += procTbl;
+      if (typeof whyCards === 'string') html += whyCards;
+      if (typeof reportBox === 'string') html += reportBox;
+      if (typeof dualBox === 'string') html += dualBox;
+      resultEl.innerHTML = html;
+    }
   }
 }
 
