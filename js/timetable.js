@@ -743,29 +743,39 @@ function ttSimulate(inp, tankMode) {
   // 가용 인원 = 시간대별 (전처리·자숙 점유 차감 후 내포장에 줄 수 있는 인원)
   // 전처리 끝났으면 → 전처리 인원이 내포장으로 흡수 가능
   // 자숙은 2명/회차 점유 (이미 차감되어 있음)
-  // 매 분마다 가용 계산
+  // 매 분마다 내포장에 줄 수 있는 가용 인원
+  // 핵심 룰: 파쇄와 내포장은 동시 가동 가능
+  //   - 인원 충분하면 파쇄(wkCrush명) + 내포장(8명+) 동시
+  //   - 인원 부족하면 파쇄 인원 줄여서 내포장에 양보 (파쇄 속도↓)
+  //   - 즉 파쇄 인원 점유는 '최소 인원'만 고정, 나머지는 내포장으로 양보 가능
+  // 자숙은 회차당 2명 고정 점유 (양보 불가)
+  const PACK_FOR_1_LINE_BASE = 8;  // 내포장 1대 가동 최소 인원 (호기 6 + 이송 2)
+  const CRUSH_MIN_KEEP = 4;  // 파쇄 최소 유지 인원 (이만큼만 점유, 나머지는 내포장 양보)
   const packCrewAt = (t) => {
-    let crew = 0;
-    // 조출 인원
-    if (t >= startMin) crew += inp.earlyWorkers;
-    // 관리자 출근 후
+    // 출근
+    let onsite = 0;
+    if (t >= startMin) onsite += inp.earlyWorkers;
     const mgrMin = ttToMin(inp.mgrTime);
-    if (t >= mgrMin) crew += inp.mgrWorkers;
-    // 한국인 합류 후
-    if (t >= joinMin) crew += inp.wkPre;  // 전처리조도 합류
-    // 자숙 점유 차감 (현재 가동 중 회차 × 2명)
-    let cookActive = 0;
+    if (t >= mgrMin) onsite += inp.mgrWorkers;
+    if (t >= joinMin) onsite += (inp.wkPre || 0);
+    // 점유
+    let occupied = 0;
+    // 자숙 (가동 중 회차 × 2명) — 양보 불가
     for (let i = 0; i < cookCycles; i++) {
-      if (t >= tankInTimes[i] && t < tankOutTimes[i]) cookActive++;
+      if (t >= tankInTimes[i] && t < tankOutTimes[i]) occupied += 2;
     }
-    crew -= cookActive * 2;
-    // 파쇄 인원 차감 (파쇄 가동 중)
+    // 관리 (항상 1명)
+    occupied += 1;
+    // 전처리 가동 중 — 양보 불가
+    if (t < preEndMin && t >= startMin) {
+      const wPre = (t >= joinMin) ? inp.wkPre : inp.earlyWorkers;
+      occupied += wPre;
+    }
+    // 파쇄 가동 중 — 최소 유지 인원만 점유 (나머지는 내포장에 양보 가능)
     if (t >= crushStartMin && t < crushEndMin) {
-      crew -= (inp.wkCrush || 0);
+      occupied += Math.min(inp.wkCrush || 0, CRUSH_MIN_KEEP);
     }
-    // 관리자 1명은 항상 점유 (관리 인원 빼면)
-    crew -= 1;
-    return Math.max(0, crew);
+    return Math.max(0, onsite - occupied);
   };
 
   // 시작 시각 결정 — 분 단위 탐색
