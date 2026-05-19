@@ -987,6 +987,14 @@
           <!-- FP (시그 등) 입력 -->
           <div style="flex-basis:100%;font-size:12px;font-weight:600;color:#7F77DD;margin-bottom:2px">📦 FP (두 번째 제품)</div>
           <label style="display:flex;flex-direction:column;gap:3px">
+            <span>분석 기간</span>
+            <select id="ttt-period2" onchange="tttAutoAnalyzeOther()" style="height:30px;font-size:12px;padding:0 8px;border:0.5px solid var(--color-border-secondary);border-radius:6px;background:var(--color-background-primary)">
+              <option value="7">최근 7일</option>
+              <option value="30" selected>최근 30일</option>
+              <option value="90">최근 90일</option>
+            </select>
+          </label>
+          <label style="display:flex;flex-direction:column;gap:3px">
             <span>원육 종류</span>
             <select id="ttt-meattype2" onchange="tttAutoAnalyzeOther()" style="height:30px;font-size:12px;padding:0 8px;border:0.5px solid var(--color-border-secondary);border-radius:6px;background:var(--color-background-primary)">
               <option value="우둔">우둔</option>
@@ -1006,14 +1014,6 @@
           <label style="display:flex;flex-direction:column;gap:3px">
             <span>원육량 (kg)</span>
             <input type="number" id="ttt-kg2" value="500" min="0" max="6000" step="50" oninput="tttRender()" style="width:90px;height:30px;font-size:13px;padding:0 8px;border:0.5px solid var(--color-border-secondary);border-radius:6px">
-          </label>
-          <label style="display:flex;flex-direction:column;gap:3px">
-            <span>분석 기간</span>
-            <select id="ttt-period2" onchange="tttAutoAnalyzeOther()" style="height:30px;font-size:12px;padding:0 8px;border:0.5px solid var(--color-border-secondary);border-radius:6px;background:var(--color-background-primary)">
-              <option value="7">최근 7일</option>
-              <option value="30" selected>최근 30일</option>
-              <option value="90">최근 90일</option>
-            </select>
           </label>
           <div style="display:flex;flex-direction:column;gap:3px;font-size:11px;color:var(--color-text-tertiary)">
             <span>FP 자동값 (DB 평균)</span>
@@ -1616,7 +1616,7 @@
 <script src="js/globals.js?v=1778599476"></script>
 <script src="js/stock.js?v=1779151582"></script>
 <script src="js/timetable.js?v=1779184888"></script>
-<script src="js/timetable_test.js?v=1779186737"></script>
+<script src="js/timetable_test.js?v=1779186962"></script>
 <script src="js/production_plan.js?v=1779091914"></script>
 </body>
 </html>
