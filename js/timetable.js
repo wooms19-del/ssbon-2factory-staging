@@ -816,66 +816,66 @@ function ttSimulate(inp, tankMode) {
   const packEndMin = Math.max(packSelfEndMin, lastBatchPackEndMin);
   const packMin = packEndMin - packStartMin;
 
-  // 레토르트: 3대 병렬 + 대차 8개, EA 균등 분배 (전체 회차에 고르게)
+  // 레토르트: 3대 병렬 + 대차 8개
   //
-  // 룰:
-  //  - 회차 수 = ceil(pouches / 384) (대차 4개 한도, 최소 회차 수)
-  //  - 회차당 EA = 균등 분배 (예: 796 EA / 3회차 = 265, 265, 266)
-  //  - 회차당 대차 = ceil(EA / 96)
-  //  - 가동 시점 = 그 회차 EA 누적 + 대차 가용 + 설비 가용
-  //  - 마지막 회차 = max(누적 시점, 내포장 종료)
-  //
-  // 효과: 4대차 가득 모을 필요 없음 → 회차 빨리 시작 → 전체 종료 빠름
-  // 제품별 상수 (단일 모드는 FC, 다중 모드의 비-FC 시뮬은 productInfo로 갈아끼움)
+  // 진짜 운영 룰:
+  //  - 회차당 4대차 풀로 채움 (시그 = 4 × 1024 = 4096 EA)
+  //  - 3대 병렬 → 1·2·3회차 거의 동시 가동 가능
+  //  - 회차 사이 간격 = 산출 EA가 다음 회차 분량 쌓일 때까지만 대기
+  //  - 마지막 회차는 부족한 분량으로 처리 가능 (단, 회차 시간은 동일)
   const pInfo = inp.productInfo || { eaPerCart: 96, retortCycleMin: TT_FIXED.retortCycleMin };
   const EA_PER_CART = pInfo.eaPerCart;
   const RETORT_CYCLE_MIN = pInfo.retortCycleMin;
   const MAX_CARTS_PER_BATCH = 4;
   const MAX_EA_PER_BATCH = EA_PER_CART * MAX_CARTS_PER_BATCH;
-  const retortCycles = Math.ceil(pouches / MAX_EA_PER_BATCH);
-  const eaPerMin = inp.pPackEa;
+  const retortCycles = Math.max(1, Math.ceil(pouches / MAX_EA_PER_BATCH));
   const NUM_RETORTS = 3;
   const TOTAL_CARTS = 8;
 
-  // EA 균등 분배 (정수 단위, 마지막에 잔여 합산)
+  // 회차당 EA = 균등 분배 (잔여는 마지막에 합산)
   const eaPerBatch = Math.floor(pouches / retortCycles);
   const eaRemainder = pouches - eaPerBatch * retortCycles;
   const batchEa = [];
   for (let i = 0; i < retortCycles; i++) {
-    // 잔여 EA를 마지막 회차에 합산
     batchEa.push(i === retortCycles - 1 ? eaPerBatch + eaRemainder : eaPerBatch);
   }
-  // 회차당 대차 수 = ceil(EA / 96), 최대 4
   const batchCarts = batchEa.map(ea => Math.min(MAX_CARTS_PER_BATCH, Math.ceil(ea / EA_PER_CART)));
 
+  // 회차별 시작 시각 결정 — 산출 시점 + 설비 가용
   const retortStartTimes = [];
   const retortEndTimes = [];
-  const retortFreeAt = [0, 0, 0];
+  const retortFreeAt = [packStartMin, packStartMin, packStartMin]; // 3대 가용 시각
+
+  // 분당 산출 EA (호기 가동 평균 — 단순화: pPackEa × 평균 호기수)
+  // 호기 동적이라 정확치 안 되지만 보수적으로 추정
+  const avgEaPerMin = (maxLines >= 2 ? 1.5 : 1) * (inp.pPackEa || 25);  // 1.5는 평균 호기수 추정
 
   for (let i = 0; i < retortCycles; i++) {
-    const isLast = i === retortCycles - 1;
-    // i회차 누적 EA = 0~i까지 합
+    // 이 회차에 필요한 누적 EA
     const cumEa = batchEa.slice(0, i + 1).reduce((a, b) => a + b, 0);
-    let accumulateMin = packStartMin + Math.round(cumEa / eaPerMin);
-    if (isLast) accumulateMin = Math.max(accumulateMin, packEndMin);
-    else if (accumulateMin > packEndMin) accumulateMin = packEndMin;
+    // 산출 충족 시점 (내포장 시작 + cumEa / avgEaPerMin)
+    let accumulateMin = packStartMin + Math.round(cumEa / avgEaPerMin);
+    // 마지막 회차 = 내포장 종료 이후만 가능 (남은 EA 다 나와야 시작)
+    if (i === retortCycles - 1) {
+      accumulateMin = Math.max(accumulateMin, packEndMin);
+    }
 
+    // 가용 설비 (3대 중 가장 빨리 끝나는 것)
     const earliestRetort = retortFreeAt.indexOf(Math.min(...retortFreeAt));
     const retortAvailMin = retortFreeAt[earliestRetort];
 
-    // 대차 가용 (현재 진행 중 대차 빼고)
+    // 대차 가용성 체크
     const cartsAvailableAt = (t) => {
       let inUse = 0;
       for (let k = 0; k < retortStartTimes.length; k++) {
         if (retortStartTimes[k] <= t && t < retortEndTimes[k]) {
-          inUse += batchCarts[k];  // 그 회차의 실제 대차 수
+          inUse += batchCarts[k];
         }
       }
       return TOTAL_CARTS - inUse;
     };
 
     let candidateStart = Math.max(retortAvailMin, accumulateMin);
-    // 이 회차에 필요한 대차 수만큼 가용까지 대기
     while (cartsAvailableAt(candidateStart) < batchCarts[i]) {
       const ongoing = retortEndTimes.filter((e, k) => retortStartTimes[k] <= candidateStart && candidateStart < e);
       if (ongoing.length === 0) break;
@@ -918,24 +918,30 @@ function ttSimulate(inp, tankMode) {
 // productName: 정확한 packing 컬렉션의 product 필드값과 일치해야 함 (DB 매칭용)
 // availableLines: 사용 가능한 내포장 호기 (1, 2, 3, 4)
 // maxLines: 최대 동시 가동 가능 호기 수
+// kgPerEa: 1EA당 파쇄육 무게 (kg) — 파쇄 산출량 / EA 환산용
+//   - 시그 130g: 0.025 (제품 130g 중 파쇄육 25g)
+//   - 코스트코 170g: 0.054
+//   - 미니 70g: 0.024
+//   - 트레이더 460g: 0.147
+//   - FC 3KG: 1.3
 const TT_PRODUCT_INFO = {
   'fc':         { name: 'FC 장조림 3KG',              productName: 'FC 장조림 3KG',
-                  eaPerCart: 96,   retortCycleMin: 150, kgPerEa: 1.35,  pressureAllowed: false,
+                  eaPerCart: 96,   retortCycleMin: 150, kgPerEa: 1.3,   pressureAllowed: false,
                   availableLines: [2],     maxLines: 1 },
   'sig':        { name: '시그니처 장조림 130g',         productName: '시그니처 장조림 130g',
-                  eaPerCart: 1024, retortCycleMin: 120, kgPerEa: 0.057, pressureAllowed: true,
+                  eaPerCart: 1024, retortCycleMin: 120, kgPerEa: 0.025, pressureAllowed: true,
                   availableLines: [3, 4],  maxLines: 2 },
   'sig_mart':   { name: '시그니처 장조림 130g 마트용',   productName: '시그니처 장조림 130g 마트용',
-                  eaPerCart: 1024, retortCycleMin: 120, kgPerEa: 0.057, pressureAllowed: true,
+                  eaPerCart: 1024, retortCycleMin: 120, kgPerEa: 0.025, pressureAllowed: true,
                   availableLines: [3, 4],  maxLines: 2 },
   'costco':     { name: '코스트코 장조림 170g',         productName: '코스트코 장조림 170g',
-                  eaPerCart: 1024, retortCycleMin: 120, kgPerEa: 0.075, pressureAllowed: true,
+                  eaPerCart: 1024, retortCycleMin: 120, kgPerEa: 0.054, pressureAllowed: true,
                   availableLines: [3, 4],  maxLines: 2 },
   'trader':     { name: '트레이더스 장조림 460g',       productName: '트레이더스 장조림 460g',
-                  eaPerCart: 380,  retortCycleMin: 120, kgPerEa: 0.20,  pressureAllowed: true,
+                  eaPerCart: 380,  retortCycleMin: 120, kgPerEa: 0.147, pressureAllowed: true,
                   availableLines: [3, 4],  maxLines: 2 },
   'mini5':      { name: '미니쇠고기장조림 70g 5입',     productName: '미니쇠고기장조림 70g 5입',
-                  eaPerCart: 1280, retortCycleMin: 120, kgPerEa: 0.046, pressureAllowed: true,
+                  eaPerCart: 1280, retortCycleMin: 120, kgPerEa: 0.024, pressureAllowed: true,
                   availableLines: [1],     maxLines: 1 },
   'mini_each':  { name: '미니쇠고기장조림 70g 낱개',    productName: '미니쇠고기장조림 70g 낱개',
                   eaPerCart: 1280, retortCycleMin: 120, kgPerEa: 0.024, pressureAllowed: true,
