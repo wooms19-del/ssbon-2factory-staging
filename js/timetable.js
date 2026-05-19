@@ -706,33 +706,82 @@ function ttSimulate(inp, tankMode) {
   const crushHours = (crushEndMin - crushStartMin) / 60;
   // ── 내포장 시뮬: 동적 ──
   //
-  // 점심 1차에 전처리조가 파쇄 합류 → 파쇄 산출도 그만큼 누적
-  // 내포장은 그 산출이 충분히 누적된 뒤 시작 가능
-  // 단순화: 전처리 끝났으면 → 12:30부터 시작 가능 (파쇄가 1시간 가동했으니까)
-  //         전처리 안 끝났으면 → 13:30부터 (모드 A 동일)
-  // ── 내포장 시작 시점 ──
-  // 규칙: 13:30 시점에 파쇄 산출 ≥ 200kg이면 13:30 시작
-  //       부족하면 → 200kg 도달할 때까지 대기
-  const PACK_START_BASE = 13*60 + 30;
-  const PACK_START_MIN_KG = 200;  // 산출 누적 200kg 이상
-  // crushStartMin부터 분당 누적 (crushWorkersAt × pCrush × yCrush)
+  // 룰:
+  //  (1) 시작 시각 = 파쇄 산출 ≥ 1대차 분량 + 가용 인원 ≥ 호기 1대 운영 인원(6명+이송2명=8명)
+  //  (2) 호기 가동:
+  //      - maxLines=1 제품 (FC, 미니): 호기 1대만 가동, 인원 ≥ 8명일 때만
+  //      - maxLines=2 제품 (시그/코스트코/트레이더): 가용 인원 따라
+  //         8명 ≤ 가용 < 14명 → 호기 1대
+  //         14명 ≤ 가용 → 호기 2대 (속도 2배)
+  //      가용 인원은 시간대별로 동적, 호기는 매 분 결정
+  //  (3) 13:30 하드코딩 제거 — 조건 만족하면 더 일찍 시작 가능
+  const productInfo = inp.productInfo || TT_PRODUCT_INFO['fc'];
+  const maxLines = productInfo.maxLines || 1;
+  // 1대 운영 시 필요 인원 = 호기 6명 + 이송 2명 = 8명
+  // 2대 운영 시 필요 인원 = 호기 6명×2 + 이송 2명×2 = 16명 (실측: 14명도 가능 - 이송 공유)
+  // 단순화: 1대=8명, 2대=14명 임계값
+  const CREW_FOR_1_LINE = 8;
+  const CREW_FOR_2_LINES = 14;
+  // 한 대차 분량 (kg) — 시작 트리거
+  const packCartKg = productInfo.eaPerCart * (productInfo.kgPerEa || kgPerEaUsed);
+  const PACK_START_MIN_KG = Math.max(50, Math.floor(packCartKg * 0.8));  // 80% 쌓이면 시작 가능
+
+  // 가용 인원 = 시간대별 (전처리·자숙 점유 차감 후 내포장에 줄 수 있는 인원)
+  // 전처리 끝났으면 → 전처리 인원이 내포장으로 흡수 가능
+  // 자숙은 2명/회차 점유 (이미 차감되어 있음)
+  // 매 분마다 가용 계산
+  const packCrewAt = (t) => {
+    let crew = 0;
+    // 조출 인원
+    if (t >= startMin) crew += inp.earlyWorkers;
+    // 관리자 출근 후
+    const mgrMin = ttToMin(inp.mgrTime);
+    if (t >= mgrMin) crew += inp.mgrWorkers;
+    // 한국인 합류 후
+    if (t >= joinMin) crew += inp.wkPre;  // 전처리조도 합류
+    // 자숙 점유 차감 (현재 가동 중 회차 × 2명)
+    let cookActive = 0;
+    for (let i = 0; i < cookCycles; i++) {
+      if (t >= tankInTimes[i] && t < tankOutTimes[i]) cookActive++;
+    }
+    crew -= cookActive * 2;
+    // 파쇄 인원 차감 (파쇄 가동 중)
+    if (t >= crushStartMin && t < crushEndMin) {
+      crew -= (inp.wkCrush || 0);
+    }
+    // 관리자 1명은 항상 점유 (관리 인원 빼면)
+    crew -= 1;
+    return Math.max(0, crew);
+  };
+
+  // 시작 시각 결정 — 분 단위 탐색
   let crushAccumOut = 0;
-  let packStartMin = PACK_START_BASE;
-  let kgAtBase = 0;
+  let packStartMin = crushStartMin + 60;  // 기본 fallback: 파쇄 시작 + 1시간
   for (let t = crushStartMin; t < 28*60; t++) {
     const w = crushWorkersAt(t);
     if (w > 0) crushAccumOut += inp.pCrush * w / 60 * (inp.yCrush / 100);
-    if (t + 1 === PACK_START_BASE) kgAtBase = crushAccumOut;
-    if (t + 1 >= PACK_START_BASE && crushAccumOut >= PACK_START_MIN_KG) {
-      packStartMin = t + 1;
-      break;
+    if (crushAccumOut >= PACK_START_MIN_KG) {
+      // 산출 충분 → 인원도 충분한가?
+      const crew = packCrewAt(t + 1);
+      if (crew >= CREW_FOR_1_LINE) {
+        packStartMin = t + 1;
+        break;
+      }
     }
   }
-  const packWorkersAt = (t) => {
+
+  // 호기 가동 수 (동적): 매 분 가용 인원 기반
+  const linesAt = (t) => {
     if (t < packStartMin) return 0;
-    return inp.wkPack;
+    const crew = packCrewAt(t);
+    if (maxLines >= 2 && crew >= CREW_FOR_2_LINES) return 2;
+    if (crew >= CREW_FOR_1_LINE) return 1;
+    return 0;
   };
-  const packSpeedAt = (t) => packWorkersAt(t) > 0 ? inp.pPackEa : 0;
+  // 분당 EA (호기 1대 기준)
+  const eaPerMinPerLine = inp.pPackEa || 25;
+  const packSpeedAt = (t) => linesAt(t) * eaPerMinPerLine;
+  const packWorkersAt = (t) => linesAt(t) * (inp.wkPack || 6) + (linesAt(t) > 0 ? (inp.wkTrans || 2) : 0);
 
   // 자체 처리 시간: packStart부터 처리량이 pouches 도달까지 (정지 시간 자동 반영)
   let packSelfEndMin = packStartMin;
@@ -837,6 +886,7 @@ function ttSimulate(inp, tankMode) {
     phase1Min, phase1Kg,
     tankInTimes, tankOutTimes, wagonEndTimes,
     tankAssign, pressureAllowed,
+    maxLines, productInfo,
     tankCrushTimes,
     crushStartMin, crushEndMin,
     crushSelfEndMin, lastTankCrushEndMin, lastTankOutKg,
@@ -852,21 +902,30 @@ function ttSimulate(inp, tankMode) {
 // ── 다중 작업 시뮬 (순차 파이프라인) ───────────────────────
 // 제품별 가공 정보 (단일 시뮬에서도 사용)
 // productName: 정확한 packing 컬렉션의 product 필드값과 일치해야 함 (DB 매칭용)
+// availableLines: 사용 가능한 내포장 호기 (1, 2, 3, 4)
+// maxLines: 최대 동시 가동 가능 호기 수
 const TT_PRODUCT_INFO = {
   'fc':         { name: 'FC 장조림 3KG',              productName: 'FC 장조림 3KG',
-                  eaPerCart: 96,   retortCycleMin: 150, kgPerEa: 1.35,  pressureAllowed: false },
+                  eaPerCart: 96,   retortCycleMin: 150, kgPerEa: 1.35,  pressureAllowed: false,
+                  availableLines: [2],     maxLines: 1 },
   'sig':        { name: '시그니처 장조림 130g',         productName: '시그니처 장조림 130g',
-                  eaPerCart: 1024, retortCycleMin: 120, kgPerEa: 0.057, pressureAllowed: true },
+                  eaPerCart: 1024, retortCycleMin: 120, kgPerEa: 0.057, pressureAllowed: true,
+                  availableLines: [3, 4],  maxLines: 2 },
   'sig_mart':   { name: '시그니처 장조림 130g 마트용',   productName: '시그니처 장조림 130g 마트용',
-                  eaPerCart: 1024, retortCycleMin: 120, kgPerEa: 0.057, pressureAllowed: true },
+                  eaPerCart: 1024, retortCycleMin: 120, kgPerEa: 0.057, pressureAllowed: true,
+                  availableLines: [3, 4],  maxLines: 2 },
   'costco':     { name: '코스트코 장조림 170g',         productName: '코스트코 장조림 170g',
-                  eaPerCart: 1024, retortCycleMin: 120, kgPerEa: 0.075, pressureAllowed: true },
+                  eaPerCart: 1024, retortCycleMin: 120, kgPerEa: 0.075, pressureAllowed: true,
+                  availableLines: [3, 4],  maxLines: 2 },
   'trader':     { name: '트레이더스 장조림 460g',       productName: '트레이더스 장조림 460g',
-                  eaPerCart: 380,  retortCycleMin: 120, kgPerEa: 0.20,  pressureAllowed: true },
+                  eaPerCart: 380,  retortCycleMin: 120, kgPerEa: 0.20,  pressureAllowed: true,
+                  availableLines: [3, 4],  maxLines: 2 },
   'mini5':      { name: '미니쇠고기장조림 70g 5입',     productName: '미니쇠고기장조림 70g 5입',
-                  eaPerCart: 1280, retortCycleMin: 120, kgPerEa: 0.046, pressureAllowed: true },
+                  eaPerCart: 1280, retortCycleMin: 120, kgPerEa: 0.046, pressureAllowed: true,
+                  availableLines: [1],     maxLines: 1 },
   'mini_each':  { name: '미니쇠고기장조림 70g 낱개',    productName: '미니쇠고기장조림 70g 낱개',
-                  eaPerCart: 1280, retortCycleMin: 120, kgPerEa: 0.024, pressureAllowed: true }
+                  eaPerCart: 1280, retortCycleMin: 120, kgPerEa: 0.024, pressureAllowed: true,
+                  availableLines: [1],     maxLines: 1 }
 };
 
 // 두 번째 제품용 inp 구성 (단일 ttSimulate가 그대로 받을 수 있게)
