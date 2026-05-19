@@ -2130,7 +2130,9 @@ function ttmSimulate(scen, workers) {
   let fcCrushLineEnd = fpCrush.e; // 파쇄 라인 가용 시각
   for (let i = 0; i < fcCook.length; i++) {
     const tankEnd = fcCook[i].e;
-    const tankKg = fcTankKgs[i] * (fcYcrush / 100); // 이 탱크분 파쇄 산출량
+    // 이 탱크분 파쇄 산출량 = 자숙 투입 × yCook × yCrush
+    // (자숙 yield 거쳐서 자숙 산출 → 파쇄 yield 거쳐서 파쇄 산출)
+    const tankKg = fcTankKgs[i] * (scen.fc.yCook / 100) * (fcYcrush / 100);
     const tankCrushMin = Math.ceil(tankKg / (fcPcrush * workers.crushFc) * 60);
     const crushStart = Math.max(tankEnd, fcCrushLineEnd);
     const crushEnd = crushStart + tankCrushMin;
@@ -2292,15 +2294,6 @@ function ttmSimulate(scen, workers) {
   const fcLastBatchEnd = lastFcCrush.e + lastFcPackMin;
   // 둘 중 늦은 쪽
   const fcPackEnd = Math.max(fcPackEndRaw, fcLastBatchEnd);
-  // DEBUG: FC 내포장 시간 비정상 시 콘솔 확인용
-  console.log('[FC 내포장 디버그]', {
-    fcEa, fcPackMin, fcPackStart_fmt: `${Math.floor(fcPackStart/60)}:${String(fcPackStart%60).padStart(2,'0')}`,
-    fcPackEndRaw_fmt: `${Math.floor(fcPackEndRaw/60)}:${String(fcPackEndRaw%60).padStart(2,'0')}`,
-    lastFcKg, lastFcEa, lastFcPackMin,
-    lastFcCrushEnd_fmt: `${Math.floor(lastFcCrush.e/60)}:${String(lastFcCrush.e%60).padStart(2,'0')}`,
-    fcLastBatchEnd_fmt: `${Math.floor(fcLastBatchEnd/60)}:${String(fcLastBatchEnd%60).padStart(2,'0')}`,
-    fcPackEnd_fmt: `${Math.floor(fcPackEnd/60)}:${String(fcPackEnd%60).padStart(2,'0')}`,
-  });
   const fcPack = { s: fcPackStart, e: fcPackEnd };
 
   // === 레토르트 회차 분배 ===
