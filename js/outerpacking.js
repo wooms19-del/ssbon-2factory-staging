@@ -168,8 +168,10 @@ function renderOpPending(list) {
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
           <span style="font-size:12px;color:var(--g5);min-width:72px">트레이</span>
           <input class="fc" type="number" id="op_tray_${i}" placeholder="0"
-            style="width:88px;text-align:right;padding:5px 8px">
+            style="width:88px;text-align:right;padding:5px 8px"
+            oninput="this.dataset.userEdited='true'">
           <span style="font-size:12px;color:var(--g5)">개</span>
+          ${item.product && item.product.indexOf('코스트코')>=0 ? '<span style="font-size:11px;color:#0ea5e9">· 자동(외박스/10)</span>' : ''}
         </div>
 
         <!-- 포장재 테이블 -->
@@ -317,6 +319,19 @@ function opCalc(i, innerEa) {
       aEl.style.color = def>0?'var(--w)':'var(--s)';
     }
   });
+
+  // 코스트코 → 트레이 자동 계산 (사용자 수정 가능)
+  if (prodName && prodName.indexOf('코스트코') >= 0) {
+    const trayEl = document.getElementById('op_tray_'+i);
+    if (trayEl) {
+      const userEdited = trayEl.dataset.userEdited === 'true';
+      const expectedTray = Math.ceil(totalBoxes / 10);
+      // 사용자가 직접 수정한 적 없으면 자동값
+      if (!userEdited) {
+        trayEl.value = expectedTray;
+      }
+    }
+  }
 }
 
 async function completeOuterPacking(i, date, product, innerEa) {
@@ -455,10 +470,10 @@ function renderOpDone(list) {
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
             <div><label style="font-size:11px;color:var(--g5)">내포장 생산 EA</label><br><input class="fc" type="number" id="oe_inner_${i}" value="${item.innerEa||0}" style="width:100%;padding:5px 8px;margin-top:2px"></div>
             <div><label style="font-size:11px;color:var(--g5)">외포장 완료 EA</label><br><input class="fc" type="number" id="oe_outer_${i}" value="${item.outerEa||0}" style="width:100%;padding:5px 8px;margin-top:2px"></div>
-            <div><label style="font-size:11px;color:var(--g5)">외박스 사용</label><br><input class="fc" type="number" id="oe_boxes_${i}" value="${item.outerBoxes||0}" style="width:100%;padding:5px 8px;margin-top:2px"></div>
+            <div><label style="font-size:11px;color:var(--g5)">외박스 사용</label><br><input class="fc" type="number" id="oe_boxes_${i}" value="${item.outerBoxes||0}" ${item.product && item.product.indexOf('코스트코')>=0 ? `oninput="_opAutoTray(${i})"` : ''} style="width:100%;padding:5px 8px;margin-top:2px"></div>
             <div><label style="font-size:11px;color:var(--g5)">파우치 불량 EA</label><br><input class="fc" type="number" id="oe_defp_${i}" value="${item.productDefect||0}" style="width:100%;padding:5px 8px;margin-top:2px"></div>
             <div><label style="font-size:11px;color:var(--g5)">외박스 불량</label><br><input class="fc" type="number" id="oe_boxd_${i}" value="${item.boxDefect||0}" style="width:100%;padding:5px 8px;margin-top:2px"></div>
-            <div><label style="font-size:11px;color:var(--g5)">트레이 사용</label><br><input class="fc" type="number" id="oe_tray_${i}" value="${item.trayUsed||0}" style="width:100%;padding:5px 8px;margin-top:2px"></div>
+            <div><label style="font-size:11px;color:var(--g5)">트레이 사용${item.product && item.product.indexOf('코스트코')>=0 ? ' <span style="color:#0ea5e9;font-size:10px">· 자동(외박스/10)</span>' : ''}</label><br><input class="fc" type="number" id="oe_tray_${i}" value="${item.trayUsed||0}" style="width:100%;padding:5px 8px;margin-top:2px"></div>
             <div><label style="font-size:11px;color:var(--g5)">잔여 EA</label><br><input class="fc" type="number" id="oe_rem_${i}" value="${item.remainEa||0}" style="width:100%;padding:5px 8px;margin-top:2px"></div>
             <div><label style="font-size:11px;color:var(--g5)">잔여 박스</label><br><input class="fc" type="number" id="oe_remb_${i}" value="${item.remainBoxes||0}" style="width:100%;padding:5px 8px;margin-top:2px"></div>
             <div><label style="font-size:11px;color:var(--g5)">샘플</label><br><input class="fc" type="number" id="oe_sample_${i}" value="${item.sample||0}" style="width:100%;padding:5px 8px;margin-top:2px"></div>
@@ -520,3 +535,18 @@ async function saveOpEdit(fbId, i) {
     toast('저장 실패: '+e.message,'d');
   }
 }
+
+// 코스트코 외박스 입력 시 트레이 자동 계산 (외박스 / 10, 올림)
+// 사용자가 수정 가능 (input은 수정 가능 상태 유지)
+function _opAutoTray(i) {
+  const boxesEl = document.getElementById('oe_boxes_'+i);
+  const trayEl = document.getElementById('oe_tray_'+i);
+  if (!boxesEl || !trayEl) return;
+  const boxes = parseInt(boxesEl.value) || 0;
+  const tray = Math.ceil(boxes / 10);
+  trayEl.value = tray;
+  // 시각적 피드백 — 자동 채워졌다는 표시
+  trayEl.style.background = '#ecfeff';
+  setTimeout(() => { trayEl.style.background = ''; }, 800);
+}
+window._opAutoTray = _opAutoTray;
