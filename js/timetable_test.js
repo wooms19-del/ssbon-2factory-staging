@@ -2151,33 +2151,73 @@ function ttmSimulate(scen, workers) {
     const fp200kgMin = Math.ceil(200 / fpCrushRateKgMin);
     fpPackStart = fpCrush.s + fp200kgMin;
   }
-  // FP 내포장 종료 — 분 단위 시뮬
-  //   매 분마다 가동 호기 수 결정:
-  //     - 점심 시간 (11:30~13:30): 1대 가동 (인원 부족)
-  //     - 비점심: maxLines (인원 충분하면 듀얼)
-  //   처리 속도 = 호기 × pPackEa
-  // 호기별 가동 구간도 같이 산출 (lineSegments)
+  // FP 내포장 종료 — 분 단위 시뮬 + 동적 가용 인원 기반
+  //
+  // 매 분마다:
+  //   1. 가용 인원 계산: onsite - 자숙(2/회차) - 관리(1) - 전처리(가동중) - 파쇄(가동중)
+  //   2. 호기 결정:
+  //      - 가용 ≥ 14 (6×2 + 이송 2) && maxLines>=2 → 듀얼 (2대)
+  //      - 가용 ≥ 8 (6 + 이송 2) → 단일 (1대)
+  //      - 가용 < 8 → 정지 (대기)
+  //   3. 점심 시간 (11:30~13:30): 식사 인원 14명 차감 + 호기 자동 1대
+  //
+  // 자숙/전처리/파쇄 가동 시간은 위에서 이미 계산된 sim 값 사용
   const LUNCH_START = 11*60+30;
   const LUNCH_END = 13*60+30;
+  const totalWorkersAll = parseInt(document.getElementById('ttt-total')?.value) || 28;
+  const earlyWorkersAll = parseInt(document.getElementById('ttt-early')?.value) || 7;
+  const mgrCountAll = parseInt(document.getElementById('ttt-mgr')?.value) || 2;
+  const mgrTimeAll = tttToMin(document.getElementById('ttt-mgr-time')?.value || '07:00');
+  const joinTimeAll = tttToMin(document.getElementById('ttt-join')?.value || '09:00');
+
+  // 가용 인원 계산 함수 (각 시점 t)
+  const availAt = (t) => {
+    // 출근
+    let onsite;
+    if (t < mgrTimeAll) onsite = earlyWorkersAll;
+    else if (t < joinTimeAll) onsite = earlyWorkersAll + mgrCountAll;
+    else onsite = totalWorkersAll;
+    // 점유
+    let occupied = 1;  // 관리 항상 1명
+    // 자숙 (FC + FP) - 회차당 2명
+    if (t >= fpCook.s && t < fpCook.e) occupied += 2;
+    fcCook.forEach(c => { if (t >= c.s && t < c.e) occupied += 2; });
+    // 전처리 (FP + FC, 가동 중이면)
+    if (t >= fpPre.s && t < fpPre.e) occupied += workers.preFp;
+    if (t >= fcPre.s && t < fcPre.e) occupied += workers.preFc;
+    // 파쇄 (FP + FC 회차)
+    if (t >= fpCrush.s && t < fpCrush.e) occupied += workers.crushFp;
+    fcCrushes.forEach(c => { if (t >= c.s && t < c.e) occupied += workers.crushFc; });
+    // 점심 식사 인원 (14명)
+    if (t >= LUNCH_START && t < LUNCH_END) occupied += 14;
+    return Math.max(0, onsite - occupied);
+  };
+
   const fpLineSegments = { 1: [], 2: [] };
   let fpLineState = { 1: null, 2: null };
   let fpProcessed = 0;
   let fpPackEnd = fpPackStart;
+  const CREW_1_LINE = 6 + 2;   // 호기 6명 + 이송 2명
+  const CREW_2_LINES = 12 + 2; // 6×2 + 이송 2 (이송 공유)
   for (let t = fpPackStart; t < 28*60 && fpProcessed < fpEa; t++) {
-    const isLunch = t >= LUNCH_START && t < LUNCH_END;
-    const linesThisMin = (fpMaxLines >= 2 && !isLunch) ? 2 : 1;
+    const avail = availAt(t);
+    let linesThisMin = 0;
+    if (fpMaxLines >= 2 && avail >= CREW_2_LINES) linesThisMin = 2;
+    else if (avail >= CREW_1_LINE) linesThisMin = 1;
+    // 점심 시간엔 무조건 1대 이하
+    if (t >= LUNCH_START && t < LUNCH_END && linesThisMin > 1) linesThisMin = 1;
     fpProcessed += fpPpackEaMin * linesThisMin;
     fpPackEnd = t + 1;
-    // 호기 1은 항상
+    // 호기 1
     if (linesThisMin >= 1 && fpLineState[1] === null) fpLineState[1] = { start: t };
-    if (linesThisMin < 1 && fpLineState[1] !== null) {
+    else if (linesThisMin < 1 && fpLineState[1] !== null) {
       fpLineState[1].end = t;
       fpLineSegments[1].push(fpLineState[1]);
       fpLineState[1] = null;
     }
     // 호기 2 (듀얼일 때만)
     if (linesThisMin >= 2 && fpLineState[2] === null) fpLineState[2] = { start: t };
-    if (linesThisMin < 2 && fpLineState[2] !== null) {
+    else if (linesThisMin < 2 && fpLineState[2] !== null) {
       fpLineState[2].end = t;
       fpLineSegments[2].push(fpLineState[2]);
       fpLineState[2] = null;
