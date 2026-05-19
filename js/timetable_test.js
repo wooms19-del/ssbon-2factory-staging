@@ -2014,7 +2014,7 @@ function ttmGetScenario() {
 function ttmDefaultWorkers() {
   return {
     preFp: 7, preFc: 7,
-    crushFp: 13, crushFc: 18,
+    crushFp: 10, crushFc: 10,  // 사용자 룰: 파쇄 10명만 있어도 충분
     packFp: 6, packFc: 6,
     // 수율·생산성 (자동값으로 시작)
     yPreFp: TTT_AUTO_OTHER.yPre.val,  yPreFc: TTT_AUTO.yPre.val,
@@ -2187,21 +2187,29 @@ function ttmSimulate(scen, workers) {
   ];
 
   // 가용 인원 계산 함수
+  // 점심 시간 (11:30~13:30): 14명이 식사 = 작업 가용 14명
+  //   - 자숙(자동) + 내포장 1대(6+이송2) + 관리(1) = 11명 사용
+  //   - 사용자 룰: 점심 시간엔 8명만 있어도 OK → 인원 부족 시 작업 줄임 자동
+  //   - 전처리/파쇄/외포장 = 점심 시간엔 가동 X (식사 우선)
   const availAt = (t) => {
-    // 출근
     let onsite;
     if (t < mgrTimeAll) onsite = earlyWorkersAll;
     else if (t < joinTimeAll) onsite = earlyWorkersAll + mgrCountAll;
     else onsite = totalWorkersAll;
-    // 점유
     let occupied = 1;  // 관리 1명
     if (t >= fpCook.s && t < fpCook.e) occupied += 2;
     fcCook.forEach(c => { if (t >= c.s && t < c.e) occupied += 2; });
-    if (t >= fpPre.s && t < fpPre.e) occupied += workers.preFp;
-    if (t >= fcPre.s && t < fcPre.e) occupied += workers.preFc;
-    if (t >= fpCrush.s && t < fpCrush.e) occupied += workers.crushFp;
-    fcCrushes.forEach(c => { if (t >= c.s && t < c.e) occupied += workers.crushFc; });
-    if (t >= LUNCH_START && t < LUNCH_END) occupied += 14;
+    // 점심 시간 = 식사 14명 + 전처리/파쇄 안 함 (식사 시간이라)
+    const isLunch = t >= LUNCH_START && t < LUNCH_END;
+    if (isLunch) {
+      occupied += 14;  // 식사
+      // 전처리/파쇄는 점심 시간엔 점유 X (가동 안 함)
+    } else {
+      if (t >= fpPre.s && t < fpPre.e) occupied += workers.preFp;
+      if (t >= fcPre.s && t < fcPre.e) occupied += workers.preFc;
+      if (t >= fpCrush.s && t < fpCrush.e) occupied += workers.crushFp;
+      fcCrushes.forEach(c => { if (t >= c.s && t < c.e) occupied += workers.crushFc; });
+    }
     return Math.max(0, onsite - occupied);
   };
 
@@ -2565,8 +2573,8 @@ function ttmRenderWorkerSlots(scen, workers, sim) {
 
     const mgr = mid >= mgrTimeMin ? mgrMin : 0;
     const act = (ps,pe) => mid >= ps && mid < pe;
-    const pre = (act(sim.fp.pre.s,sim.fp.pre.e) ? workers.preFp : 0)
-              + (act(sim.fc.pre.s,sim.fc.pre.e) ? workers.preFc : 0);
+    let pre = (act(sim.fp.pre.s,sim.fp.pre.e) ? workers.preFp : 0)
+            + (act(sim.fc.pre.s,sim.fc.pre.e) ? workers.preFc : 0);
     let crush = act(sim.fp.crush.s,sim.fp.crush.e) ? workers.crushFp : 0;
     (sim.fc.crushes||[sim.fc.crush]).forEach(c => { if(act(c.s,c.e)) crush += workers.crushFc; });
     let pack=0, trans=0;
@@ -2581,22 +2589,22 @@ function ttmRenderWorkerSlots(scen, workers, sim) {
     let mgrActual = mgr;
 
     if (isLunch1 || isLunch2) {
-      mgrActual = 1; // 점심시간 관리자 1명만 (나머지 1명 식사)
-      // 점심: 절반 식사, 나머지 절반 일함
+      // 사용자 룰: 점심 시간엔 전처리/파쇄 가동 X (식사 우선)
+      // 내포장 1대만 (6명 + 이송 2) + 관리 1 + 식사 14 = 22
+      // 자숙 자동 (2명/회차) 추가 = 자동 점유
+      pre = 0;
+      crush = 0;
+      mgrActual = 1;
       lunch = isLunch1 ? half1 : half2;
-      const workingHalf = onsite - lunch;
-      // 점심 시간엔 내포장 호기 감축 가능 (인원 부족)
-      // FP 듀얼(12명) → 1대(6명)로 줄임 + 이송도 1라인분(2명)으로
+      // FP 듀얼 인원 입력했어도 점심엔 1대만
       if (fpPackActive && workers.packFp >= 12) {
-        // 점심 시간 = FP 1대만 가동
-        pack = pack - workers.packFp + 6;  // FP 12 → 6
-        trans = trans - 2;  // 이송 4 → 2 (FP+FC면 2+2=4 → 2+2=4, FP 단독이면 2 → 2)
-        if (!fcPackActive) trans = 2;  // FP만이면 이송 2
+        pack = pack - workers.packFp + 6;
+        trans = trans - 2;
+        if (!fcPackActive) trans = 2;
       }
-      // 내포장+이송+관리(1명) 고정, 남은 자리 파쇄
+      const workingHalf = onsite - lunch;
       const fixedWork = pack + trans + mgrActual;
-      crush = Math.max(0, Math.min(crush, workingHalf - fixedWork));
-      outer = Math.max(0, workingHalf - fixedWork - crush);
+      outer = Math.max(0, workingHalf - fixedWork);
     } else {
       // 비점심: 남는 인원 → 외포장/세팅 (유휴 없음)
       const occupied = pre + crush + pack + trans + mgr;
@@ -2812,9 +2820,10 @@ function ttmRender() {
     const fpMaxLines = scen.fp.info.maxLines || 1;
     const fpInputEl = document.getElementById('ttt-fp-wk-pack');
     const userEditedFp = fpInputEl && fpInputEl.dataset.userEdited === 'true';
-    if (fpMaxLines >= 2 && workers.packFp < 12 && !userEditedFp) {
-      workers.packFp = 12;
-    }
+    // FP 듀얼 가동은 사용자가 명시적으로 12명 이상 입력했을 때만
+    // (기본은 1대로 충분히 길게 - 사용자 룰)
+    // 이전: 자동 12명 강제 → 정원 초과 발생, 듀얼 강박
+    // 이전 자동 듀얼 강제 코드 제거됨
     const sim = ttmSimulate(scen, workers);
     const html = `
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;margin-top:14px">
