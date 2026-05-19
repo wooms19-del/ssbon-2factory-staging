@@ -2283,15 +2283,26 @@ function ttmSimulate(scen, workers) {
   }
   const fcPackStart = Math.max(fcPackReadyMin, fpPack.e);
   const fcPackEndRaw = fcPackStart + fcPackMin;
-  // 내포장 종료 = max(자체 처리, 마지막 파쇄 산출분 통과)
-  // 마지막 파쇄 회차 = fcCrushes 마지막 항목 (없으면 fcCrush)
-  // 그 회차의 산출 EA = tankKg / kgPerEa
-  // 통과 시간 = lastBatchEa / packEaMin (1라인 기준)
-  const lastFcCrush = (fcCrushes && fcCrushes.length > 0) ? fcCrushes[fcCrushes.length - 1] : fcCrush;
-  const lastFcKg = lastFcCrush.kg || 0;
-  const lastFcEa = Math.floor(lastFcKg / TTT_PACK_KG_PER_POUCH);
-  const lastFcPackMin = Math.ceil(lastFcEa / fcPpackEaMin);  // FC는 항상 1라인 (2호기)
-  const fcLastBatchEnd = lastFcCrush.e + lastFcPackMin;
+  // FC 내포장 종료 = max(자체 처리 종료, 잔량 통과 종료)
+  //
+  // 잔량 통과 모델 (사용자 룰):
+  //   파쇄와 내포장은 병렬 진행.
+  //   파쇄 가동 중 매 분마다 산출물이 내포장 라인에 흘러들어옴.
+  //   파쇄가 끝나는 순간 = 내포장은 이미 산출물 대부분 처리한 상태.
+  //   그 시점에 내포장 라인의 미처리 잔량 = (총 파쇄 산출 EA) - (지금까지 내포장 처리한 EA)
+  //   잔량만 추가 통과 시간 필요.
+  //
+  // 계산:
+  //   fcPackStart부터 lastFcCrush.e까지 내포장 가동
+  //   처리한 EA = (lastFcCrush.e - fcPackStart) * pPackEa (1라인)
+  //   잔량 EA = fcEa - 처리한 EA (음수면 0)
+  //   잔량 통과 시간 = 잔량 EA / pPackEa
+  const fcCrushEndMin = (fcCrushes && fcCrushes.length > 0) ? fcCrushes[fcCrushes.length - 1].e : fcCrush.e;
+  const fcPackMinDuringCrush = Math.max(0, fcCrushEndMin - fcPackStart);
+  const fcEaProcessedDuringCrush = Math.min(fcEa, fcPackMinDuringCrush * fcPpackEaMin);
+  const fcRemainEa = Math.max(0, fcEa - fcEaProcessedDuringCrush);
+  const fcRemainPackMin = Math.ceil(fcRemainEa / fcPpackEaMin);
+  const fcLastBatchEnd = fcCrushEndMin + fcRemainPackMin;
   // 둘 중 늦은 쪽
   const fcPackEnd = Math.max(fcPackEndRaw, fcLastBatchEnd);
   const fcPack = { s: fcPackStart, e: fcPackEnd };
@@ -2618,14 +2629,25 @@ function ttmRenderWorkerSlots(scen, workers, sim) {
       const fixedWork = pack + trans + mgrActual;
       outer = Math.max(0, workingHalf - fixedWork);
     } else {
-      // 비점심: 남는 인원 → 외포장/세팅 (유휴 없음)
-      const occupied = pre + crush + pack + trans + mgr;
-      const slack = Math.max(0, onsite - occupied);
+      // 비점심: 남는 인원 분배 우선순위 (사용자 룰)
+      //   1. 파쇄 풀가동 (기본 10 → max 18) ← 외포장보다 우선
+      //   2. 그래도 남으면 외포장
+      // 단, 파쇄 가동 중일 때만 (crush > 0)
+      const occupiedBase = pre + crush + pack + trans + mgr;
+      const slack = Math.max(0, onsite - occupiedBase);
       if (mid >= joinTimeMin && mid < 11*60+30 && crush === 0 && pack === 0) {
+        // 09:00~11:30 + 파쇄/내포장 가동 전 = 세팅
         setting = Math.min(3, slack);
         outer   = Math.max(0, slack - setting);
+      } else if (crush > 0) {
+        // 파쇄 가동 중 - 인원 남으면 파쇄 풀가동 (max 18)
+        const PARSE_MAX = 18;
+        const crushAdd = Math.min(slack, Math.max(0, PARSE_MAX - crush));
+        crush += crushAdd;
+        outer = Math.max(0, slack - crushAdd);
       } else {
-        outer = slack; // 유휴 대신 외포장
+        // 파쇄 안 도는 시간대 = 외포장
+        outer = slack;
       }
     }
 
