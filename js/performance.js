@@ -377,8 +377,11 @@ function _perfBuildRows(th, pp, ck, sh, pk, op, sc){
     var prod = k.split('|')[1];
     var typeList = Object.keys(byDP[k].types || {});
     var primaryType = typeList.length ? typeList.sort(function(a,b){return (byDP[k].types[b]||0)-(byDP[k].types[a]||0);})[0] : '';
+    // ★ eaDisp: 외포장 EA 있으면 그것, 없으면 내포장 EA (월단위 화면과 동일)
+    var oe = (opMap[k] && opMap[k].ea) || 0;
+    var eaDisp = oe > 0 ? oe : byDP[k].ea;
     if(!_byDateForAlloc[dt]) _byDateForAlloc[dt] = [];
-    _byDateForAlloc[dt].push({date:dt, product:prod, ea:byDP[k].ea, type:primaryType});
+    _byDateForAlloc[dt].push({date:dt, product:prod, ea:byDP[k].ea, eaDisp:eaDisp, type:primaryType});
   });
   var allocMap = {};
   function _dataByType(dt, t){
@@ -410,12 +413,13 @@ function _perfBuildRows(th, pp, ck, sh, pk, op, sc){
       var src = (t==='_') ? _dataAll(dt) : _dataByType(dt, t);
       // 부위 명시했으나 그 부위 데이터 0이면 → 그날 전체 fallback
       if(t!=='_' && src.rmKg===0 && src.ppKg===0) src = _dataAll(dt);
-      var totalMeat = group.reduce(function(s,p){return s + p.ea * (_prodKgea(p.product)||0.05);}, 0);
+      // ★ eaDisp 기준 분배 (월단위 화면과 동일)
+      var totalMeat = group.reduce(function(s,p){return s + p.eaDisp * (_prodKgea(p.product)||0.05);}, 0);
       group.forEach(function(p){
         var kgea = _prodKgea(p.product);
         var ratio;
         if(group.length===1) ratio = 1;
-        else if(totalMeat>0) ratio = (p.ea * (kgea||0.05)) / totalMeat;
+        else if(totalMeat>0) ratio = (p.eaDisp * (kgea||0.05)) / totalMeat;
         else ratio = 1/group.length;
         allocMap[dt+'|'+p.product] = {
           rmKg: src.rmKg * ratio,
