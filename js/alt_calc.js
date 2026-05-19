@@ -47,14 +47,14 @@
   // 시작 마우스 좌표 저장용
   let dragStartX = 0, dragStartY = 0;
 
-  // 시작 셀(닻점)과 현재 마우스가 가리키는 셀 사이 사각형 영역의 셀 선택 (엑셀 방식)
-  // - 시작 셀 영역과 끝 셀 영역을 모두 포함하는 사각형
-  // - 그 안에 셀 영역이 겹치는 모든 td 선택
+  // 시작 셀(닻점)과 현재 마우스가 가리키는 셀 사이 영역 선택
+  // - 두 셀의 "중심점"을 기준으로 사각형 정의 (셀 영역 전체 X)
+  // - 셀의 중심점이 그 사각형 안에 있어야 선택
+  // - 결과: 사용자가 한 컬럼 세로로 이동하면 그 컬럼만 잡힘
   function _selectByAnchor(anchorCell, endCell) {
     if (!anchorCell) return [];
     const table = anchorCell.closest('table');
     if (!table) return [];
-    // 끝 셀 없으면 시작 셀만
     if (!endCell || endCell === anchorCell) {
       return _isNumCell(anchorCell) ? [anchorCell] : [];
     }
@@ -62,18 +62,27 @@
 
     const aR = anchorCell.getBoundingClientRect();
     const eR = endCell.getBoundingClientRect();
-    // 두 셀 모두 포함하는 사각형
-    const x1 = Math.min(aR.left, eR.left);
-    const x2 = Math.max(aR.right, eR.right);
-    const y1 = Math.min(aR.top, eR.top);
-    const y2 = Math.max(aR.bottom, eR.bottom);
+    // 두 셀의 중심점
+    const aCx = (aR.left + aR.right) / 2;
+    const aCy = (aR.top + aR.bottom) / 2;
+    const eCx = (eR.left + eR.right) / 2;
+    const eCy = (eR.top + eR.bottom) / 2;
+    // 두 중심점 사이 사각형
+    const x1 = Math.min(aCx, eCx);
+    const x2 = Math.max(aCx, eCx);
+    const y1 = Math.min(aCy, eCy);
+    const y2 = Math.max(aCy, eCy);
+    const PAD = 1;
 
     const cells = [];
     table.querySelectorAll('td').forEach(td => {
       const r = td.getBoundingClientRect();
-      // 셀 영역과 사각형 겹침 (AABB)
-      const overlap = !(r.right < x1 || r.left > x2 || r.bottom < y1 || r.top > y2);
-      if (overlap && _isNumCell(td)) cells.push(td);
+      const cx = (r.left + r.right) / 2;
+      const cy = (r.top + r.bottom) / 2;
+      // 셀 중심점이 사각형 안에 있어야 선택
+      if (cx >= x1 - PAD && cx <= x2 + PAD && cy >= y1 - PAD && cy <= y2 + PAD) {
+        if (_isNumCell(td)) cells.push(td);
+      }
     });
     return cells;
   }
