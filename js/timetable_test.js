@@ -2151,7 +2151,41 @@ function ttmSimulate(scen, workers) {
     const fp200kgMin = Math.ceil(200 / fpCrushRateKgMin);
     fpPackStart = fpCrush.s + fp200kgMin;
   }
-  const fpPack = { s: fpPackStart, e: fpPackStart + fpPackMin };
+  // FP 내포장 종료 — 분 단위 시뮬
+  //   매 분마다 가동 호기 수 결정:
+  //     - 점심 시간 (11:30~13:30): 1대 가동 (인원 부족)
+  //     - 비점심: maxLines (인원 충분하면 듀얼)
+  //   처리 속도 = 호기 × pPackEa
+  // 호기별 가동 구간도 같이 산출 (lineSegments)
+  const LUNCH_START = 11*60+30;
+  const LUNCH_END = 13*60+30;
+  const fpLineSegments = { 1: [], 2: [] };
+  let fpLineState = { 1: null, 2: null };
+  let fpProcessed = 0;
+  let fpPackEnd = fpPackStart;
+  for (let t = fpPackStart; t < 28*60 && fpProcessed < fpEa; t++) {
+    const isLunch = t >= LUNCH_START && t < LUNCH_END;
+    const linesThisMin = (fpMaxLines >= 2 && !isLunch) ? 2 : 1;
+    fpProcessed += fpPpackEaMin * linesThisMin;
+    fpPackEnd = t + 1;
+    // 호기 1은 항상
+    if (linesThisMin >= 1 && fpLineState[1] === null) fpLineState[1] = { start: t };
+    if (linesThisMin < 1 && fpLineState[1] !== null) {
+      fpLineState[1].end = t;
+      fpLineSegments[1].push(fpLineState[1]);
+      fpLineState[1] = null;
+    }
+    // 호기 2 (듀얼일 때만)
+    if (linesThisMin >= 2 && fpLineState[2] === null) fpLineState[2] = { start: t };
+    if (linesThisMin < 2 && fpLineState[2] !== null) {
+      fpLineState[2].end = t;
+      fpLineSegments[2].push(fpLineState[2]);
+      fpLineState[2] = null;
+    }
+  }
+  if (fpLineState[1] !== null) { fpLineState[1].end = fpPackEnd; fpLineSegments[1].push(fpLineState[1]); }
+  if (fpLineState[2] !== null) { fpLineState[2].end = fpPackEnd; fpLineSegments[2].push(fpLineState[2]); }
+  const fpPack = { s: fpPackStart, e: fpPackEnd, segments: fpLineSegments };
 
   // FC 내포장: FP 내포장 끝난 후 + FC 파쇄 200kg 누적 시점 시작
   // 단, 내포장 종료는 반드시 fcCrush.e(마지막 파쇄 완료) 이후여야 함
@@ -2343,18 +2377,21 @@ function ttmRenderTimeline(scen, workers, sim) {
     yCursor += ROW_H;
   });
 
-  // FP 내포장 (호기별 분할)
-  const fpLines = sim.fp.linesUsed || 1;
+  // FP 내포장 (호기별 세그먼트 분할 - 점심 시간 단일 가동 반영)
   const fpAvail = sim.fp.availLines || [3, 4];
-  const eaPerLineFp = Math.round(sim.fp.ea / fpLines);
-  for (let li = 0; li < fpLines; li++) {
+  const fpSegs = sim.fp.pack.segments || { 1: [{ start: sim.fp.pack.s, end: sim.fp.pack.e }], 2: [] };
+  const fpMaxLinesUsed = fpSegs[2].length > 0 ? 2 : 1;
+  for (let li = 0; li < fpMaxLinesUsed; li++) {
     const lineNum = fpAvail[li] || (li + 1);
+    const segs = fpSegs[li + 1] || [];
     bars += label(yCursor, `내포장 ${lineNum}호기`);
-    bars += bar(yCursor, sim.fp.pack.s, sim.fp.pack.e, '#9B59B6',
-      `${workers.packFp/fpLines}명 · ${eaPerLineFp.toLocaleString()}EA`,
-      `${eaPerLineFp.toLocaleString()}EA`,
-      `${fpName} 내포장 ${lineNum}호기`,
-      [`시각: ${fmt(sim.fp.pack.s)}~${fmt(sim.fp.pack.e)}`, `인원: ${workers.packFp/fpLines}명`, `이 호기 산출: ${eaPerLineFp.toLocaleString()}EA`]);
+    segs.forEach(seg => {
+      bars += bar(yCursor, seg.start, seg.end, '#9B59B6',
+        `6명`,
+        `${fpName}`,
+        `${fpName} 내포장 ${lineNum}호기`,
+        [`시각: ${fmt(seg.start)}~${fmt(seg.end)}`, `인원: 6명`]);
+    });
     yCursor += ROW_H;
   }
 
