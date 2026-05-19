@@ -2151,17 +2151,21 @@ function ttmSimulate(scen, workers) {
     const fp200kgMin = Math.ceil(200 / fpCrushRateKgMin);
     fpPackStart = fpCrush.s + fp200kgMin;
   }
-  // FP 내포장 종료 — 분 단위 시뮬 + 동적 가용 인원 기반
+  // FP 내포장 종료 — 시간 슬롯 단위 시뮬 + 동적 가용 인원 기반
   //
-  // 매 분마다:
-  //   1. 가용 인원 계산: onsite - 자숙(2/회차) - 관리(1) - 전처리(가동중) - 파쇄(가동중)
-  //   2. 호기 결정:
-  //      - 가용 ≥ 14 (6×2 + 이송 2) && maxLines>=2 → 듀얼 (2대)
-  //      - 가용 ≥ 8 (6 + 이송 2) → 단일 (1대)
-  //      - 가용 < 8 → 정지 (대기)
-  //   3. 점심 시간 (11:30~13:30): 식사 인원 14명 차감 + 호기 자동 1대
+  // 시간 슬롯 (인원표와 동일):
+  //   05:00~07:00, 07:00~09:00, 09:00~11:30,
+  //   11:30~12:30, 12:30~13:30, 13:30~17:00, 17:00~ 종료
   //
-  // 자숙/전처리/파쇄 가동 시간은 위에서 이미 계산된 sim 값 사용
+  // 각 슬롯에서:
+  //   1. 슬롯 중간 시점(mid)의 가용 인원 계산
+  //   2. 호기 수 결정 (한 슬롯 안에서 고정)
+  //      - 가용 ≥ 14 && maxLines>=2 → 듀얼
+  //      - 가용 ≥ 8 → 단일
+  //      - 가용 < 8 → 정지
+  //   3. 슬롯 안에서 분 단위 EA 누적
+  //
+  // 결과: 한 슬롯 안에서 호기 수 안 바뀜 → 막대 깔끔 연속
   const LUNCH_START = 11*60+30;
   const LUNCH_END = 13*60+30;
   const totalWorkersAll = parseInt(document.getElementById('ttt-total')?.value) || 28;
@@ -2170,7 +2174,19 @@ function ttmSimulate(scen, workers) {
   const mgrTimeAll = tttToMin(document.getElementById('ttt-mgr-time')?.value || '07:00');
   const joinTimeAll = tttToMin(document.getElementById('ttt-join')?.value || '09:00');
 
-  // 가용 인원 계산 함수 (각 시점 t)
+  // 시간 슬롯 경계 (인원표와 동일)
+  const slotBoundaries = [
+    fpPre.s,  // 시작
+    7*60,
+    9*60,
+    11*60+30,
+    12*60+30,
+    13*60+30,
+    17*60,
+    28*60   // 종료 한도
+  ];
+
+  // 가용 인원 계산 함수
   const availAt = (t) => {
     // 출근
     let onsite;
@@ -2178,53 +2194,61 @@ function ttmSimulate(scen, workers) {
     else if (t < joinTimeAll) onsite = earlyWorkersAll + mgrCountAll;
     else onsite = totalWorkersAll;
     // 점유
-    let occupied = 1;  // 관리 항상 1명
-    // 자숙 (FC + FP) - 회차당 2명
+    let occupied = 1;  // 관리 1명
     if (t >= fpCook.s && t < fpCook.e) occupied += 2;
     fcCook.forEach(c => { if (t >= c.s && t < c.e) occupied += 2; });
-    // 전처리 (FP + FC, 가동 중이면)
     if (t >= fpPre.s && t < fpPre.e) occupied += workers.preFp;
     if (t >= fcPre.s && t < fcPre.e) occupied += workers.preFc;
-    // 파쇄 (FP + FC 회차)
     if (t >= fpCrush.s && t < fpCrush.e) occupied += workers.crushFp;
     fcCrushes.forEach(c => { if (t >= c.s && t < c.e) occupied += workers.crushFc; });
-    // 점심 식사 인원 (14명)
     if (t >= LUNCH_START && t < LUNCH_END) occupied += 14;
     return Math.max(0, onsite - occupied);
   };
 
   const fpLineSegments = { 1: [], 2: [] };
-  let fpLineState = { 1: null, 2: null };
   let fpProcessed = 0;
   let fpPackEnd = fpPackStart;
-  const CREW_1_LINE = 6 + 2;   // 호기 6명 + 이송 2명
-  const CREW_2_LINES = 12 + 2; // 6×2 + 이송 2 (이송 공유)
-  for (let t = fpPackStart; t < 28*60 && fpProcessed < fpEa; t++) {
-    const avail = availAt(t);
-    let linesThisMin = 0;
-    if (fpMaxLines >= 2 && avail >= CREW_2_LINES) linesThisMin = 2;
-    else if (avail >= CREW_1_LINE) linesThisMin = 1;
-    // 점심 시간엔 무조건 1대 이하
-    if (t >= LUNCH_START && t < LUNCH_END && linesThisMin > 1) linesThisMin = 1;
-    fpProcessed += fpPpackEaMin * linesThisMin;
-    fpPackEnd = t + 1;
-    // 호기 1
-    if (linesThisMin >= 1 && fpLineState[1] === null) fpLineState[1] = { start: t };
-    else if (linesThisMin < 1 && fpLineState[1] !== null) {
-      fpLineState[1].end = t;
-      fpLineSegments[1].push(fpLineState[1]);
-      fpLineState[1] = null;
+  const CREW_1_LINE = 6 + 2;
+  const CREW_2_LINES = 12 + 2;
+
+  // 시간 슬롯 순회
+  for (let si = 0; si < slotBoundaries.length - 1; si++) {
+    const slotStart = Math.max(slotBoundaries[si], fpPackStart);
+    const slotEnd = slotBoundaries[si + 1];
+    if (slotStart >= slotEnd) continue;
+    if (fpProcessed >= fpEa) break;
+
+    // 슬롯 중간 시점 기준 가용 인원
+    const slotMid = (slotStart + slotEnd) / 2;
+    const avail = availAt(slotMid);
+    let linesThisSlot = 0;
+    if (fpMaxLines >= 2 && avail >= CREW_2_LINES) linesThisSlot = 2;
+    else if (avail >= CREW_1_LINE) linesThisSlot = 1;
+    // 점심 시간 안엔 무조건 1대 이하
+    if (slotMid >= LUNCH_START && slotMid < LUNCH_END && linesThisSlot > 1) linesThisSlot = 1;
+
+    if (linesThisSlot === 0) continue;  // 정지 슬롯
+
+    // 이 슬롯에서 분당 처리 EA × 시간
+    const slotEffectiveEnd = Math.min(slotEnd, slotStart + Math.ceil((fpEa - fpProcessed) / (fpPpackEaMin * linesThisSlot)));
+    const minutesUsed = slotEffectiveEnd - slotStart;
+    fpProcessed += fpPpackEaMin * linesThisSlot * minutesUsed;
+    fpPackEnd = slotEffectiveEnd;
+
+    // 세그먼트 기록 (호기별)
+    // 호기 1 (항상)
+    if (linesThisSlot >= 1) {
+      const last1 = fpLineSegments[1][fpLineSegments[1].length - 1];
+      if (last1 && last1.end === slotStart) last1.end = slotEffectiveEnd;
+      else fpLineSegments[1].push({ start: slotStart, end: slotEffectiveEnd });
     }
-    // 호기 2 (듀얼일 때만)
-    if (linesThisMin >= 2 && fpLineState[2] === null) fpLineState[2] = { start: t };
-    else if (linesThisMin < 2 && fpLineState[2] !== null) {
-      fpLineState[2].end = t;
-      fpLineSegments[2].push(fpLineState[2]);
-      fpLineState[2] = null;
+    // 호기 2 (듀얼 슬롯만)
+    if (linesThisSlot >= 2) {
+      const last2 = fpLineSegments[2][fpLineSegments[2].length - 1];
+      if (last2 && last2.end === slotStart) last2.end = slotEffectiveEnd;
+      else fpLineSegments[2].push({ start: slotStart, end: slotEffectiveEnd });
     }
   }
-  if (fpLineState[1] !== null) { fpLineState[1].end = fpPackEnd; fpLineSegments[1].push(fpLineState[1]); }
-  if (fpLineState[2] !== null) { fpLineState[2].end = fpPackEnd; fpLineSegments[2].push(fpLineState[2]); }
   const fpPack = { s: fpPackStart, e: fpPackEnd, segments: fpLineSegments };
 
   // FC 내포장: FP 내포장 끝난 후 + FC 파쇄 200kg 누적 시점 시작
