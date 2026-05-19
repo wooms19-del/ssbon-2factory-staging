@@ -787,6 +787,7 @@ function ttSimulate(inp, tankMode) {
   // 호기 가동 수 (동적): 매 분 가용 인원 기반
   const linesAt = (t) => {
     if (t < packStartMin) return 0;
+    if (t >= packEndMin) return 0;
     const crew = packCrewAt(t);
     if (maxLines >= 2 && crew >= CREW_FOR_2_LINES) return 2;
     if (crew >= CREW_FOR_1_LINE) return 1;
@@ -813,8 +814,40 @@ function ttSimulate(inp, tankMode) {
     lastBatchPackEndMin = t + 1;
   }
   // 둘 중 늦은 쪽
-  const packEndMin = Math.max(packSelfEndMin, lastBatchPackEndMin);
+  const packEndMinTmp = Math.max(packSelfEndMin, lastBatchPackEndMin);
+  const packEndMin = packEndMinTmp;
   const packMin = packEndMin - packStartMin;
+
+  // 호기별 가동 구간 만들기 (각 호기가 언제 켜졌다 꺼졌는지)
+  // packStartMin ~ packEndMin 구간을 분 단위로 훑으면서 호기 1, 2의 가동 구간 생성
+  const lineSegments = { 1: [], 2: [] }; // [{start, end}]
+  let lineState = { 1: null, 2: null }; // 진행 중 세그먼트
+  for (let t = packStartMin; t <= packEndMin; t++) {
+    const n = linesAt(t);
+    // 호기 1 (= 첫 번째 호기, 항상 켜짐)
+    if (n >= 1) {
+      if (lineState[1] === null) lineState[1] = { start: t };
+    } else {
+      if (lineState[1] !== null) {
+        lineState[1].end = t;
+        lineSegments[1].push(lineState[1]);
+        lineState[1] = null;
+      }
+    }
+    // 호기 2 (= 두 번째 호기, 2대 가동 시만)
+    if (n >= 2) {
+      if (lineState[2] === null) lineState[2] = { start: t };
+    } else {
+      if (lineState[2] !== null) {
+        lineState[2].end = t;
+        lineSegments[2].push(lineState[2]);
+        lineState[2] = null;
+      }
+    }
+  }
+  // 진행 중이던 세그먼트 종료
+  if (lineState[1] !== null) { lineState[1].end = packEndMin; lineSegments[1].push(lineState[1]); }
+  if (lineState[2] !== null) { lineState[2].end = packEndMin; lineSegments[2].push(lineState[2]); }
 
   // 레토르트: 3대 병렬 + 대차 8개
   //
@@ -832,12 +865,18 @@ function ttSimulate(inp, tankMode) {
   const NUM_RETORTS = 3;
   const TOTAL_CARTS = 8;
 
-  // 회차당 EA = 균등 분배 (잔여는 마지막에 합산)
-  const eaPerBatch = Math.floor(pouches / retortCycles);
-  const eaRemainder = pouches - eaPerBatch * retortCycles;
+  // 회차당 EA — FP는 풀로 채워서 가동 (균등 분배 아님)
+  // 시그130g 4대차 풀 = 4096 EA, 26500 EA / 4096 = 6.5 → 6회차 풀 + 잔량 1회차
   const batchEa = [];
+  let remainEa = pouches;
   for (let i = 0; i < retortCycles; i++) {
-    batchEa.push(i === retortCycles - 1 ? eaPerBatch + eaRemainder : eaPerBatch);
+    if (i < retortCycles - 1) {
+      batchEa.push(MAX_EA_PER_BATCH);
+      remainEa -= MAX_EA_PER_BATCH;
+    } else {
+      // 마지막 회차 = 남은 EA
+      batchEa.push(Math.max(0, remainEa));
+    }
   }
   const batchCarts = batchEa.map(ea => Math.min(MAX_CARTS_PER_BATCH, Math.ceil(ea / EA_PER_CART)));
 
@@ -901,6 +940,7 @@ function ttSimulate(inp, tankMode) {
     tankInTimes, tankOutTimes, wagonEndTimes,
     tankAssign, pressureAllowed,
     maxLines, productInfo,
+    lineSegments, eaPerMinPerLine,
     tankCrushTimes,
     crushStartMin, crushEndMin,
     crushSelfEndMin, lastTankCrushEndMin, lastTankOutKg,
@@ -1379,18 +1419,36 @@ function ttRender() {
   yCursor += ROW_H;
 
   // ── 내포장 (단일 막대, 연속 흐름) ──
-  // 시작: packStartMin (13:30 + 파쇄 산출 200kg 이상 조건)
-  // 종료: packEndMin (자체 처리 종료 vs 마지막 산출분 통과, 둘 중 늦은쪽)
-  bars += rowLabel(yCursor, BAR_H, '내포장');
-  bars += segBar(yCursor, BAR_H, sim.packStartMin, sim.packEndMin, '#7F77DD',
-    `${inp.wkPack}명 · ${inp.pPackEa}EA/분`,
-    '내포장',
-    `시각: ${ttFmt(sim.packStartMin)}~${ttFmt(sim.packEndMin)}|인원: ${inp.wkPack}명|속도: ${inp.pPackEa} EA/분 (기계 1대 한도)|총: ${sim.pouches.toLocaleString()} EA|시작 조건: 13:30 + 파쇄 산출 ≥ 200kg|자체 처리 종료: ${ttFmt(sim.packSelfEndMin)}|마지막 산출분 통과: ${ttFmt(sim.lastBatchPackEndMin)} (둘 중 늦은쪽)`);
-  // 막대 끝 라벨: 원육 기준 누적 수율 (내포장)
-  // 원육 → 전처리 → 자숙 → 파쇄 → 내포장(TT_PACK_YIELD)
-  const packBaseYield = (inp.yPre * sim.cookYield * inp.yCrush * TT_PACK_YIELD) / 1000000;
-  bars += `<text x="${xPos(sim.packEndMin) + 6}" y="${yCursor + BAR_H/2 + 4}" text-anchor="start" font-size="10" fill="#7F77DD" font-weight="600">${packBaseYield.toFixed(1)}%</text>`;
-  yCursor += ROW_H;
+  // ── 내포장 (호기별 분할) ──
+  // maxLines=2 제품: 3·4호기 (또는 1·2호기) → 가동된 호기마다 각자 막대
+  // maxLines=1 제품: 호기 1대만
+  const productInfo_render = inp.productInfo || TT_PRODUCT_INFO['fc'];
+  const availableLines = productInfo_render.availableLines || [1];
+  const eaPerLine = sim.eaPerMinPerLine || inp.pPackEa || 25;
+
+  // 호기별 막대 그리기
+  for (let lineIdx = 0; lineIdx < availableLines.length; lineIdx++) {
+    const lineNum = availableLines[lineIdx]; // 3, 4 (또는 1, 2)
+    const segs = (sim.lineSegments && sim.lineSegments[lineIdx + 1]) || [];
+    bars += rowLabel(yCursor, BAR_H, `내포장 ${lineNum}호기`);
+    segs.forEach(seg => {
+      const segMin = seg.end - seg.start;
+      const segEa = Math.round(segMin * eaPerLine);
+      bars += segBar(yCursor, BAR_H, seg.start, seg.end, '#7F77DD',
+        `${inp.wkPack||6}명 · ${eaPerLine}EA/분`,
+        `내포장 ${lineNum}호기`,
+        `시각: ${ttFmt(seg.start)}~${ttFmt(seg.end)} (${segMin}분)|인원: ${inp.wkPack||6}명 + 이송 ${inp.wkTrans||2}명|속도: ${eaPerLine} EA/분|이 호기 산출: ${segEa.toLocaleString()} EA`);
+    });
+    // 막대 끝 라벨
+    if (segs.length > 0) {
+      const lastEnd = segs[segs.length - 1].end;
+      const packBaseYield = (inp.yPre * sim.cookYield * inp.yCrush * TT_PACK_YIELD) / 1000000;
+      if (lineIdx === 0) {
+        bars += `<text x="${xPos(lastEnd) + 6}" y="${yCursor + BAR_H/2 + 4}" text-anchor="start" font-size="10" fill="#7F77DD" font-weight="600">${packBaseYield.toFixed(1)}%</text>`;
+      }
+    }
+    yCursor += ROW_H;
+  }
 
   // ── 레토르트 (각 회차별 - EA 균등 분배) ──
   for (let i = 0; i < sim.retortCycles; i++) {
