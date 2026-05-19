@@ -107,9 +107,13 @@ function ttGetInputs() {
   // 파쇄 점심후 (12:30~13:30, 이송 합류 전) = autoCrushPeak - 4 (전처리조 4명 뒤늦게 합류)
   // 단순 가정: 풀가동에서 4명 빼면 점심후 (운영 모델)
   const autoCrushBeforePeak = Math.max(0, autoCrushPeak - 4);
+  const productKey = getStr('tt-product', 'fc');
+  const productInfo = TT_PRODUCT_INFO[productKey] || TT_PRODUCT_INFO['fc'];
   return {
     meatType: getStr('tt-meat', '홍두깨'),
     meatKg: get('tt-kg', 1600),
+    productKey: productKey,
+    productInfo: productInfo,
     startTime: getStr('tt-start', '05:00'),
     earlyWorkers: get('tt-early', 7),
     mgrTime: getStr('tt-mgr-time', '07:00'),
@@ -143,7 +147,9 @@ function ttGetInputs() {
 async function ttAutoAnalyze() {
   const period = document.getElementById('tt-period')?.value || 'all';
   const meatType = document.getElementById('tt-meat')?.value || '홍두깨';
-  const isFC = (meatType === '홍두깨');
+  const productKey = document.getElementById('tt-product')?.value || 'fc';
+  const productInfo = TT_PRODUCT_INFO[productKey] || TT_PRODUCT_INFO['fc'];
+  const isFC = (productKey === 'fc');  // 제품 기준 (원육 X)
   const todayStr = (typeof tod === 'function') ? tod() : (new Date()).toISOString().slice(0,10);
   // fromDate 계산 (로컬 시간 기준, tod() 사용)
   const [ty,tm,td] = todayStr.split('-').map(Number);
@@ -159,6 +165,12 @@ async function ttAutoAnalyze() {
   }
   else if (period === 'last30') {
     const d = new Date(todayLocal); d.setDate(d.getDate() - 30); fromDate = fmt(d);
+  }
+  else if (period === 'custom') {
+    const cf = document.getElementById('tt-custom-from')?.value;
+    const ct = document.getElementById('tt-custom-to')?.value;
+    if (cf) fromDate = cf;
+    if (ct) toDate = ct;
   }
 
   try {
@@ -293,7 +305,7 @@ async function ttAutoAnalyze() {
       }
     });
 
-    // ── 내포장: FC vs 비-FC 이분법 ──
+    // ── 내포장: 선택한 제품에 정확히 매칭 ──
     let pkEa=0, pkMin=0, pkN=0;
     packDocs.forEach(d => {
       const r = d.data();
@@ -301,8 +313,8 @@ async function ttAutoAnalyze() {
       const ea = +r.ea||0, m = minutesBetween(r.start, r.end);
       if (ea <= 0 || m <= 0) return;
       const prod = (r.product||'').toString();
-      const isFCProd = /FC/i.test(prod);
-      if (isFC !== isFCProd) return; // FC면 FC제품만, 비-FC면 비-FC제품만
+      // 선택한 제품 이름과 정확히 일치할 때만 카운트
+      if (prod !== productInfo.productName) return;
       pkEa += ea; pkMin += m; pkN++;
     });
 
@@ -478,6 +490,26 @@ function ttResetField(id, autoKey) {
 
 // 분석 기간 / 원육 종류 변경 시 → 자동 분석 재실행
 async function ttPeriodChange() {
+  // 사용자 지정 기간 날짜 입력 토글
+  const period = document.getElementById('tt-period')?.value || 'all';
+  const cfWrap = document.getElementById('tt-custom-from-wrap');
+  const ctWrap = document.getElementById('tt-custom-to-wrap');
+  if (cfWrap) cfWrap.style.display = (period === 'custom') ? 'flex' : 'none';
+  if (ctWrap) ctWrap.style.display = (period === 'custom') ? 'flex' : 'none';
+  // custom 선택 시 기본값 채우기 (한 번만)
+  if (period === 'custom') {
+    const cf = document.getElementById('tt-custom-from');
+    const ct = document.getElementById('tt-custom-to');
+    if (cf && !cf.value) {
+      const today = (typeof tod === 'function') ? tod() : (new Date()).toISOString().slice(0,10);
+      const [ty,tm,td] = today.split('-').map(Number);
+      const d30 = new Date(ty, tm-1, td); d30.setDate(d30.getDate() - 30);
+      cf.value = d30.getFullYear()+'-'+String(d30.getMonth()+1).padStart(2,'0')+'-'+String(d30.getDate()).padStart(2,'0');
+    }
+    if (ct && !ct.value) {
+      ct.value = (typeof tod === 'function') ? tod() : (new Date()).toISOString().slice(0,10);
+    }
+  }
   // 사용자 수정한 입력 초기화
   ['tt-y-pre','tt-y-crush','tt-p-pre','tt-p-crush','tt-p-pack'].forEach(id => {
     const el = document.getElementById(id);
@@ -515,6 +547,14 @@ function ttSimulate(inp, tankMode) {
   const preEndMin = joinMin + Math.round(phase2Min);
   const preHours = (preEndMin - startMin) / 60;
 
+  // 자숙 시간 — 제품별 가압/비가압
+  // 가압: 150분 (탱크 1·2번만 가용, 2대)
+  // 비가압: 240분 (탱크 3·4·5·6번, 4대)
+  // FC 3KG → 비가압 4대만 사용
+  // 나머지 → 가압 2대 우선, 회차 더 필요시 비가압 4대로 보충
+  const pressureAllowed = !!(inp.productInfo && inp.productInfo.pressureAllowed);
+  const cookMinutes_pressure = 150;
+  const cookMinutes_normal = 240;
   // 자숙 탱크 분배 (tankMode별)
   const cookCycles = Math.max(1, Math.ceil(cookIn / TT_FIXED.tankKg));
   let tankKgs;  // 각 탱크 자숙 산출 량 (= 자숙 투입 - 자숙수율 손실 후)... 정확히는 자숙 투입량
@@ -562,7 +602,21 @@ function ttSimulate(inp, tankMode) {
     if (i === cookCycles - 1 && tankInMin > preEndMin) tankInMin = preEndMin;
     tankInTimes.push(tankInMin);
   }
-  const tankOutTimes = tankInTimes.map(t => t + TT_FIXED.cookHours * 60);
+  // 각 회차에 가압/비가압 할당 + 자숙 시간 차등 적용
+  // 가압 가능 제품: 처음 2회차까지 가압 탱크 사용, 나머지는 비가압
+  // 비가압 제품(FC): 모두 비가압
+  const tankAssign = [];  // 각 회차의 {type, durMin}
+  if (pressureAllowed) {
+    for (let i = 0; i < cookCycles; i++) {
+      if (i < 2) tankAssign.push({ type: 'pressure', durMin: cookMinutes_pressure });
+      else tankAssign.push({ type: 'normal', durMin: cookMinutes_normal });
+    }
+  } else {
+    for (let i = 0; i < cookCycles; i++) {
+      tankAssign.push({ type: 'normal', durMin: cookMinutes_normal });
+    }
+  }
+  const tankOutTimes = tankInTimes.map((t, i) => t + tankAssign[i].durMin);
   const wagonEndTimes = tankOutTimes.map(t => t + TT_FIXED.wagonMin);
 
   // 파쇄: 자숙 1호 와건 종료부터 시작
@@ -688,7 +742,7 @@ function ttSimulate(inp, tankMode) {
     packSelfEndMin = t + 1;
   }
   // 마지막 파쇄 산출분이 내포장 라인 통과 (파쇄 종료 후)
-  const lastTankPackEa = Math.round(lastTankOutKg * (inp.yCrush / 100) / TT_PACK_KG_PER_POUCH);
+  const lastTankPackEa = Math.round(lastTankOutKg * (inp.yCrush / 100) / kgPerEaUsed);
   let lastBatchPackEndMin = crushEndMin;
   let lastBatchProcessed = 0;
   for (let t = crushEndMin; t < 28*60 && lastBatchProcessed < lastTankPackEa; t++) {
@@ -782,6 +836,7 @@ function ttSimulate(inp, tankMode) {
     startMin, preEndMin, joinMin,
     phase1Min, phase1Kg,
     tankInTimes, tankOutTimes, wagonEndTimes,
+    tankAssign, pressureAllowed,
     tankCrushTimes,
     crushStartMin, crushEndMin,
     crushSelfEndMin, lastTankCrushEndMin, lastTankOutKg,
@@ -795,14 +850,23 @@ function ttSimulate(inp, tankMode) {
 }
 
 // ── 다중 작업 시뮬 (순차 파이프라인) ───────────────────────
-// 두 번째 제품별 대차/레토르트 사이클 정보
+// 제품별 가공 정보 (단일 시뮬에서도 사용)
+// productName: 정확한 packing 컬렉션의 product 필드값과 일치해야 함 (DB 매칭용)
 const TT_PRODUCT_INFO = {
-  // FC 3KG (홍두깨) — 기본 케이스 (참고용, 단일 시뮬에서 이미 처리)
-  'fc':     { name: 'FC 3KG',        eaPerCart: 96,    retortCycleMin: 150, kgPerEa: 1.35 },
-  // 두 번째 후보들 (비-FC)
-  'trader': { name: '트레이더스 460g', eaPerCart: 380,  retortCycleMin: 120, kgPerEa: 0.20 },  // 460g + 손실 고려 ~0.20kg 원육/EA
-  'sig':    { name: '시그니처 130g',   eaPerCart: 1024, retortCycleMin: 120, kgPerEa: 0.057 }, // 130g 기준
-  'mini':   { name: '미니 70g 5개입',  eaPerCart: 1280, retortCycleMin: 120, kgPerEa: 0.046 }, // 5개입 350g 기준
+  'fc':         { name: 'FC 장조림 3KG',              productName: 'FC 장조림 3KG',
+                  eaPerCart: 96,   retortCycleMin: 150, kgPerEa: 1.35,  pressureAllowed: false },
+  'sig':        { name: '시그니처 장조림 130g',         productName: '시그니처 장조림 130g',
+                  eaPerCart: 1024, retortCycleMin: 120, kgPerEa: 0.057, pressureAllowed: true },
+  'sig_mart':   { name: '시그니처 장조림 130g 마트용',   productName: '시그니처 장조림 130g 마트용',
+                  eaPerCart: 1024, retortCycleMin: 120, kgPerEa: 0.057, pressureAllowed: true },
+  'costco':     { name: '코스트코 장조림 170g',         productName: '코스트코 장조림 170g',
+                  eaPerCart: 1024, retortCycleMin: 120, kgPerEa: 0.075, pressureAllowed: true },
+  'trader':     { name: '트레이더스 장조림 460g',       productName: '트레이더스 장조림 460g',
+                  eaPerCart: 380,  retortCycleMin: 120, kgPerEa: 0.20,  pressureAllowed: true },
+  'mini5':      { name: '미니쇠고기장조림 70g 5입',     productName: '미니쇠고기장조림 70g 5입',
+                  eaPerCart: 1280, retortCycleMin: 120, kgPerEa: 0.046, pressureAllowed: true },
+  'mini_each':  { name: '미니쇠고기장조림 70g 낱개',    productName: '미니쇠고기장조림 70g 낱개',
+                  eaPerCart: 1280, retortCycleMin: 120, kgPerEa: 0.024, pressureAllowed: true }
 };
 
 // 두 번째 제품용 inp 구성 (단일 ttSimulate가 그대로 받을 수 있게)
@@ -1157,13 +1221,16 @@ function ttRender() {
   // ── 자숙 (각 호별 + 와건) ──
   sim.tankInTimes.forEach((t, i) => {
     const isLast = i === sim.tankInTimes.length - 1;
+    const assign = sim.tankAssign[i] || { type: 'normal', durMin: 240 };
+    const typeLabel = assign.type === 'pressure' ? '가압' : '비가압';
+    const tankNum = assign.type === 'pressure' ? (i + 1) : (3 + (i - (sim.pressureAllowed ? 2 : 0)));
     const lastTankKg = sim.tankKgs[i];
     const tankOutKg = lastTankKg * sim.cookYield / 100;
-    bars += rowLabel(yCursor, BAR_H, `자숙 ${i+1}호`);
-    bars += segBar(yCursor, BAR_H, t, sim.tankOutTimes[i], '#0F6E56',
+    bars += rowLabel(yCursor, BAR_H, `자숙 ${i+1}호 (${typeLabel})`);
+    bars += segBar(yCursor, BAR_H, t, sim.tankOutTimes[i], assign.type === 'pressure' ? '#0F6E56' : '#16a085',
       `${Math.round(lastTankKg)}kg → ${Math.round(tankOutKg)}kg`,
-      `자숙 ${i+1}호`,
-      `투입: ${ttFmt(t)}|자숙 종료: ${ttFmt(sim.tankOutTimes[i])}|와건 종료: ${ttFmt(sim.wagonEndTimes[i])}|용량: ${Math.round(lastTankKg)}kg|산출: ${Math.round(tankOutKg)}kg (수율 ${sim.cookYield}%)|사이클: 4h + 와건 30분`);
+      `자숙 ${i+1}호 (${typeLabel})`,
+      `투입: ${ttFmt(t)}|자숙 종료: ${ttFmt(sim.tankOutTimes[i])}|와건 종료: ${ttFmt(sim.wagonEndTimes[i])}|탱크: ${tankNum}번 (${typeLabel})|투입량: ${Math.round(lastTankKg)}kg|산출: ${Math.round(tankOutKg)}kg (수율 ${sim.cookYield}%)|사이클: ${assign.durMin}분 + 와건 30분`);
     // 와건 (자숙 종료 ~ 와건 종료)
     bars += segBar(yCursor, BAR_H, sim.tankOutTimes[i], sim.wagonEndTimes[i], '#D85A30',
       ``,
@@ -1456,7 +1523,8 @@ function ttRender() {
   // ── 공정별 "왜 저 시간인지" 설명 카드 ──────────────────
   const lastTankKg = TT_FIXED.tankKg * sim.cookYield / 100;
   const lastTankCrushMin = Math.round(lastTankKg / (inp.pCrush * inp.wkPackPeak / 60));
-  const lastPackEa = Math.round(lastTankKg * inp.yCrush / 100 / TT_PACK_KG_PER_POUCH);
+  const kgPerEaForRender = (inp.productInfo && inp.productInfo.kgPerEa) ? inp.productInfo.kgPerEa : TT_PACK_KG_PER_POUCH;
+  const lastPackEa = Math.round(lastTankKg * inp.yCrush / 100 / kgPerEaForRender);
   const lastBatchPackMin = Math.round(lastPackEa / inp.pPackEa);
 
   // 인원 변화에 따라 시간이 어떻게 영향받는지 안내 (레토르트는 인원 무관)

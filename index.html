@@ -692,15 +692,38 @@
             <option value="month">이번 달</option>
             <option value="week">최근 7일</option>
             <option value="today">오늘</option>
+            <option value="custom">사용자 지정</option>
+          </select>
+        </label>
+
+        <label id="tt-custom-from-wrap" style="display:none;flex-direction:column;gap:3px">
+          <span>시작</span>
+          <input type="date" id="tt-custom-from" onchange="ttPeriodChange()" style="height:30px;font-size:12px;padding:0 6px;border:0.5px solid var(--color-border-secondary);border-radius:6px">
+        </label>
+        <label id="tt-custom-to-wrap" style="display:none;flex-direction:column;gap:3px">
+          <span>종료</span>
+          <input type="date" id="tt-custom-to" onchange="ttPeriodChange()" style="height:30px;font-size:12px;padding:0 6px;border:0.5px solid var(--color-border-secondary);border-radius:6px">
+        </label>
+
+        <label style="display:flex;flex-direction:column;gap:3px">
+          <span>🥩 원육 종류</span>
+          <select id="tt-meat" onchange="ttPeriodChange()" style="height:30px;font-size:12px;padding:0 8px;border:0.5px solid var(--color-border-secondary);border-radius:6px;background:var(--color-background-primary)">
+            <option value="홍두깨">홍두깨</option>
+            <option value="우둔">우둔</option>
+            <option value="설도">설도</option>
           </select>
         </label>
 
         <label style="display:flex;flex-direction:column;gap:3px">
-          <span>📦 제품 분류</span>
-          <select id="tt-meat" onchange="ttPeriodChange()" style="height:30px;font-size:12px;padding:0 8px;border:0.5px solid var(--color-border-secondary);border-radius:6px;background:var(--color-background-primary)">
-            <option value="홍두깨">FC 제품 (홍두깨)</option>
-            <option value="우둔">비-FC (우둔)</option>
-            <option value="설도">비-FC (설도)</option>
+          <span>📦 가공 제품</span>
+          <select id="tt-product" onchange="ttPeriodChange()" style="height:30px;font-size:12px;padding:0 8px;border:0.5px solid var(--color-border-secondary);border-radius:6px;background:var(--color-background-primary)">
+            <option value="fc">FC 장조림 3KG</option>
+            <option value="sig">시그니처 장조림 130g</option>
+            <option value="sig_mart">시그니처 장조림 130g 마트용</option>
+            <option value="costco">코스트코 장조림 170g</option>
+            <option value="trader">트레이더스 장조림 460g</option>
+            <option value="mini5">미니쇠고기장조림 70g 5입</option>
+            <option value="mini_each">미니쇠고기장조림 70g 낱개</option>
           </select>
         </label>
 
@@ -754,7 +777,7 @@
             <select id="tt-meat2" onchange="ttRender()" style="height:30px;font-size:12px;padding:0 8px;border:0.5px solid var(--color-border-secondary);border-radius:6px;background:var(--color-background-primary)">
               <option value="trader">트레이더스 460g (380EA/대차, 120분)</option>
               <option value="sig">시그니처 130g (1,024EA/대차, 120분)</option>
-              <option value="mini">미니 70g 5개입 (1,280EA/대차, 120분)</option>
+              <option value="mini5">미니 70g 5개입 (1,280EA/대차, 120분)</option>
             </select>
           </label>
           <label style="display:flex;flex-direction:column;gap:3px">
@@ -1591,7 +1614,7 @@
 <script src="js/performance.js?v=1778723500"></script>
 <script src="js/monthly_production.js?v=1779158282"></script>
 <script src="js/stock.js?v=1779151582"></script>
-<script src="js/timetable.js?v=1778495630"></script>
+<script src="js/timetable.js?v=1779169477"></script>
 <script src="js/timetable_test.js?v=1778560911"></script>
 <script src="js/production_plan.js?v=1779091914"></script>
 </body>
