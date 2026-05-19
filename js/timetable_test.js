@@ -501,16 +501,33 @@ async function tttAutoAnalyzeOther() {
       const kg=+r.kg||0,kgIn=+r.kgIn||+r.inputKg||0,wk=+r.workers||0,m=minutesBetween(r.start,r.end);
       if (kg>0&&wk>0&&m>0) { crIn+=kgIn||kg; crOut+=kg; crPH+=wk*(m/60); crN++; }
     });
+    // FP 내포장 생산성 (pPackEa): packing 컬렉션
+    // FC가 아닌 것 + 원육종류 필터 + 기간
+    // 측정: ea / (작업시간 분)
+    let pkEa=0, pkMin=0, pkN=0;
+    packDocs.forEach(d => {
+      const r=d.data(); if (!inRange(r.date)) return;
+      const prod = String(r.product||'');
+      // FC 제외 (3KG 포함된 제품)
+      if (prod.indexOf('3KG') >= 0 || prod.indexOf('3kg') >= 0) return;
+      const type = r.type || '';
+      if (type && !isFpType(type)) return;
+      const ea = +r.ea || 0;
+      const m = minutesBetween(r.start, r.end);
+      if (ea > 0 && m > 0) { pkEa += ea; pkMin += m; pkN++; }
+    });
     const yPre = preRmKg>0 ? Math.round(preKg/preRmKg*1000)/10 : TTT_AUTO_OTHER.yPre.val;
     const pPre = prePH>0 ? Math.round(preRmKg/prePH*10)/10 : TTT_AUTO_OTHER.pPre.val;
     const yCrush = crIn>0 ? Math.round(crOut/crIn*1000)/10 : TTT_AUTO_OTHER.yCrush.val;
     const pCrush = crPH>0 ? Math.round(crOut/crPH*10)/10 : TTT_AUTO_OTHER.pCrush.val;
     const yCook = ckIn>0 ? Math.round(ckOut/ckIn*1000)/10 : TTT_AUTO_OTHER.yCook?.val || 55.0;
+    const pPackEa = pkMin>0 ? Math.round(pkEa/pkMin*10)/10 : TTT_AUTO_OTHER.pPackEa.val;
     TTT_AUTO_OTHER.yPre = { val: yPre, n: preN };
     TTT_AUTO_OTHER.pPre = { val: pPre, n: preN };
     TTT_AUTO_OTHER.yCrush = { val: yCrush, n: crN };
     TTT_AUTO_OTHER.pCrush = { val: pCrush, n: crN };
     TTT_AUTO_OTHER.yCook = { val: yCook, n: ckN };
+    TTT_AUTO_OTHER.pPackEa = { val: pPackEa, n: pkN };
     // summary 표시
     const el = document.getElementById('ttt-fp-auto-summary');
     if (el) el.textContent = `전처리 ${yPre}% · ${pPre}kg/인시 | 파쇄 ${yCrush}% · ${pCrush}kg/인시 | 자숙 ${yCook}% (n=${preN}/${crN})`;
@@ -525,8 +542,7 @@ async function tttAutoAnalyzeOther() {
     fpSetAuto('ttt-fp-p-pre',   pPre,   'ttt-fp-p-pre-auto');
     fpSetAuto('ttt-fp-y-crush', yCrush, 'ttt-fp-y-crush-auto');
     fpSetAuto('ttt-fp-p-crush', pCrush, 'ttt-fp-p-crush-auto');
-    const fpPackAutoEl = document.getElementById('ttt-fp-p-pack-auto');
-    if (fpPackAutoEl) fpPackAutoEl.textContent = `자동: ${TTT_AUTO_OTHER.pPackEa?.val ?? '—'}`;
+    fpSetAuto('ttt-fp-p-pack',  pPackEa,'ttt-fp-p-pack-auto');
     tttRender();
   } catch(e) {
     console.error('[TTM] FP 분석 실패:', e);
@@ -813,11 +829,12 @@ function tttSimulate(inp, tankMode) {
     return inp.wkPack;
   };
   // 동적 라인 수: 매 분마다 인원 가용량 기반
+  // inp.wkPackAvailable이 있으면 그 값으로 듀얼 판정 (동시작업 FP)
+  // 없으면 inp.wkPack (단일 모드)
   const linesAt = (t) => {
     if (t < packStartMin) return 0;
-    // 시뮬 단순화 — wkPack이 매 분 가용하다고 가정
-    // 듀얼 가능 제품이고 wkPack >= CREW_FOR_2_LINES면 2라인, 아니면 1라인
-    if (maxLines >= 2 && (inp.wkPack || 0) >= CREW_FOR_2_LINES) return 2;
+    const avail = inp.wkPackAvailable || inp.wkPack || 0;
+    if (maxLines >= 2 && avail >= CREW_FOR_2_LINES) return 2;
     return 1;
   };
   const eaPerMinPerLine = inp.pPackEa;
@@ -1004,15 +1021,13 @@ function tttBuildSecondInp(inp, firstSim) {
   const fpPCrush  = parseFloat(document.getElementById('ttt-fp-p-crush')?.value)  || inp.pCrush;
   const fpPPackEa = parseFloat(document.getElementById('ttt-fp-p-pack')?.value)   || inp.pPackEa;
   const fpWkPre   = parseInt(document.getElementById('ttt-fp-wk-pre')?.value)     || inp.wkPre;
-  let fpWkPack    = parseInt(document.getElementById('ttt-fp-wk-pack')?.value)    || inp.wkPack;
+  const fpWkPack  = parseInt(document.getElementById('ttt-fp-wk-pack')?.value)    || inp.wkPack;
 
-  // 제품이 듀얼 가능(maxLines=2)이고 fpWkPack이 14명 미만이면
-  // → 자동으로 14명으로 늘려 듀얼 가동 가능하게 (사용자 입력 없을 때만)
-  const fpInputEl = document.getElementById('ttt-fp-wk-pack');
-  const userEditedFp = fpInputEl && fpInputEl.dataset.userEdited === 'true';
-  if ((info.maxLines || 1) >= 2 && fpWkPack < 14 && !userEditedFp) {
-    fpWkPack = 14;
-  }
+  // FP가 듀얼 가능 제품(maxLines=2)이면 inp.wkPackAvailable에 가용 인원 표시
+  // wkPack은 라인당 인원(6명), wkPackAvailable은 듀얼 가동 시 필요 총인원(14명)
+  // tttSimulate의 linesAt이 이 값으로 듀얼 여부 결정
+  const dualPossible = (info.maxLines || 1) >= 2;
+  const wkPackAvailable = dualPossible ? Math.max(fpWkPack, 14) : fpWkPack;
 
   return {
     ...inp,
@@ -1023,6 +1038,7 @@ function tttBuildSecondInp(inp, firstSim) {
     earlyWorkers: fpWkPre,
     wkPre: fpWkPre,
     wkPack: fpWkPack,
+    wkPackAvailable,
     yPre: fpYPre,
     yCrush: fpYCrush,
     pPre: fpPPre,
