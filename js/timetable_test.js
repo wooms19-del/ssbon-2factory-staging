@@ -2165,8 +2165,17 @@ function ttmSimulate(scen, workers) {
   }
   const fcPackStart = Math.max(fcPackReadyMin, fpPack.e);
   const fcPackEndRaw = fcPackStart + fcPackMin;
-  // 파쇄가 내포장보다 늦게 끝나면 내포장 종료를 파쇄 완료 시점으로 늦춤
-  const fcPackEnd = Math.max(fcPackEndRaw, fcCrush.e);
+  // 내포장 종료 = max(자체 처리, 마지막 파쇄 산출분 통과)
+  // 마지막 파쇄 회차 = fcCrushes 마지막 항목 (없으면 fcCrush)
+  // 그 회차의 산출 EA = tankKg / kgPerEa
+  // 통과 시간 = lastBatchEa / packEaMin (1라인 기준)
+  const lastFcCrush = (fcCrushes && fcCrushes.length > 0) ? fcCrushes[fcCrushes.length - 1] : fcCrush;
+  const lastFcKg = lastFcCrush.kg || 0;
+  const lastFcEa = Math.floor(lastFcKg / TTT_PACK_KG_PER_POUCH);
+  const lastFcPackMin = Math.ceil(lastFcEa / fcPpackEaMin);  // FC는 항상 1라인 (2호기)
+  const fcLastBatchEnd = lastFcCrush.e + lastFcPackMin;
+  // 둘 중 늦은 쪽
+  const fcPackEnd = Math.max(fcPackEndRaw, fcLastBatchEnd);
   const fcPack = { s: fcPackStart, e: fcPackEnd };
 
   // === 레토르트 회차 분배 ===
@@ -2460,8 +2469,10 @@ function ttmRenderWorkerSlots(scen, workers, sim) {
     let crush = act(sim.fp.crush.s,sim.fp.crush.e) ? workers.crushFp : 0;
     (sim.fc.crushes||[sim.fc.crush]).forEach(c => { if(act(c.s,c.e)) crush += workers.crushFc; });
     let pack=0, trans=0;
-    if (act(sim.fp.pack.s,sim.fp.pack.e)) { pack+=workers.packFp; trans+=2; }
-    if (act(sim.fc.pack.s,sim.fc.pack.e)) { pack+=workers.packFc; trans+=2; }
+    let fpPackActive = act(sim.fp.pack.s,sim.fp.pack.e);
+    let fcPackActive = act(sim.fc.pack.s,sim.fc.pack.e);
+    if (fpPackActive) { pack+=workers.packFp; trans+=2; }
+    if (fcPackActive) { pack+=workers.packFc; trans+=2; }
 
     const isLunch1 = mid >= 11*60+30 && mid < 12*60+30;
     const isLunch2 = mid >= 12*60+30 && mid < 13*60+30;
@@ -2473,6 +2484,14 @@ function ttmRenderWorkerSlots(scen, workers, sim) {
       // 점심: 절반 식사, 나머지 절반 일함
       lunch = isLunch1 ? half1 : half2;
       const workingHalf = onsite - lunch;
+      // 점심 시간엔 내포장 호기 감축 가능 (인원 부족)
+      // FP 듀얼(12명) → 1대(6명)로 줄임 + 이송도 1라인분(2명)으로
+      if (fpPackActive && workers.packFp >= 12) {
+        // 점심 시간 = FP 1대만 가동
+        pack = pack - workers.packFp + 6;  // FP 12 → 6
+        trans = trans - 2;  // 이송 4 → 2 (FP+FC면 2+2=4 → 2+2=4, FP 단독이면 2 → 2)
+        if (!fcPackActive) trans = 2;  // FP만이면 이송 2
+      }
       // 내포장+이송+관리(1명) 고정, 남은 자리 파쇄
       const fixedWork = pack + trans + mgrActual;
       crush = Math.max(0, Math.min(crush, workingHalf - fixedWork));
@@ -2489,7 +2508,7 @@ function ttmRenderWorkerSlots(scen, workers, sim) {
       }
     }
 
-    // 인원 초과 시 파쇄에서 삭감
+    // 인원 초과 시 파쇄에서 삭감 (안전망)
     let total = pre+crush+pack+trans+outer+setting+lunch+mgrActual;
     if (total > onsite) {
       const over = total - onsite;
