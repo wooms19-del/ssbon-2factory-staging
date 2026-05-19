@@ -49,7 +49,7 @@
 
   // 마우스 커서 두 좌표 사이 사각형 영역의 셀 선택 (엑셀 방식)
   // - 시작 마우스 좌표 ~ 현재 마우스 좌표 사이의 사각형
-  // - 그 안에 셀 중심이 포함되는 셀만 선택
+  // - 셀 영역이 그 사각형과 조금이라도 겹치면 선택 (정확히 중심 안 와도 OK)
   function _selectRangeByMouse(startX, startY, endX, endY, baseTable) {
     if (!baseTable) return [];
     const x1 = Math.min(startX, endX);
@@ -60,12 +60,9 @@
     const cells = [];
     baseTable.querySelectorAll('td').forEach(td => {
       const r = td.getBoundingClientRect();
-      const cx = (r.left + r.right) / 2;
-      const cy = (r.top + r.bottom) / 2;
-      // 셀 중심이 마우스 사각형 안에 있으면 선택
-      if (cx >= x1 && cx <= x2 && cy >= y1 && cy <= y2) {
-        if (_isNumCell(td)) cells.push(td);
-      }
+      // 셀 영역과 마우스 사각형이 겹치는지 (AABB 충돌 체크)
+      const overlap = !(r.right < x1 || r.left > x2 || r.bottom < y1 || r.top > y2);
+      if (overlap && _isNumCell(td)) cells.push(td);
     });
     return cells;
   }
