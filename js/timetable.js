@@ -787,7 +787,6 @@ function ttSimulate(inp, tankMode) {
   // 호기 가동 수 (동적): 매 분 가용 인원 기반
   const linesAt = (t) => {
     if (t < packStartMin) return 0;
-    if (t >= packEndMin) return 0;
     const crew = packCrewAt(t);
     if (maxLines >= 2 && crew >= CREW_FOR_2_LINES) return 2;
     if (crew >= CREW_FOR_1_LINE) return 1;
