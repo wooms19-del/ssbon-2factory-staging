@@ -1836,13 +1836,13 @@ function tttRender() {
     const resultEl = document.getElementById('ttt-result');
     if (resultEl) {
       // 만들어진 HTML 변수들 모두 합성
-      // conclusion (요약) + planBox (계획) + lunchBg + timelineSvg + wkTbl + splitView + procTbl + whyCards + reportBox + dualBox
+      // conclusion (요약) + planBox (계획) + lunchBg + splitView (타임라인+인원표 grid)
+      //   + procTbl + whyCards + reportBox + dualBox
+      // 주의: timelineSvg, wkTbl은 splitView 안에 이미 들어있음 → 중복 X
       let html = '';
       if (typeof conclusion === 'string') html += conclusion;
       if (typeof planBox === 'string') html += planBox;
       if (typeof lunchBg === 'string') html += lunchBg;
-      if (typeof timelineSvg === 'string') html += timelineSvg;
-      if (typeof wkTbl === 'string') html += wkTbl;
       if (typeof splitView === 'string') html += splitView;
       if (typeof procTbl === 'string') html += procTbl;
       if (typeof whyCards === 'string') html += whyCards;
