@@ -44,32 +44,29 @@
     selectedCells.forEach(td => td.classList.add('ac-selected'));
   }
 
-  // 두 셀 사이 사각형 영역 셀 선택
-  function _selectRange(startCell, endCell) {
-    if (!startCell || !endCell) return [];
-    const table = startCell.closest('table');
-    if (!table || endCell.closest('table') !== table) return [];
+  // 시작 마우스 좌표 저장용
+  let dragStartX = 0, dragStartY = 0;
 
-    const rows = Array.from(table.querySelectorAll('tr'));
-    const startRow = startCell.closest('tr');
-    const endRow = endCell.closest('tr');
-    const r1 = rows.indexOf(startRow);
-    const r2 = rows.indexOf(endRow);
-    const c1 = Array.from(startRow.cells).indexOf(startCell);
-    const c2 = Array.from(endRow.cells).indexOf(endCell);
-    if (r1 < 0 || r2 < 0 || c1 < 0 || c2 < 0) return [];
-
-    const rMin = Math.min(r1, r2), rMax = Math.max(r1, r2);
-    const cMin = Math.min(c1, c2), cMax = Math.max(c1, c2);
+  // 마우스 커서 두 좌표 사이 사각형 영역의 셀 선택 (엑셀 방식)
+  // - 시작 마우스 좌표 ~ 현재 마우스 좌표 사이의 사각형
+  // - 그 안에 셀 중심이 포함되는 셀만 선택
+  function _selectRangeByMouse(startX, startY, endX, endY, baseTable) {
+    if (!baseTable) return [];
+    const x1 = Math.min(startX, endX);
+    const x2 = Math.max(startX, endX);
+    const y1 = Math.min(startY, endY);
+    const y2 = Math.max(startY, endY);
 
     const cells = [];
-    for (let r = rMin; r <= rMax; r++) {
-      const row = rows[r];
-      for (let c = cMin; c <= cMax; c++) {
-        const td = row.cells[c];
-        if (td && _isNumCell(td)) cells.push(td);
+    baseTable.querySelectorAll('td').forEach(td => {
+      const r = td.getBoundingClientRect();
+      const cx = (r.left + r.right) / 2;
+      const cy = (r.top + r.bottom) / 2;
+      // 셀 중심이 마우스 사각형 안에 있으면 선택
+      if (cx >= x1 && cx <= x2 && cy >= y1 && cy <= y2) {
+        if (_isNumCell(td)) cells.push(td);
       }
-    }
+    });
     return cells;
   }
 
@@ -192,6 +189,8 @@
     e.preventDefault();
     isAltDragging = true;
     dragStartCell = td;
+    dragStartX = e.clientX;
+    dragStartY = e.clientY;
     selectedCells = [td];
     _highlightCells();
     document.body.classList.add('ac-dragging');
@@ -199,9 +198,9 @@
 
   document.addEventListener('mousemove', function(e){
     if (!isAltDragging) return;
-    const td = e.target.closest('td');
-    if (!td) return;
-    selectedCells = _selectRange(dragStartCell, td);
+    const table = dragStartCell ? dragStartCell.closest('table') : null;
+    if (!table) return;
+    selectedCells = _selectRangeByMouse(dragStartX, dragStartY, e.clientX, e.clientY, table);
     _highlightCells();
   });
 
