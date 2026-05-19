@@ -70,8 +70,7 @@ async function renderStock(){
     _stockData.thawing = R[3] || [];
     _stockFetchedFrom = stockInFrom;  // 캐시 시작 기록
     _renderStockShell();
-    // ★ 미등록 GTIN 자동 검사 후 배너
-    _checkUnknownGtinsBanner();
+    // 미등록 GTIN 배너는 입력>해동기 화면에서만 처리 (바코드 스캔 위치)
   } catch(e){
     pg.innerHTML = '<div style="padding:20px;color:#c0392b">로드 오류: '+(e.message||e)+'</div>';
   } finally {
