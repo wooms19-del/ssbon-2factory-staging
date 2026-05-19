@@ -2229,11 +2229,21 @@ function ttmSimulate(scen, workers) {
     // 슬롯 중간 시점 기준 가용 인원
     const slotMid = (slotStart + slotEnd) / 2;
     const avail = availAt(slotMid);
+    const isLunch = slotMid >= LUNCH_START && slotMid < LUNCH_END;
+
+    // 호기 수 결정
+    // - 점심 시간: 무조건 1대 (가용 인원 무관, 식사 우선)
+    // - 비점심 + 듀얼 가능 제품 + 가용 >= 14 (호기 2개 = 6×2 + 이송 2): 듀얼
+    // - 비점심 + 가용 >= 8: 1대
+    // - 가용 < 8: 정지
     let linesThisSlot = 0;
-    if (fpMaxLines >= 2 && avail >= CREW_2_LINES) linesThisSlot = 2;
-    else if (avail >= CREW_1_LINE) linesThisSlot = 1;
-    // 점심 시간 안엔 무조건 1대 이하
-    if (slotMid >= LUNCH_START && slotMid < LUNCH_END && linesThisSlot > 1) linesThisSlot = 1;
+    if (isLunch) {
+      linesThisSlot = (avail >= CREW_1_LINE) ? 1 : 0;
+    } else if (fpMaxLines >= 2 && avail >= CREW_2_LINES) {
+      linesThisSlot = 2;
+    } else if (avail >= CREW_1_LINE) {
+      linesThisSlot = 1;
+    }
 
     if (linesThisSlot === 0) continue;  // 정지 슬롯
 
