@@ -89,6 +89,11 @@ function tttToggleDual() {
   const enabled = document.getElementById('ttt-dual-enabled')?.checked;
   const block = document.getElementById('ttt-dual-block');
   if (block) block.style.display = enabled ? 'flex' : 'none';
+  // 토글 시 잔존 상태 리셋 - 이전 모드의 사용자 선택 초기화
+  window.tttSelectedTankMode = null;
+  // dual용 박스/이미지 잔존 DOM 제거 (있으면)
+  const dualBox = document.getElementById('ttt-dual-result-box');
+  if (dualBox) dualBox.remove();
   tttRender();
 }
 
@@ -1794,7 +1799,7 @@ function tttRender() {
   if (dualMode && dualResult) {
     const sim2 = dualResult.sim2;
     const inp2 = dualResult.inp2;
-    const orderLabel = dualResult.order === 'fc-first' ? 'FC → 두 번째' : '두 번째 → FC';
+    const orderLabel = dualResult.order === 'fc-first' ? 'FC → FP' : 'FP → FC';
     const productName = (inp2.productInfo && inp2.productInfo.name) || '제품';
     const totalEndMin = Math.max(sim2.retortEndMin, sim.retortEndMin);
     const fcEa = (dualResult.order === 'fc-first') ? sim.pouches : sim2.pouches;
