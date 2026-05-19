@@ -540,11 +540,25 @@ function ttSimulate(inp, tankMode) {
   const pouches = Math.floor(packOut / kgPerEaUsed);
 
   // 전처리 시간
-  const phase1Min = Math.max(0, joinMin - startMin);
-  const phase1Kg = inp.pPre * inp.earlyWorkers * (phase1Min / 60);
-  const remainingKg = Math.max(0, preIn - phase1Kg);
-  const phase2Min = remainingKg / (inp.pPre * inp.wkPre) * 60;
-  const preEndMin = joinMin + Math.round(phase2Min);
+  // Phase 1: startMin ~ joinMin (외국인 earlyWorkers명)
+  // Phase 2: joinMin ~ ... (전체 wkPre명)
+  // 실제 처리량이 입력량보다 작으면 입력량만큼만 처리하고 끝
+  const phase1MaxKg = inp.pPre * inp.earlyWorkers * Math.max(0, (joinMin - startMin) / 60);
+  let phase1Min, phase1Kg, phase2Min, preEndMin;
+  if (preIn <= phase1MaxKg) {
+    // Phase 1 안에서 모두 처리 완료
+    phase1Kg = preIn;
+    phase1Min = Math.round(preIn / (inp.pPre * inp.earlyWorkers) * 60);
+    phase2Min = 0;
+    preEndMin = startMin + phase1Min;
+  } else {
+    // Phase 1 풀가동, 잔량은 Phase 2에서
+    phase1Min = Math.max(0, joinMin - startMin);
+    phase1Kg = phase1MaxKg;
+    const remainingKg = preIn - phase1Kg;
+    phase2Min = remainingKg / (inp.pPre * inp.wkPre) * 60;
+    preEndMin = joinMin + Math.round(phase2Min);
+  }
   const preHours = (preEndMin - startMin) / 60;
 
   // 자숙 시간 — 제품별 가압/비가압
@@ -1257,12 +1271,14 @@ function ttRender() {
   // ── 전처리 (2분할: Phase1 / Phase2) ──
   bars += rowLabel(yCursor, BAR_H, '전처리');
   // Phase 1: startMin ~ joinMin (외국인)
+  // 실제 처리량 = min(이론 최대, 실제 처리해야 할 양)
   if (sim.joinMin > sim.startMin) {
-    const p1Kg = Math.round(sim.phase1Kg);
+    const p1KgMax = Math.round(sim.phase1Kg);  // 이론 최대
+    const p1Kg = Math.min(p1KgMax, Math.round(sim.preIn));  // 실제 = min(이론, 입력량)
     bars += segBar(yCursor, BAR_H, sim.startMin, Math.min(sim.joinMin, sim.preEndMin), '#185FA5',
       `${inp.earlyWorkers}명 · ${p1Kg.toLocaleString()}kg`,
       `전처리 Phase 1`,
-      `시각: ${ttFmt(sim.startMin)}~${ttFmt(Math.min(sim.joinMin, sim.preEndMin))}|인원: 외국인 ${inp.earlyWorkers}명|처리량: ${p1Kg.toLocaleString()} kg|계산: ${inp.pPre} × ${inp.earlyWorkers} × ${(sim.phase1Min/60).toFixed(1)}h = ${p1Kg.toLocaleString()}kg`,
+      `시각: ${ttFmt(sim.startMin)}~${ttFmt(Math.min(sim.joinMin, sim.preEndMin))}|인원: 외국인 ${inp.earlyWorkers}명|실제 처리량: ${p1Kg.toLocaleString()} kg (전체 ${Math.round(sim.preIn).toLocaleString()}kg 중)|이론 최대: ${p1KgMax.toLocaleString()}kg (${inp.pPre}×${inp.earlyWorkers}×${(sim.phase1Min/60).toFixed(1)}h)`,
       {fillOpacity: 0.7});
   }
   // Phase 2: joinMin ~ preEndMin (한국인 합류)
