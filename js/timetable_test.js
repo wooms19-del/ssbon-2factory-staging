@@ -1083,6 +1083,9 @@ function tttBuildOtherFirstInp(inp) {
   const fpPPackEa = parseFloat(document.getElementById('ttt-fp-p-pack')?.value)   || TTT_AUTO_OTHER.pPackEa.val;
   const fpWkPre   = parseInt(document.getElementById('ttt-fp-wk-pre')?.value)     || inp.wkPre;
   const fpWkPack  = parseInt(document.getElementById('ttt-fp-wk-pack')?.value)    || inp.wkPack;
+  // FP 듀얼 가능 제품(maxLines=2)이면 가용 인원 14명 표시 → 듀얼 가동
+  const dualPossible = (info.maxLines || 1) >= 2;
+  const wkPackAvailable = dualPossible ? Math.max(fpWkPack, 14) : fpWkPack;
 
   return {
     ...inp,
@@ -1090,6 +1093,7 @@ function tttBuildOtherFirstInp(inp) {
     meatKg: kg2,
     wkPre: fpWkPre,
     wkPack: fpWkPack,
+    wkPackAvailable,
     earlyWorkers: fpWkPre,
     yPre: fpYPre,
     yCrush: fpYCrush,
