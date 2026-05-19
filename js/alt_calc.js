@@ -47,20 +47,31 @@
   // 시작 마우스 좌표 저장용
   let dragStartX = 0, dragStartY = 0;
 
-  // 마우스 커서 두 좌표 사이 사각형 영역의 셀 선택 (엑셀 방식)
-  // - 시작 마우스 좌표 ~ 현재 마우스 좌표 사이의 사각형
-  // - 셀 영역이 그 사각형과 조금이라도 겹치면 선택 (정확히 중심 안 와도 OK)
-  function _selectRangeByMouse(startX, startY, endX, endY, baseTable) {
-    if (!baseTable) return [];
-    const x1 = Math.min(startX, endX);
-    const x2 = Math.max(startX, endX);
-    const y1 = Math.min(startY, endY);
-    const y2 = Math.max(startY, endY);
+  // 시작 셀(닻점)과 현재 마우스가 가리키는 셀 사이 사각형 영역의 셀 선택 (엑셀 방식)
+  // - 시작 셀 영역과 끝 셀 영역을 모두 포함하는 사각형
+  // - 그 안에 셀 영역이 겹치는 모든 td 선택
+  function _selectByAnchor(anchorCell, endCell) {
+    if (!anchorCell) return [];
+    const table = anchorCell.closest('table');
+    if (!table) return [];
+    // 끝 셀 없으면 시작 셀만
+    if (!endCell || endCell === anchorCell) {
+      return _isNumCell(anchorCell) ? [anchorCell] : [];
+    }
+    if (endCell.closest('table') !== table) return [anchorCell];
+
+    const aR = anchorCell.getBoundingClientRect();
+    const eR = endCell.getBoundingClientRect();
+    // 두 셀 모두 포함하는 사각형
+    const x1 = Math.min(aR.left, eR.left);
+    const x2 = Math.max(aR.right, eR.right);
+    const y1 = Math.min(aR.top, eR.top);
+    const y2 = Math.max(aR.bottom, eR.bottom);
 
     const cells = [];
-    baseTable.querySelectorAll('td').forEach(td => {
+    table.querySelectorAll('td').forEach(td => {
       const r = td.getBoundingClientRect();
-      // 셀 영역과 마우스 사각형이 겹치는지 (AABB 충돌 체크)
+      // 셀 영역과 사각형 겹침 (AABB)
       const overlap = !(r.right < x1 || r.left > x2 || r.bottom < y1 || r.top > y2);
       if (overlap && _isNumCell(td)) cells.push(td);
     });
@@ -195,9 +206,12 @@
 
   document.addEventListener('mousemove', function(e){
     if (!isAltDragging) return;
-    const table = dragStartCell ? dragStartCell.closest('table') : null;
-    if (!table) return;
-    selectedCells = _selectRangeByMouse(dragStartX, dragStartY, e.clientX, e.clientY, table);
+    if (!dragStartCell) return;
+    // 현재 마우스가 가리키는 셀
+    const el = document.elementFromPoint(e.clientX, e.clientY);
+    const td = el ? el.closest('td') : null;
+    // 시작 셀(닻점) ~ 현재 셀 사이 사각형 영역
+    selectedCells = _selectByAnchor(dragStartCell, td);
     _highlightCells();
   });
 
