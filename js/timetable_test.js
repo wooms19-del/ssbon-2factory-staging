@@ -1979,10 +1979,10 @@ function ttmGetScenario() {
   // FP (두 번째 제품) 입력
   const meatType2 = document.getElementById('ttt-meat2')?.value || 'sig';
   const fpInfo = {
-    sig:    { name: '시그니처 130g', kgPerEa: 0.025, eaPerCart: 800,  packEaMin: 22 },
-    trader: { name: '트레이더스 460g', kgPerEa: 0.147, eaPerCart: 2000, packEaMin: 16 },
-    mini:   { name: '미니 70g',     kgPerEa: 0.024, eaPerCart: 700,  packEaMin: 24 },
-  }[meatType2] || { name: '시그니처 130g', kgPerEa: 0.025, eaPerCart: 800, packEaMin: 22 };
+    sig:    { name: '시그니처 130g', kgPerEa: 0.025, eaPerCart: 1024, packEaMin: 25, maxLines: 2, availableLines: [3, 4] },
+    trader: { name: '트레이더스 460g', kgPerEa: 0.147, eaPerCart: 380,  packEaMin: 16, maxLines: 2, availableLines: [3, 4] },
+    mini:   { name: '미니 70g',     kgPerEa: 0.024, eaPerCart: 1280, packEaMin: 24, maxLines: 1, availableLines: [1] },
+  }[meatType2] || { name: '시그니처 130g', kgPerEa: 0.025, eaPerCart: 1024, packEaMin: 25, maxLines: 2, availableLines: [3, 4] };
 
   const fpKg = parseFloat(document.getElementById('ttt-kg2')?.value) || 200;
   const fcKg = parseFloat(document.getElementById('ttt-kg')?.value) || 1200;
@@ -2048,7 +2048,12 @@ function ttmSimulate(scen, workers) {
 
   const fpPreMin = Math.ceil(fpPreIn / (fpPpre * workers.preFp) * 60);
   const fpCrushMin = Math.ceil(fpCrushIn / (fpPcrush * workers.crushFp) * 60);
-  const fpPackMin = Math.ceil(fpEa / (fpPpackEaMin * workers.packFp / 6));
+  // FP 내포장 — 듀얼 가능 제품(maxLines=2) + 인원 충분(12명+)이면 2호기 동시 가동
+  const fpMaxLines = scen.fp.info.maxLines || 1;
+  const fpAvailLines = scen.fp.info.availableLines || [3, 4];
+  const fpLinesUsed = (fpMaxLines >= 2 && workers.packFp >= 12) ? 2 : 1;
+  // 시간 = EA / (EA per min per line × 라인 수)
+  const fpPackMin = Math.ceil(fpEa / (fpPpackEaMin * fpLinesUsed));
 
   // === FC 공정 시간 계산 (workers 값 사용) ===
   const fcYpre = workers.yPreFc;
@@ -2219,7 +2224,7 @@ function ttmSimulate(scen, workers) {
   const endMin = Math.max(...retortBusy, fpPack.e, fcPack.e);
 
   return {
-    fp: { pre: fpPre, cook: fpCook, crush: fpCrush, pack: fpPack, retort: fpRetort, kg: fpPreIn, ea: fpEa, packIn: fpPackIn },
+    fp: { pre: fpPre, cook: fpCook, crush: fpCrush, pack: fpPack, retort: fpRetort, kg: fpPreIn, ea: fpEa, packIn: fpPackIn, linesUsed: fpLinesUsed, availLines: fpAvailLines },
     fc: { pre: fcPre, cook: fcCook, crush: fcCrush, crushes: fcCrushes, pack: fcPack, retort: fcRetort, kg: fcPreIn, ea: fcEa, packIn: fcPackIn, tanks: fcTankKgs },
     endMin,
   };
@@ -2329,17 +2334,23 @@ function ttmRenderTimeline(scen, workers, sim) {
     yCursor += ROW_H;
   });
 
-  // FP 내포장
-  bars += label(yCursor, '내포장');
-  bars += bar(yCursor, sim.fp.pack.s, sim.fp.pack.e, '#9B59B6',
-    `${workers.packFp}명 · ${sim.fp.ea.toLocaleString()}EA`,
-    `${sim.fp.ea.toLocaleString()}EA`,
-    `${fpName} 내포장`,
-    [`시각: ${fmt(sim.fp.pack.s)}~${fmt(sim.fp.pack.e)}`, `인원: ${workers.packFp}명 + 이송2`, `산출: ${sim.fp.ea.toLocaleString()}EA`]);
-  yCursor += ROW_H;
+  // FP 내포장 (호기별 분할)
+  const fpLines = sim.fp.linesUsed || 1;
+  const fpAvail = sim.fp.availLines || [3, 4];
+  const eaPerLineFp = Math.round(sim.fp.ea / fpLines);
+  for (let li = 0; li < fpLines; li++) {
+    const lineNum = fpAvail[li] || (li + 1);
+    bars += label(yCursor, `내포장 ${lineNum}호기`);
+    bars += bar(yCursor, sim.fp.pack.s, sim.fp.pack.e, '#9B59B6',
+      `${workers.packFp/fpLines}명 · ${eaPerLineFp.toLocaleString()}EA`,
+      `${eaPerLineFp.toLocaleString()}EA`,
+      `${fpName} 내포장 ${lineNum}호기`,
+      [`시각: ${fmt(sim.fp.pack.s)}~${fmt(sim.fp.pack.e)}`, `인원: ${workers.packFp/fpLines}명`, `이 호기 산출: ${eaPerLineFp.toLocaleString()}EA`]);
+    yCursor += ROW_H;
+  }
 
-  // FC 내포장
-  bars += label(yCursor, '내포장 1');
+  // FC 내포장 (2호기 고정)
+  bars += label(yCursor, '내포장 2호기');
   bars += bar(yCursor, sim.fc.pack.s, sim.fc.pack.e, '#534AB7',
     `${workers.packFc}명 · ${sim.fc.ea.toLocaleString()}EA`,
     `${sim.fc.ea.toLocaleString()}EA`,
@@ -2677,6 +2688,13 @@ function ttmRender() {
   try {
     const scen = ttmGetScenario();
     const workers = ttmGetCurrentWorkers();
+    // FP 듀얼 가능 제품(maxLines=2)이고 packFp가 12 미만이면 자동 12명 (듀얼 가동)
+    const fpMaxLines = scen.fp.info.maxLines || 1;
+    const fpInputEl = document.getElementById('ttt-fp-wk-pack');
+    const userEditedFp = fpInputEl && fpInputEl.dataset.userEdited === 'true';
+    if (fpMaxLines >= 2 && workers.packFp < 12 && !userEditedFp) {
+      workers.packFp = 12;
+    }
     const sim = ttmSimulate(scen, workers);
     const html = `
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;margin-top:14px">
