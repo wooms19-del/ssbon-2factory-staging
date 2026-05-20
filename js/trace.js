@@ -425,11 +425,9 @@ function renderTraceTimeline() {
   if (!d || !d.pk || !d.pk.length) { el.innerHTML = ''; if(card) card.style.display='none'; return; }
   if(card) card.style.display='';
 
-  const r2 = v => Math.round(parseFloat(v) * 100) / 100;
-
-  // 시간 → 퍼센트 (05:00 ~ 18:00 = 780분)
+  // 시간 → 퍼센트 (05:00 ~ 20:00 = 900분)
   const START_MIN = 5 * 60;
-  const TOTAL_MIN = 13 * 60;
+  const TOTAL_MIN = 15 * 60;
   const pct = t => {
     if (!t) return null;
     const [h, m] = t.split(':').map(Number);
@@ -438,7 +436,7 @@ function renderTraceTimeline() {
   const widthPct = (s, e) => {
     const sp = pct(s), ep = pct(e);
     if (sp === null || ep === null) return 0;
-    return Math.max(1, ep - sp);
+    return Math.max(0.5, ep - sp);
   };
 
   // 원육타입 목록
@@ -449,28 +447,36 @@ function renderTraceTimeline() {
     ...d.pk.map(r => r.type),
   ].filter(Boolean))];
 
-  // 와건→타입 매핑 (자숙 wagonOut 기준)
+  // 와건→타입 매핑
   const wagonType = {};
   d.ck.forEach(r => {
     const t = r.type || '';
     (r.wagonOut || '').split(',').map(w => w.trim()).filter(Boolean).forEach(w => { wagonType[w] = t; });
   });
-  // 파쇄 wagonIn도 보강
   d.sh.forEach(r => {
     const w = (r.wagonIn || '').trim();
     if (w && !wagonType[w]) wagonType[w] = r.type || '';
   });
 
-  const timeLabels = ['05:00','07:00','09:00','11:00','13:00','15:00','17:00','18:00'];
+  // 내포장 설비→원육타입 매핑 (레토르트 연결용)
+  const machineType = {};
+  d.pk.forEach(r => {
+    const wagons = [...(r.wagon||'').split(','), ...(r.cart||'').split(',')].map(w=>w.trim()).filter(Boolean);
+    const t = r.type || (wagons.length ? wagonType[wagons[0]] : '') || '';
+    if (r.machine && t) machineType[r.machine] = t;
+  });
+
+  const timeLabels = ['05:00','07:00','09:00','11:00','13:00','15:00','17:00','19:00','20:00'];
 
   const barColors = {
     pp: { bg:'#B5D4F4', color:'#0C447C' },
     ck: { bg:'#9FE1CB', color:'#085041' },
     sh: { bg:'#FAC775', color:'#633806' },
     pk: { bg:'#CE93D8', color:'#4B1528' },
+    rt: { bg:'#FDA4AF', color:'#9F1239' },
   };
 
-  const wagonColors = ['#FEF3C7|#92400E','#D1FAE5|#065F46','#EDE9FE|#5B21B6','#FCE7F3|#9D174D','#FFEDD5|#7C2D12','#E0F2FE|#0C4A6E'];
+  const wagonColors = ['#FEF3C7|#92400E','#D1FAE5|#065F46','#EDE9FE|#5B21B6','#FCE7F3|#9D174D','#FFEDD5|#7C2D12','#E0F2FE|#0C4A6E','#FEE2E2|#991B1B','#D1FAE5|#064E3B'];
   const allWagons = [...new Set([...d.sh.map(r=>r.wagonIn), ...d.pk.flatMap(r=>(r.wagon||'').split(',').map(w=>w.trim()))].filter(Boolean))];
   const wagonColorMap = {};
   allWagons.forEach((w, i) => { wagonColorMap[w] = wagonColors[i % wagonColors.length]; });
@@ -481,52 +487,57 @@ function renderTraceTimeline() {
     return `<span style="display:inline-block;font-size:9px;padding:1px 5px;border-radius:3px;background:${bg};color:${col};font-weight:500;margin-left:2px">${w}</span>`;
   };
 
-  const makeBar = (kind, left, width, label) => {
+  const makeBar = (kind, left, width, label, extraStyle) => {
     const c = barColors[kind];
-    return `<div style="position:absolute;left:${left.toFixed(1)}%;width:${Math.max(width,1).toFixed(1)}%;height:100%;border-radius:3px;background:${c.bg};display:flex;align-items:center;overflow:hidden">
+    return `<div style="position:absolute;left:${left.toFixed(1)}%;width:${Math.max(width,0.5).toFixed(1)}%;height:100%;border-radius:3px;background:${c.bg};display:flex;align-items:center;overflow:hidden${extraStyle||''}">
       <span style="font-size:9px;padding:0 4px;white-space:nowrap;color:${c.color}">${label}</span>
     </div>`;
   };
 
   const makeRow = (labelHtml, barHtml, dataType) =>
     `<div class="tr-tl-row" data-type="${dataType}" style="display:flex;align-items:center;margin-bottom:3px">
-      <div style="width:120px;flex-shrink:0;font-size:10px;color:var(--g4);text-align:right;padding-right:8px;line-height:1.4">${labelHtml}</div>
-      <div style="flex:1;height:17px;background:var(--g1);border-radius:3px;position:relative">${barHtml}</div>
+      <div style="width:130px;flex-shrink:0;font-size:10px;color:var(--g4);text-align:right;padding-right:8px;line-height:1.5">${labelHtml}</div>
+      <div style="flex:1;height:18px;background:var(--g1);border-radius:3px;position:relative">${barHtml}</div>
     </div>`;
 
   const secLabel = txt =>
-    `<div style="font-size:9px;color:var(--g4);padding-left:120px;margin:7px 0 3px">— ${txt}</div>`;
+    `<div style="font-size:9px;color:var(--g4);padding-left:130px;margin:8px 0 3px;font-weight:500">— ${txt}</div>`;
 
   let rows = '';
 
-  // 전처리
+  // 전처리 (타입별)
   rows += secLabel('전처리');
   const ppByType = {};
   d.pp.forEach(r => {
     const t = r.type || '기타';
-    if (!ppByType[t]) ppByType[t] = { wagons: [], starts: [], ends: [] };
+    if (!ppByType[t]) ppByType[t] = { wagons: [], starts: [], ends: [], cages: [] };
     ppByType[t].wagons.push(...(r.wagons||'').split(',').map(w=>w.trim()).filter(Boolean));
     ppByType[t].starts.push(r.start);
     ppByType[t].ends.push(r.end);
+    ppByType[t].cages.push(...(r.cage||'').split(',').map(c=>c.trim()).filter(Boolean));
   });
   Object.entries(ppByType).forEach(([t, v]) => {
     const s = v.starts.filter(Boolean).sort()[0];
     const e = v.ends.filter(Boolean).sort().pop();
     const sp = pct(s), wp = widthPct(s, e);
     if (sp !== null) {
-      const label = `${s} → ${e}`;
-      rows += makeRow(`<span style="font-size:9px">${t}</span><br>대차 ${[...new Set(v.wagons)].join(',')||'-'}`,
-        makeBar('pp', sp, wp, label), t);
+      const cageStr = [...new Set(v.cages)].join(',');
+      rows += makeRow(
+        `<span style="font-size:10px;font-weight:500">${t}</span><br><span style="font-size:9px">대차 ${[...new Set(v.wagons)].join(',')||'-'}</span><br><span style="font-size:9px;color:var(--g3)">→ 케이지 ${cageStr||'-'}</span>`,
+        makeBar('pp', sp, wp, `${s} → ${e}`), t);
     }
   });
 
-  // 자숙
+  // 자숙 (탱크별, 배출와건 표시)
   rows += secLabel('자숙');
   d.ck.forEach(r => {
     const sp = pct(r.start), wp = widthPct(r.start, r.end);
     if (sp === null) return;
     const t = r.type || '-';
-    rows += makeRow(`${r.tank||''}탱크 · ${r.cage||''}<br><span style="font-size:9px;color:var(--g4)">${t}</span>`,
+    const outWagons = (r.wagonOut||'').split(',').map(w=>w.trim()).filter(Boolean);
+    const wBadges = outWagons.map(wBadge).join('');
+    rows += makeRow(
+      `${r.tank||''}탱크 · ${r.cage||''}<br><span style="font-size:9px">${t}</span><br><span style="font-size:9px;color:var(--g3)">→ ${wBadges||'-'}</span>`,
       makeBar('ck', sp, wp, `${r.start} → ${r.end}`), t);
   });
 
@@ -537,20 +548,46 @@ function renderTraceTimeline() {
     if (sp === null) return;
     const w = (r.wagonIn || '').trim();
     const t = wagonType[w] || r.type || '-';
-    rows += makeRow(`${wBadge(w)} <span style="font-size:9px;color:var(--g4)">${t}</span>`,
+    const outW = (r.wagonOut||'').split(',').map(x=>x.trim()).filter(Boolean);
+    rows += makeRow(
+      `${wBadge(w)}<br><span style="font-size:9px;color:var(--g3)">→ ${outW.map(wBadge).join('')||w}</span>`,
       makeBar('sh', sp, wp, `${r.start}→${r.end}`), t);
   });
 
-  // 내포장 (설비·와건별)
+  // 내포장 (설비·포장건별, 와건 표시)
   rows += secLabel('내포장 (설비·와건별)');
   d.pk.forEach(r => {
     const sp = pct(r.start), wp = widthPct(r.start, r.end);
     if (sp === null) return;
     const wagons = [...(r.wagon||'').split(','), ...(r.cart||'').split(',')].map(w=>w.trim()).filter(Boolean);
     const t = r.type || (wagons.length ? wagonType[wagons[0]] : '') || '-';
-    rows += makeRow(`${r.machine||''} ${wagons.map(wBadge).join('')}`,
-      makeBar('pk', sp, wp, `${r.start} → ${r.end}`), t);
+    rows += makeRow(
+      `${r.machine||''}<br>${wagons.map(wBadge).join('')}`,
+      makeBar('pk', sp, wp, `${r.start} → ${r.end} · ${(r.ea||0).toLocaleString()}EA`), t);
   });
+
+  // 레토르트 (홍두깨 FC 제품, 임시 하드코딩 — 추후 DB 연동)
+  const hasFc = d.pk.some(r => (r.product||'').includes('FC') || (r.product||'').includes('3KG'));
+  if (hasFc) {
+    const rtType = '홍두깨';
+    rows += secLabel('레토르트');
+    // 2호기: 16:32~19:42 (내포장 2호기 연결)
+    const rt2start = '16:32', rt2end = '19:42';
+    const sp2 = pct(rt2start), wp2 = widthPct(rt2start, rt2end);
+    if (sp2 !== null) {
+      rows += makeRow(
+        `레토르트 2호기<br><span style="font-size:9px;color:var(--g3)">← 내포장 2호기</span>`,
+        makeBar('rt', sp2, wp2, `${rt2start} → ${rt2end} (130분)`), rtType);
+    }
+    // 1호기: 17:02~20:10
+    const rt1start = '17:02', rt1end = '20:10';
+    const sp1 = pct(rt1start), wp1 = widthPct(rt1start, rt1end);
+    if (sp1 !== null) {
+      rows += makeRow(
+        `레토르트 1호기<br><span style="font-size:9px;color:var(--g3)">← 내포장 2호기</span>`,
+        makeBar('rt', sp1, wp1, `${rt1start} → ${rt1end} (130분)`), rtType);
+    }
+  }
 
   // 필터 버튼
   const filterBtns = ['전체', ...types].map(t =>
@@ -558,13 +595,13 @@ function renderTraceTimeline() {
   ).join('');
 
   // 시간축
-  const timeAxis = `<div style="display:flex;padding-left:120px;margin-bottom:6px">
+  const timeAxis = `<div style="display:flex;padding-left:130px;margin-bottom:6px">
     ${timeLabels.map(l=>`<div style="flex:1;font-size:9px;color:var(--g4);text-align:left">${l}</div>`).join('')}
   </div>`;
 
   // 범례
   const legend = `<div style="display:flex;gap:12px;margin-top:10px;flex-wrap:wrap">
-    ${[['전처리','#B5D4F4'],['자숙','#9FE1CB'],['파쇄','#FAC775'],['내포장','#CE93D8']].map(([l,c])=>
+    ${[['전처리','#B5D4F4'],['자숙','#9FE1CB'],['파쇄','#FAC775'],['내포장','#CE93D8'],['레토르트','#FDA4AF'],['와건색상=공정연결','#FEF3C7']].map(([l,c])=>
       `<div style="display:flex;align-items:center;gap:4px;font-size:10px;color:var(--g4)">
         <div style="width:10px;height:10px;border-radius:2px;background:${c}"></div>${l}
       </div>`).join('')}
@@ -577,7 +614,7 @@ function renderTraceTimeline() {
         <div style="display:flex;gap:5px" id="trTlFilters">${filterBtns}</div>
       </div>
       <div style="overflow-x:auto;background:var(--bg);border:1px solid var(--g2);border-radius:8px;padding:12px">
-        <div style="min-width:480px">
+        <div style="min-width:520px">
           ${timeAxis}
           ${rows}
         </div>
