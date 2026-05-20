@@ -2262,14 +2262,13 @@ function ttmSimulate(scen, workers) {
   const fpPack = { s: fpPackStart, e: fpPackEnd, segments: fpLineSegments };
 
   // === 10. FC 내포장 - 잔량 통과 모델 ===
-  let fcPackReadyMin;
-  if (scen.fc.kg <= 400) {
-    fcPackReadyMin = fcCrush.e;
-  } else {
-    const fcCrushRateKgMin = fcCrushOut / fcCrushMin;
-    const fc200kgMin = Math.ceil(200 / fcCrushRateKgMin);
-    fcPackReadyMin = fcCrushStart + fc200kgMin;
-  }
+  // 시작 조건: 파쇄 속도 >= 내포장 소비 속도 → 파쇄 시작 즉시 가능 (멈추지 않고 쭉)
+  // 파쇄(10kg/분) > 내포장(5.1kg/분) → 항상 즉시 가능
+  const fcCrushKgPerMin = fcCrushMin > 0 ? (fcCrushOut / fcCrushMin) : 0;
+  const fcPackKgPerMin = fcPpackEaMin * scen.fc.kgPerEa;
+  const fcPackReadyMin = (fcCrushKgPerMin >= fcPackKgPerMin)
+    ? fcCrushStart   // 파쇄 시작 즉시 내포장 가능
+    : fcCrushEnd;    // 파쇄가 느리면 끝나고 시작
   const fcPackStart = Math.max(fcPackReadyMin, fpPack.e);
   const fcPackEndRaw = fcPackStart + fcPackMin;
   // 잔량 = fcEa - (파쇄 끝까지 가동 시간 × 속도)
@@ -2383,10 +2382,9 @@ function ttmSimulate(scen, workers) {
       if (overlap(s, e, fpPre.s, fpPre.e)) pre += workers.preFp;
       if (overlap(s, e, fcPre.s, fcPre.e)) pre += workers.preFc;
     }
-    // 파쇄 - 라인 1개 공유 - 점심 시간도 가동되면 인원 카운트 (시뮬과 일치)
-    // 사용자 룰: 파쇄 10명 고정
-    const fpCrushActive = overlap(s, e, fpCrush.s, fpCrush.e);
-    const fcCrushActive = fcCrushes.some(c => overlap(s, e, c.s, c.e));
+    // 파쇄 - 라인 1개 공유 - 점심 시간엔 인원 부족으로 무조건 0
+    const fpCrushActive = !isLunch && overlap(s, e, fpCrush.s, fpCrush.e);
+    const fcCrushActive = !isLunch && fcCrushes.some(c => overlap(s, e, c.s, c.e));
     if (fpCrushActive || fcCrushActive) crush = 10;
     // 내포장 - 슬롯별 호기 세그먼트로
     let fpLines = 0;
