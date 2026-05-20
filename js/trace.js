@@ -554,30 +554,34 @@ function renderTraceTimeline() {
       makeBar('pk',sp,wp,`${r.start}→${r.end} · ${(r.ea||0).toLocaleString()}EA`), t);
   });
 
-  // ── 레토르트 (FC/홍두깨, 내포장 종료 기준 자동 계산)
+  // ── 레토르트 (FC/홍두깨, 2차 가열 입력 기준 계산)
   const fcPk = d.pk.filter(r=>(r.product||'').includes('FC')||(r.product||'').includes('3KG'));
   if(fcPk.length) {
-    const RT_MIN = 130;
-    // 내포장 전체 종료 시간 중 최대값
-    const pkEndMin = fcPk.map(r=>toMin(r.end)).filter(v=>v!==null).reduce((a,b)=>Math.max(a,b), 0);
-    // 레토르트 2회: 마지막은 내포장 종료 후, 첫번째는 그보다 130분 전
-    const rt2Start = pkEndMin;
-    const rt2End   = rt2Start + RT_MIN;
-    const rt1Start = rt2Start - RT_MIN;
-    const rt1End   = rt2Start;
-
-    rows += secLbl('레토르트');
+    const RT_TOTAL = 135; // 총 135분
+    const RT_2ND_OFFSET = 25; // 시작 후 25분 = 2차 가열 시작
     const rtType = '홍두깨';
+    rows += secLbl('레토르트');
 
-    const sp1=pct(toHHMM(rt1Start)), wp1=widthPct(toHHMM(rt1Start),toHHMM(rt1End));
-    if(sp1!==null) rows += makeRow(
-      `레토르트 1회차`,
-      makeBar('rt',sp1,wp1,`${toHHMM(rt1Start)}→${toHHMM(rt1End)}`), rtType);
+    // 내포장 마지막 종료 시간
+    const pkEndMin = fcPk.map(r=>toMin(r.end)).filter(v=>v!==null).reduce((a,b)=>Math.max(a,b), 0);
 
-    const sp2=pct(toHHMM(rt2Start)), wp2=widthPct(toHHMM(rt2Start),toHHMM(rt2End));
-    if(sp2!==null) rows += makeRow(
-      `레토르트 2회차`,
-      makeBar('rt',sp2,wp2,`${toHHMM(rt2Start)}→${toHHMM(rt2End)}`), rtType);
+    // 레토르트 2호기 (먼저 돈 것): 2차 가열 17:22 입력 기준
+    // 시작 = 2차가열 - 25분, 종료 = 시작 + 135분
+    const rt2nd_2h = toMin('17:22'); // 2호기 2차 가열 시작
+    const rt2hStart = rt2nd_2h - RT_2ND_OFFSET;
+    const rt2hEnd   = rt2hStart + RT_TOTAL;
+    const sp2h=pct(toHHMM(rt2hStart)), wp2h=widthPct(toHHMM(rt2hStart),toHHMM(rt2hEnd));
+    if(sp2h!==null) rows += makeRow(
+      `레토르트 2호기`,
+      makeBar('rt',sp2h,wp2h,`${toHHMM(rt2hStart)}→${toHHMM(rt2hEnd)}`), rtType);
+
+    // 레토르트 1호기 (나중에 돈 것): 내포장 종료 후 시작, 2차 가열 25분 후
+    const rt1hStart = pkEndMin;
+    const rt1hEnd   = rt1hStart + RT_TOTAL;
+    const sp1h=pct(toHHMM(rt1hStart)), wp1h=widthPct(toHHMM(rt1hStart),toHHMM(rt1hEnd));
+    if(sp1h!==null) rows += makeRow(
+      `레토르트 1호기`,
+      makeBar('rt',sp1h,wp1h,`${toHHMM(rt1hStart)}→${toHHMM(rt1hEnd)}`), rtType);
   }
 
   // ── 필터 버튼
