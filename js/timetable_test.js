@@ -993,6 +993,7 @@ const TTT_PRODUCT_INFO = {
   // FP 시그/코스트코/트레이더 → 3·4호기 (maxLines=2, 듀얼 가능)
   // 미니 → 1호기만 (maxLines=1)
   'trader': { name: '트레이더스 460g', eaPerCart: 380,  retortCycleMin: 120, kgPerEa: 0.147, maxLines: 2, availableLines: [3, 4] },
+  'costco': { name: '코스트코 170g',   eaPerCart: 800,  retortCycleMin: 120, kgPerEa: 0.054, maxLines: 2, availableLines: [3, 4] },
   'sig':    { name: '시그니처 130g',   eaPerCart: 1024, retortCycleMin: 120, kgPerEa: 0.025, maxLines: 2, availableLines: [3, 4] },
   'mini':   { name: '미니 70g 5개입',  eaPerCart: 1280, retortCycleMin: 120, kgPerEa: 0.024, maxLines: 1, availableLines: [1] },
 };
@@ -2338,11 +2339,12 @@ function ttmSimulate(scen, workers) {
     if (!isLunch) {
       if (overlap(s, e, fpPre.s, fpPre.e)) pre += workers.preFp;
       if (overlap(s, e, fcPre.s, fcPre.e)) pre += workers.preFc;
-      // 파쇄 라인 1개 공유 - FP/FC 동시 가동 X. 둘 중 하나만 (10명 고정)
-      const fpCrushActive = overlap(s, e, fpCrush.s, fpCrush.e);
-      const fcCrushActive = fcCrushes.some(c => overlap(s, e, c.s, c.e));
-      if (fpCrushActive || fcCrushActive) crush = 10;  // 사용자 룰: 파쇄 10명 고정
     }
+    // 파쇄 - 라인 1개 공유 - 점심 시간도 가동되면 인원 카운트 (시뮬과 일치)
+    // 사용자 룰: 파쇄 10명 고정
+    const fpCrushActive = overlap(s, e, fpCrush.s, fpCrush.e);
+    const fcCrushActive = fcCrushes.some(c => overlap(s, e, c.s, c.e));
+    if (fpCrushActive || fcCrushActive) crush = 10;
     // 내포장 - 슬롯별 호기 세그먼트로
     let fpLines = 0;
     fpLineSegments[1].forEach(seg => { if (overlap(s, e, seg.start, seg.end)) fpLines = Math.max(fpLines, 1); });
