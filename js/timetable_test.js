@@ -2283,56 +2283,73 @@ function ttmSimulate(scen, workers) {
 
 
   // === 11. 레토르트 회차 분배 ===
-  // 새 룰 (사용자 요청):
-  //   - 각 호기 비면 즉시 가동 (4대차 풀 충전 기다리지 X)
-  //   - 내포장 라인 60분 이상 멈춤 = 그 시점 카트 송출
-  //   - FP/FC 모두 부분 대차 OK
+  // 룰:
+  //   - 레토르트는 인원 불필요 (자동) → 점심 시간도 가동 OK
+  //   - 카트 4대차 채워지면 즉시 송출 (호기 비면 바로)
+  //   - 내포장 라인 멈춤 60분+ → 누적 카트 송출 (부분 OK)
+  //   - FP 라인 1, 2 각각 독립 트랙 (합산 X)
+  //   - FC는 카트 4대차 채워질 때마다 순차 송출
   const RETORT_GAP_MIN = 60;
   const fpRetort = [];
   const fcRetort = [];
   const retortBusy = [0, 0, 0];
 
-  // FP 라인 1, 2 별로 처리
+  const sendToRetort = (readyTime, ea, eaPerCart, cycleMin, targetList) => {
+    let remaining = ea;
+    let t = readyTime;
+    while (remaining > 0) {
+      const cycleEa = Math.min(remaining, TTM_FIXED.retortCartsPerCycle * eaPerCart);
+      const cartsThis = round1(cycleEa / eaPerCart);
+      let host = 0;
+      for (let h = 1; h < 3; h++) if (retortBusy[h] < retortBusy[host]) host = h;
+      const start = Math.max(t, retortBusy[host]);
+      const end = start + cycleMin;
+      retortBusy[host] = end;
+      targetList.push({ s: start, e: end, host: host+1, carts: cartsThis, ea: r2(cycleEa) });
+      remaining -= cycleEa;
+    }
+  };
+
+  // FP 레토르트 — 라인별 독립 처리
   for (const line of [1, 2]) {
     const lineSegs = fpLineSegments[line];
     if (lineSegs.length === 0) continue;
     let accumEa = 0;
     for (let i = 0; i < lineSegs.length; i++) {
       const seg = lineSegs[i];
-      const minutes = seg.end - seg.start;
-      accumEa += fpPpackEaMin * minutes;
-      // 송출 시점: 마지막 세그먼트 또는 다음 세그먼트와 60분+ 간격
+      accumEa += fpPpackEaMin * (seg.end - seg.start);
       const nextSeg = lineSegs[i + 1];
-      const shouldSend = !nextSeg || (nextSeg.start - seg.end >= RETORT_GAP_MIN);
-      if (!shouldSend) continue;
-      // 누적된 EA를 4대차씩 분배 (남는 건 부분)
-      while (accumEa > 0) {
-        const cycleEa = Math.min(accumEa, TTM_FIXED.retortCartsPerCycle * scen.fp.info.eaPerCart);
-        const cartsThis = round1(cycleEa / scen.fp.info.eaPerCart);
-        let host = 0;
-        for (let h = 1; h < 3; h++) if (retortBusy[h] < retortBusy[host]) host = h;
-        const start = Math.max(seg.end, retortBusy[host]);
-        const end = start + TTM_FIXED.retortCycleMin;
-        retortBusy[host] = end;
-        fpRetort.push({ s: start, e: end, host: host+1, carts: cartsThis, ea: r2(cycleEa) });
+      const isLastSeg = !nextSeg;
+      const gap = nextSeg ? (nextSeg.start - seg.end) : 0;
+      // 4대차 채워지면 즉시 송출
+      while (accumEa >= TTM_FIXED.retortCartsPerCycle * scen.fp.info.eaPerCart) {
+        const cycleEa = TTM_FIXED.retortCartsPerCycle * scen.fp.info.eaPerCart;
+        sendToRetort(seg.end, cycleEa, scen.fp.info.eaPerCart, TTM_FIXED.retortCycleMin, fpRetort);
         accumEa -= cycleEa;
+      }
+      // 마지막 세그먼트 or 60분+ 멈춤 → 잔량 송출 (부분 OK)
+      if ((isLastSeg || gap >= RETORT_GAP_MIN) && accumEa > 0) {
+        sendToRetort(seg.end, accumEa, scen.fp.info.eaPerCart, TTM_FIXED.retortCycleMin, fpRetort);
+        accumEa = 0;
       }
     }
   }
 
-  // FC 레토르트 (한 라인, 4대차씩 분배)
+  // FC 레토르트 — 내포장 가동 중 4대차 채워지면 순차 송출
   {
+    const fcEaPerCart = scen.fc.eaPerCart;
+    const fcCartFillTime = fcEaPerCart / fcPpackEaMin; // 1대차 채우는 시간
+    const fcFullCycleEa = TTM_FIXED.retortCartsPerCycle * fcEaPerCart;
+    const fcFullCycleTime = fcCartFillTime * TTM_FIXED.retortCartsPerCycle;
     let remaining = fcEa;
+    let packTime = fcPack.s;
     while (remaining > 0) {
-      const cycleEa = Math.min(remaining, TTM_FIXED.retortCartsPerCycle * scen.fc.eaPerCart);
-      const cartsThis = round1(cycleEa / scen.fc.eaPerCart);
-      let host = 0;
-      for (let h = 1; h < 3; h++) if (retortBusy[h] < retortBusy[host]) host = h;
-      const start = Math.max(fcPack.e, retortBusy[host]);
-      const end = start + TTM_FIXED.retortCycleMin;
-      retortBusy[host] = end;
-      fcRetort.push({ s: start, e: end, host: host+1, carts: cartsThis, ea: r2(cycleEa) });
+      const cycleEa = Math.min(remaining, fcFullCycleEa);
+      const fillMinutes = (cycleEa / fcEa) * fcPackMin;
+      const readyTime = packTime + fillMinutes;
+      sendToRetort(readyTime, cycleEa, fcEaPerCart, TTM_FIXED.retortCycleMin, fcRetort);
       remaining -= cycleEa;
+      packTime += fillMinutes;
     }
   }
 
@@ -2355,10 +2372,10 @@ function ttmSimulate(scen, workers) {
     const lunch = isLunch ? 14 : 0;
     let mgrActual = isLunch ? 1 : mgr;
 
-    // 자숙 인원 (회차당 2명, 자동) — 이 셀은 인원표에 표시 안 함 but onsite 차감
+    // 자숙 인원 = 항상 2명 고정 (자숙 담당자 2명이 전체 탱크 관리)
     let cook = 0;
-    if (overlap(s, e, fpCook.s, fpCook.e)) cook += 2;
-    fcCook.forEach(c => { if (overlap(s, e, c.s, c.e)) cook += 2; });
+    const cookActive = overlap(s, e, fpCook.s, fpCook.e) || fcCook.some(c => overlap(s, e, c.s, c.e));
+    if (cookActive) cook = 2;
 
     // 가동 검사 (슬롯과 50% 이상 겹침)
     let pre = 0, crush = 0, pack = 0, trans = 0;
