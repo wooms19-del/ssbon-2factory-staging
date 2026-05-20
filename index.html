@@ -1023,16 +1023,12 @@
           <label style="display:flex;flex-direction:column;gap:3px">
             <span>⏱ 순서</span>
             <select id="ttt-order" onchange="tttRender()" style="height:30px;font-size:12px;padding:0 8px;border:0.5px solid var(--color-border-secondary);border-radius:6px;background:var(--color-background-primary)">
+              <option value="other-first" selected>FP → FC</option>
               <option value="fc-first">FC → FP</option>
-              <option value="other-first">FP → FC</option>
             </select>
           </label>
-          <label style="display:flex;flex-direction:column;gap:3px">
-            <span>내포장 라인 수</span>
-            <input type="number" id="ttt-pk-lines" value="2" min="1" max="2" step="1" oninput="tttRender()" style="width:60px;height:30px;font-size:13px;padding:0 8px;border:0.5px solid var(--color-border-secondary);border-radius:6px">
-          </label>
           <div style="font-size:10.5px;color:var(--color-text-tertiary);line-height:1.5;flex-basis:100%;margin-top:2px">
-            ※ 한 라인당 이송 작업자 2명 자동 차감. 가압탱크(5·6호) 비-FC 자숙(150분) 우선 점유.
+            ※ 내포장 호기 자동 결정 (인원 가용 시 듀얼). 한 라인당 이송 2명 자동 차감. 가압탱크(5·6호) 비-FC 자숙(150분) 우선 점유.
           </div>
 
           <!-- FP 공정별 인원·생산성·수율 카드 -->
@@ -1045,7 +1041,7 @@
                 <div style="font-size:12px;font-weight:600;color:#185FA5;margin-bottom:8px">🔵 전처리 (FP)</div>
                 <div style="display:flex;flex-direction:column;gap:8px">
                   <label style="font-size:11px;color:var(--color-text-secondary)">인원
-                    <input type="number" id="ttt-fp-wk-pre" value="10" min="1" max="20" oninput="tttRender()" style="width:100%;height:28px;font-size:12px;padding:0 8px;border:0.5px solid var(--color-border-secondary);border-radius:5px">
+                    <input type="number" id="ttt-fp-wk-pre" value="7" min="1" max="20" oninput="tttRender()" style="width:100%;height:28px;font-size:12px;padding:0 8px;border:0.5px solid var(--color-border-secondary);border-radius:5px">
                   </label>
                   <label style="font-size:11px;color:var(--color-text-secondary)">공정수율 (%)
                     <div style="display:flex;gap:4px;align-items:center">
@@ -1123,7 +1119,7 @@
           <div style="font-size:12px;font-weight:600;color:#185FA5;margin-bottom:8px">🔵 전처리</div>
           <div style="display:flex;flex-direction:column;gap:8px">
             <label style="font-size:11px;color:var(--color-text-secondary)">인원
-              <input type="number" id="ttt-wk-pre" value="10" min="1" max="20" oninput="tttRender()" style="width:100%;height:28px;font-size:12px;padding:0 8px;border:0.5px solid var(--color-border-secondary);border-radius:5px">
+              <input type="number" id="ttt-wk-pre" value="7" min="1" max="20" oninput="tttRender()" style="width:100%;height:28px;font-size:12px;padding:0 8px;border:0.5px solid var(--color-border-secondary);border-radius:5px">
             </label>
             <label style="font-size:11px;color:var(--color-text-secondary)">공정수율 (%)
               <div style="display:flex;gap:4px;align-items:center">
@@ -1616,7 +1612,7 @@
 <script src="js/globals.js?v=1778599476"></script>
 <script src="js/stock.js?v=1779151582"></script>
 <script src="js/timetable.js?v=1779184888"></script>
-<script src="js/timetable_test.js?v=1779239203"></script>
+<script src="js/timetable_test.js?v=1779239416"></script>
 <script src="js/production_plan.js?v=1779091914"></script>
 </body>
 </html>
