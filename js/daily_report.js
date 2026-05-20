@@ -644,3 +644,107 @@ async function exportThawingChecklist_daily() {
     }
   }
 }
+
+// ============================================================
+// 로트 추적표 단독 엑셀 출력 (일별요약 탭 버튼)
+// ============================================================
+async function exportLotTrace() {
+  const date = tod();
+  toast('로트 추적표 생성 중...', 'i');
+
+  const _dd = (a, fn) => { const s = new Set(); return a.filter(r => { const k = fn(r); if(s.has(k)) return false; s.add(k); return true; }); };
+  const r2 = v => Math.round(parseFloat(v) * 100) / 100;
+
+  let [pk, sh, ck, pp] = await Promise.all([
+    fbGetByDate('packing', date),
+    fbGetByDate('shredding', date),
+    fbGetByDate('cooking', date),
+    fbGetByDate('preprocess', date),
+  ]);
+  pk = _dd(pk, r => (r.machine||'') + '|' + r.start + '|' + r.ea);
+  sh = _dd(sh, r => (r.wagonIn||'') + '|' + r.start + '|' + r.kg);
+  ck = _dd(ck, r => (r.tank||'') + '|' + r.start + '|' + r.kg);
+  pp = _dd(pp, r => (r.cage||'') + '|' + r.start + '|' + r.kg);
+
+  if (!pk.length) { toast('포장 데이터 없음', 'd'); return; }
+
+  const wb = XLSX.utils.book_new();
+
+  // 포장 건별로 행 분리
+  const rows = [];
+  for (const pkr of pk) {
+    const pkWagons = (pkr.wagon||'').split(',').map(w=>w.trim()).filter(Boolean);
+    const pkCarts  = (pkr.cart ||'').split(',').map(w=>w.trim()).filter(Boolean);
+
+    const matchedSh = sh.filter(s => {
+      const wo = (s.wagonOut||'').split(',').map(x=>x.trim());
+      const co = (s.cartOut ||'').split(',').map(x=>x.trim());
+      return pkWagons.some(w=>wo.includes(w)) || pkCarts.some(c=>co.includes(c));
+    });
+
+    const shWagonIn = [...new Set(matchedSh.flatMap(s=>(s.wagonIn||'').split(',').map(x=>x.trim()).filter(Boolean)))];
+    const matchedCk = ck.filter(c => shWagonIn.some(w=>(c.wagonOut||'').split(',').map(x=>x.trim()).includes(w)));
+    const ckCages   = [...new Set(matchedCk.flatMap(c=>(c.cage||'').split(',').map(x=>x.trim()).filter(Boolean)))];
+    const matchedPp = pp.filter(p => ckCages.some(c=>(p.cage||'').split(',').map(x=>x.trim()).includes(c)));
+
+    // 파쇄 건별로 행 분리
+    if (matchedSh.length === 0) {
+      rows.push([pkr.machine||'', pkr.type||'-', pkr.product||'', pkr.start||'', pkr.end||'', pkr.ea||0,
+        (pkWagons.join(',') || pkCarts.join(',') || '-'), '-','-','-','-','-','-','-','-']);
+    } else {
+      matchedSh.forEach((s, i) => {
+        const shWIn = (s.wagonIn||'').split(',').map(x=>x.trim()).filter(Boolean);
+        const relCk = matchedCk.filter(c => shWIn.some(w=>(c.wagonOut||'').split(',').map(x=>x.trim()).includes(w)));
+        const relCkCages = [...new Set(relCk.flatMap(c=>(c.cage||'').split(',').map(x=>x.trim()).filter(Boolean)))];
+        const relPp = matchedPp.filter(p => relCkCages.some(c=>(p.cage||'').split(',').map(x=>x.trim()).includes(c)));
+
+        rows.push([
+          i === 0 ? (pkr.machine||'') : '',
+          i === 0 ? (pkr.type||'-') : '',
+          i === 0 ? (pkr.product||'') : '',
+          i === 0 ? (pkr.start||'') : '',
+          i === 0 ? (pkr.end||'') : '',
+          i === 0 ? (pkr.ea||0) : '',
+          i === 0 ? ([pkr.wagon?'와건 '+pkr.wagon:'', pkr.cart?'카트 '+pkr.cart:''].filter(Boolean).join(' / ')||'-') : '',
+          s.wagonIn || '-',
+          (s.start||'') + ' ~ ' + (s.end||''),
+          relCk.map(c=>'탱크'+(c.tank||'')).join(', ') || '-',
+          relCkCages.join(', ') || '-',
+          relCk.map(c=>(c.start||'')+'~'+(c.end||'')).join(' / ') || '-',
+          relPp.map(p=>(p.wagons||'')).join(', ') || '-',
+          relPp.map(p=>(p.start||'')+'~'+(p.end||'')).join(' / ') || '-',
+          relPp.map(p=>p.type||'').filter(Boolean).join(', ') || '-',
+        ]);
+      });
+    }
+  }
+
+  const headers = [
+    '설비', '원육타입', '제품명', '포장시작', '포장종료', '생산EA',
+    '포장 투입LOT', '파쇄 투입와건', '파쇄 시간',
+    '자숙 탱크', '케이지LOT', '자숙 시간',
+    '전처리 대차', '전처리 시간', '원육타입(확인)',
+  ];
+
+  const aoa = [
+    [`순수본 2공장  공정별 로트 추적표 — ${date}  (클레임 대응용)`],
+    [`※ 원육타입 열 필터 → 해당 원육만 전 공정 추적 가능`],
+    [],
+    headers,
+    ...rows,
+  ];
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = [8,8,20,8,8,8,16,14,16,10,12,20,12,16,12].map(w=>({wch:w}));
+  ws['!autofilter'] = { ref: 'A4:O4' };
+  XLSX.utils.book_append_sheet(wb, ws, '로트추적표');
+
+  const buf  = XLSX.write(wb, {bookType:'xlsx', type:'array'});
+  const blob = new Blob([buf], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url; a.download = `순수본2공장_로트추적표_${date}.xlsx`;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(url), 1000);
+  toast('로트 추적표 다운로드 완료 ✓');
+}
