@@ -2311,7 +2311,8 @@ function ttmSimulate(scen, workers) {
 
   // === 12. 슬롯별 인원 배치 (시뮬에서 결정) ===
   // 시뮬과 인원표가 자동 일치
-  const overlap = (s, e, ps, pe) => Math.max(0, Math.min(pe, e) - Math.max(ps, s)) >= (e - s) * 0.3;
+  // overlap 50%: 슬롯의 절반 이상 가동되면 가동 표시 (짧은 가동 누락 방지)
+  const overlap = (s, e, ps, pe) => Math.max(0, Math.min(pe, e) - Math.max(ps, s)) >= (e - s) * 0.5;
   const workerSlots = [];
   for (let si = 0; si < slotBoundaries.length - 1; si++) {
     const s = Math.max(slotBoundaries[si], t0);
@@ -2327,13 +2328,20 @@ function ttmSimulate(scen, workers) {
     const lunch = isLunch ? 14 : 0;
     let mgrActual = isLunch ? 1 : mgr;
 
-    // 가동 검사 (슬롯과 30% 이상 겹침)
+    // 자숙 인원 (회차당 2명, 자동) — 이 셀은 인원표에 표시 안 함 but onsite 차감
+    let cook = 0;
+    if (overlap(s, e, fpCook.s, fpCook.e)) cook += 2;
+    fcCook.forEach(c => { if (overlap(s, e, c.s, c.e)) cook += 2; });
+
+    // 가동 검사 (슬롯과 50% 이상 겹침)
     let pre = 0, crush = 0, pack = 0, trans = 0;
     if (!isLunch) {
       if (overlap(s, e, fpPre.s, fpPre.e)) pre += workers.preFp;
       if (overlap(s, e, fcPre.s, fcPre.e)) pre += workers.preFc;
-      if (overlap(s, e, fpCrush.s, fpCrush.e)) crush += workers.crushFp;
-      fcCrushes.forEach(c => { if (overlap(s, e, c.s, c.e)) crush += workers.crushFc; });
+      // 파쇄 라인 1개 공유 - FP/FC 동시 가동 X. 둘 중 하나만 (10명 고정)
+      const fpCrushActive = overlap(s, e, fpCrush.s, fpCrush.e);
+      const fcCrushActive = fcCrushes.some(c => overlap(s, e, c.s, c.e));
+      if (fpCrushActive || fcCrushActive) crush = 10;  // 사용자 룰: 파쇄 10명 고정
     }
     // 내포장 - 슬롯별 호기 세그먼트로
     let fpLines = 0;
@@ -2342,22 +2350,12 @@ function ttmSimulate(scen, workers) {
     if (fpLines > 0) { pack += workers.packFp * fpLines; trans += 2; }
     if (overlap(s, e, fcPack.s, fcPack.e)) { pack += workers.packFc; trans += 2; }
 
-    // 인원 분배 우선순위:
-    //  1. 자숙 (이미 자동 점유) - 인원표에선 별도 표시 안함 (자동)
-    //  2. 관리, 점심, 내포장, 이송, 파쇄(기본10) 까지 fixed
-    //  3. 남는 인원 → 파쇄 추가 (max 18)
-    //  4. 그래도 남으면 외포장
-    const occupied = pre + crush + pack + trans + mgrActual + lunch;
+    // 인원 분배:
+    //  1. 자숙 + 관리 + 점심 + 내포장 + 이송 + 파쇄(10 고정) = 점유
+    //  2. 남는 인원 → 외포장 또는 세팅
+    const occupied = pre + crush + pack + trans + mgrActual + lunch + cook;
     let slack = Math.max(0, onsite - occupied);
     let outer = 0, setting = 0;
-
-    if (crush > 0 && !isLunch) {
-      // 파쇄 가동 중 - 남는 인원 파쇄 추가 (max 18)
-      const PARSE_MAX = 18;
-      const crushAdd = Math.min(slack, Math.max(0, PARSE_MAX - crush));
-      crush += crushAdd;
-      slack -= crushAdd;
-    }
     // 세팅 시간대 (09:00~11:30 + 파쇄/내포장 가동 전)
     if (mid >= joinTime && mid < 11*60+30 && crush === 0 && pack === 0) {
       setting = Math.min(3, slack);
@@ -2365,17 +2363,11 @@ function ttmSimulate(scen, workers) {
     }
     outer = slack;
 
-    // 점심 시간 - 인원 부족하면 최소 8명까지 줄임 가능
-    if (isLunch) {
-      // 점심에는 내포장+이송+관리=8~9명 정도면 OK
-      // 외포장 인원은 0~5명 가능 (남는 거)
-    }
-
     workerSlots.push({
       s, e, mid, onsite,
-      pre, crush, pack, trans, outer, setting, lunch, mgr: mgrActual,
-      total: pre + crush + pack + trans + outer + setting + lunch + mgrActual,
-      fpLines, // 듀얼/싱글
+      pre, crush, pack, trans, outer, setting, lunch, mgr: mgrActual, cook,
+      total: pre + crush + pack + trans + outer + setting + lunch + mgrActual + cook,
+      fpLines,
     });
   }
 
@@ -2593,14 +2585,14 @@ function ttmRenderWorkerSlots(scen, workers, sim) {
   // 시뮬에서 결정된 인원 슬롯 사용 (인원표 = 시뮬 자동 일치)
   const slots = (sim.workerSlots || []).map(ws => ({
     label: `${fmt(ws.s)}~${fmt(ws.e)}`,
-    pre: ws.pre, crush: ws.crush, pack: ws.pack, trans: ws.trans,
+    pre: ws.pre, cook: ws.cook || 0, crush: ws.crush, pack: ws.pack, trans: ws.trans,
     outer: ws.outer, setting: ws.setting, lunch: ws.lunch, mgr: ws.mgr,
     idle: 0, total: ws.total, onsite: ws.onsite,
   }));
 
-  const wkColors = ['#185FA5','#BA7517','#7F77DD','#534AB7','#1D9E75','#EF9F27','#888780','#5F5E5A','#B4B2A9'];
-  const heads = ['전처리','파쇄','내포장','이송','외포장','세팅','점심','관리','유휴'];
-  const keys  = ['pre','crush','pack','trans','outer','setting','lunch','mgr','idle'];
+  const wkColors = ['#185FA5','#0F6E56','#BA7517','#7F77DD','#534AB7','#1D9E75','#EF9F27','#888780','#5F5E5A','#B4B2A9'];
+  const heads = ['전처리','자숙','파쇄','내포장','이송','외포장','세팅','점심','관리','유휴'];
+  const keys  = ['pre','cook','crush','pack','trans','outer','setting','lunch','mgr','idle'];
 
   const rows = slots.map((r, idx) => {
     const stripe = idx%2===1 ? 'background:#f7f9fc' : '';
