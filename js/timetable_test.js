@@ -2271,6 +2271,38 @@ function ttmSimulate(scen, workers) {
   }
   const fpPack = { s: fpPackStart, e: fpPackEnd, segments: fpLineSegments };
 
+  // 호기 2 (4호기) 총 가동 시간 검증
+  // - 60분 미만이면 효율 낮음 (셋업 비용 > 시간 절감)
+  // - 4호기 가동 취소 + 1호기 단일로 재시뮬 (시간 늘려서 처리)
+  const FP_DUAL_MIN_THRESHOLD = 60;
+  const fpLine2TotalMin = fpLineSegments[2].reduce((sum, seg) => sum + (seg.end - seg.start), 0);
+  if (fpLine2TotalMin > 0 && fpLine2TotalMin < FP_DUAL_MIN_THRESHOLD) {
+    // 재시뮬: 호기 1만 사용
+    const fpLineSegments2 = { 1: [], 2: [] };
+    let fpProcessed2 = 0;
+    let fpPackEnd2 = fpPackStart;
+    for (let si = 0; si < slotBoundaries.length - 1; si++) {
+      const slotStart = Math.max(slotBoundaries[si], fpPackStart);
+      const slotEnd = slotBoundaries[si + 1];
+      if (slotStart >= slotEnd) continue;
+      if (fpProcessed2 >= fpEa) break;
+      const slotMid = (slotStart + slotEnd) / 2;
+      const avail = availAt(slotMid);
+      // 호기 1만 (단일) - 인원 가용 ≥ 8 이면 가동
+      if (avail < CREW_1_LINE) continue;
+      const slotEffectiveEnd = Math.min(slotEnd, slotStart + Math.ceil((fpEa - fpProcessed2) / fpPpackEaMin));
+      const minutesUsed = slotEffectiveEnd - slotStart;
+      fpProcessed2 += fpPpackEaMin * minutesUsed;
+      fpPackEnd2 = slotEffectiveEnd;
+      const last1 = fpLineSegments2[1][fpLineSegments2[1].length - 1];
+      if (last1 && last1.end === slotStart) last1.end = slotEffectiveEnd;
+      else fpLineSegments2[1].push({ start: slotStart, end: slotEffectiveEnd });
+    }
+    // 재시뮬 결과로 교체
+    fpPack.e = fpPackEnd2;
+    fpPack.segments = fpLineSegments2;
+  }
+
   // FC 내포장: FP 내포장 끝난 후 + FC 파쇄 200kg 누적 시점 시작
   // 단, 내포장 종료는 반드시 fcCrush.e(마지막 파쇄 완료) 이후여야 함
   let fcPackReadyMin;
