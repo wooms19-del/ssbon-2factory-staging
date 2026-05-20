@@ -2031,7 +2031,17 @@ function ttmSimulate(scen, workers) {
   const r2 = n => Math.round(n);
   const round1 = n => Math.round(n*10)/10;
 
-  // === FP 공정 시간 계산 (workers의 수율·생산성 사용) ===
+  // ====================================================================
+  // 공정 흐름 시뮬레이션 (사용자 룰 기반)
+  //
+  // 핵심 원칙:
+  //   1. 인원 슬롯은 시뮬 자체에서 결정 (인원표는 그대로 표시)
+  //   2. 슬롯 = 인원표 슬롯과 동일 (05/07/09/11:30/12:30/13:30/17/끝)
+  //   3. 슬롯 안 호기 수 고정 (분 단위 깜빡임 방지)
+  //   4. 정원 절대 초과 X
+  // ====================================================================
+
+  // === 1. FP 공정 시간 계산 ===
   const fpYpre = workers.yPreFp;
   const fpYcrush = workers.yCrushFp;
   const fpPpre = workers.pPreFp;
@@ -2048,14 +2058,8 @@ function ttmSimulate(scen, workers) {
 
   const fpPreMin = Math.ceil(fpPreIn / (fpPpre * workers.preFp) * 60);
   const fpCrushMin = Math.ceil(fpCrushIn / (fpPcrush * workers.crushFp) * 60);
-  // FP 내포장 — 듀얼 가능 제품(maxLines=2) + 인원 충분(12명+)이면 2호기 동시 가동
-  const fpMaxLines = scen.fp.info.maxLines || 1;
-  const fpAvailLines = scen.fp.info.availableLines || [3, 4];
-  const fpLinesUsed = (fpMaxLines >= 2 && workers.packFp >= 12) ? 2 : 1;
-  // 시간 = EA / (EA per min per line × 라인 수)
-  const fpPackMin = Math.ceil(fpEa / (fpPpackEaMin * fpLinesUsed));
 
-  // === FC 공정 시간 계산 (workers 값 사용) ===
+  // === 2. FC 공정 시간 계산 ===
   const fcYpre = workers.yPreFc;
   const fcYcrush = workers.yCrushFc;
   const fcPpre = workers.pPreFc;
@@ -2069,69 +2073,53 @@ function ttmSimulate(scen, workers) {
   const fcCrushOut = fcCrushIn * fcYcrush / 100;
   const fcPackIn = fcCrushOut;
   const fcEa = Math.floor(fcPackIn / scen.fc.kgPerEa);
-
   const fcPreMin = Math.ceil(fcPreIn / (fcPpre * workers.preFc) * 60);
   const fcCrushMin = Math.ceil(fcCrushIn / (fcPcrush * workers.crushFc) * 60);
-  const fcPackMin = Math.ceil(fcEa / (fcPpackEaMin * workers.packFc / 6));
+  const fcPackMin = Math.ceil(fcEa / fcPpackEaMin);
 
-  // === 타임라인 배치 (order에 따라 FC 먼저 / FP 먼저) ===
+  // === 3. 타임라인 배치 ===
   const t0 = scen.startMin;
   const fcFirst = scen.order === 'fc-first';
+
+  // 전처리 — FP 먼저면 t0~ FP끝, 그 후 FC. FC 먼저면 반대.
   const fpPre = fcFirst
     ? { s: t0 + fcPreMin, e: t0 + fcPreMin + fpPreMin }
     : { s: t0,            e: t0 + fpPreMin };
   const fcPre = fcFirst
     ? { s: t0,        e: t0 + fcPreMin }
     : { s: fpPre.e,   e: fpPre.e + fcPreMin };
+
+  // FP 자숙 — 단일 회차 (시그/마트 가압 150분)
   const fpCook = { s: fpPre.e, e: fpPre.e + (TTM_FIXED.fpCookMin + TTM_FIXED.cookWagonMin), tank: 5 };
 
-  // === FC 자숙 탱크 분배 (기존 A/B/E 방식, 순차 투입) ===
+  // === 4. FC 자숙 탱크 분배 ===
   const fcTankKg = 800;
   const fcCookCycles = Math.max(1, Math.ceil(fcCookIn / fcTankKg));
-  // 탱크 분배: B(N등분 균등)를 기본으로 — ttmSimulate는 단순화, 전체 비교는 ttmRender에서
   const fcTankKgs = Array(fcCookCycles).fill(fcCookIn / fcCookCycles);
 
-  // 각 탱크 순차 투입 시각: 전처리 속도 기반
-  // FC 전처리 시작~종료 = fcPre.s ~ fcPre.e
-  // 전처리 인원: 초기 earlyWorkers(외국인) → joinMin 이후 wkPre
-  const fcPreStart = fcPre.s;
-  const fcJoinMin = tttToMin(scen.joinTime);
-  const fcEarlyWorkers = scen.earlyWorkers;
-  const fcPhase1Kg = fcPpre * fcEarlyWorkers * (Math.max(0, fcJoinMin - fcPreStart) / 60);
-  const fcTankInTimes = [];
-  let fcCumOut = 0;
+  // 각 탱크 순차 투입 시각 (전처리 속도 기반)
+  const fcKgPerMin = fcPreIn / fcPreMin;
+  const fcCook = [];
+  let fcCookLineEnd = fcPre.s;
   for (let i = 0; i < fcCookCycles; i++) {
-    fcCumOut += fcTankKgs[i];
-    const targetInKg = fcCumOut / (fcYpre / 100);
-    let tankInMin;
-    if (targetInKg <= fcPhase1Kg) {
-      tankInMin = fcPreStart + Math.round(targetInKg / (fcPpre * fcEarlyWorkers) * 60);
-    } else {
-      const extraKg = targetInKg - fcPhase1Kg;
-      tankInMin = fcJoinMin + Math.round(extraKg / (fcPpre * workers.preFc) * 60);
-    }
-    if (i === fcCookCycles - 1) tankInMin = Math.min(tankInMin, fcPre.e);
-    fcTankInTimes.push(tankInMin);
+    const tankReadyKg = (i + 1) * (fcCookIn / fcCookCycles);
+    const tankReadyKgIn = tankReadyKg / (fcYpre / 100);
+    const investAt = Math.max(fcPre.s, fcPre.s + Math.ceil(tankReadyKgIn / fcKgPerMin));
+    const investStart = Math.max(investAt, fcCookLineEnd);
+    const cookEnd = investStart + TTM_FIXED.fcCookMin + TTM_FIXED.cookWagonMin;
+    fcCook.push({ s: investStart, e: cookEnd, tank: i + 1, kg: r2(fcTankKgs[i]) });
+    fcCookLineEnd = investStart; // 다음 탱크는 이전과 동시 가능 (4탱크 운영)
   }
-  const fcCookFullMin = TTM_FIXED.fcCookMin + TTM_FIXED.cookWagonMin;
-  const fcTankOutTimes = fcTankInTimes.map(t => t + fcCookFullMin);
 
-  // FC 자숙 cook 배열 (순차 시작 시각 반영)
-  const fcCook = fcTankKgs.map((kg, i) => ({
-    s: fcTankInTimes[i], e: fcTankOutTimes[i], tank: i + 1, kg: r2(kg)
-  }));
-  const fpCookFullMin = TTM_FIXED.fpCookMin + TTM_FIXED.cookWagonMin;
-  // FP 파쇄 (FP 자숙 끝나면)
+  // === 5. FP 파쇄 ===
   const fpCrush = { s: fpCook.e, e: fpCook.e + fpCrushMin };
 
-  // FC 파쇄: 탱크별로 순차 처리 (앞 탱크 자숙 끝나면 바로 그 탱크분 파쇄 시작)
-  // 단, FP 파쇄가 끝나야 라인 사용 가능 (파쇄 라인 1개 공유)
+  // === 6. FC 파쇄 (회차별, FP 파쇄 후) ===
   const fcCrushes = [];
-  let fcCrushLineEnd = fpCrush.e; // 파쇄 라인 가용 시각
+  let fcCrushLineEnd = fpCrush.e;
   for (let i = 0; i < fcCook.length; i++) {
     const tankEnd = fcCook[i].e;
-    // 이 탱크분 파쇄 산출량 = 자숙 투입 × yCook × yCrush
-    // (자숙 yield 거쳐서 자숙 산출 → 파쇄 yield 거쳐서 파쇄 산출)
+    // 자숙 yield + 파쇄 yield 적용 (사용자 콘솔 로그로 확인됨)
     const tankKg = fcTankKgs[i] * (scen.fc.yCook / 100) * (fcYcrush / 100);
     const tankCrushMin = Math.ceil(tankKg / (fcPcrush * workers.crushFc) * 60);
     const crushStart = Math.max(tankEnd, fcCrushLineEnd);
@@ -2139,12 +2127,18 @@ function ttmSimulate(scen, workers) {
     fcCrushes.push({ s: crushStart, e: crushEnd, tank: i + 1, kg: r2(tankKg) });
     fcCrushLineEnd = crushEnd;
   }
-  // FC 파쇄 전체 (호환용)
   const fcCrushStart = fcCrushes[0].s;
-  const fcCrush = { s: fcCrushStart, e: fcCrushes[fcCrushes.length - 1].e };
-  // FP 내포장 시작:
-  // - 원육 400kg 이하: 파쇄 완전히 끝난 후
-  // - 원육 400kg 초과: 파쇄 산출 200kg 누적 시점
+  const fcCrushEnd = fcCrushes[fcCrushes.length - 1].e;
+  const fcCrush = { s: fcCrushStart, e: fcCrushEnd };
+
+  // === 7. 슬롯 정의 (인원표와 동일) ===
+  const slotBoundaries = [
+    t0, 7*60, 9*60, 11*60+30, 12*60+30, 13*60+30, 17*60, 28*60
+  ];
+  const LUNCH_START = 11*60+30;
+  const LUNCH_END = 13*60+30;
+
+  // === 8. FP 내포장 시작 시점 ===
   let fpPackStart;
   if (scen.fp.kg <= 400) {
     fpPackStart = fpCrush.e;
@@ -2153,59 +2147,31 @@ function ttmSimulate(scen, workers) {
     const fp200kgMin = Math.ceil(200 / fpCrushRateKgMin);
     fpPackStart = fpCrush.s + fp200kgMin;
   }
-  // FP 내포장 종료 — 시간 슬롯 단위 시뮬 + 동적 가용 인원 기반
-  //
-  // 시간 슬롯 (인원표와 동일):
-  //   05:00~07:00, 07:00~09:00, 09:00~11:30,
-  //   11:30~12:30, 12:30~13:30, 13:30~17:00, 17:00~ 종료
-  //
-  // 각 슬롯에서:
-  //   1. 슬롯 중간 시점(mid)의 가용 인원 계산
-  //   2. 호기 수 결정 (한 슬롯 안에서 고정)
-  //      - 가용 ≥ 14 && maxLines>=2 → 듀얼
-  //      - 가용 ≥ 8 → 단일
-  //      - 가용 < 8 → 정지
-  //   3. 슬롯 안에서 분 단위 EA 누적
-  //
-  // 결과: 한 슬롯 안에서 호기 수 안 바뀜 → 막대 깔끔 연속
-  const LUNCH_START = 11*60+30;
-  const LUNCH_END = 13*60+30;
-  const totalWorkersAll = parseInt(document.getElementById('ttt-total')?.value) || 28;
-  const earlyWorkersAll = parseInt(document.getElementById('ttt-early')?.value) || 7;
-  const mgrCountAll = parseInt(document.getElementById('ttt-mgr')?.value) || 2;
-  const mgrTimeAll = tttToMin(document.getElementById('ttt-mgr-time')?.value || '07:00');
-  const joinTimeAll = tttToMin(document.getElementById('ttt-join')?.value || '09:00');
 
-  // 시간 슬롯 경계 (인원표와 동일)
-  const slotBoundaries = [
-    fpPre.s,  // 시작
-    7*60,
-    9*60,
-    11*60+30,
-    12*60+30,
-    13*60+30,
-    17*60,
-    28*60   // 종료 한도
-  ];
+  // === 9. FP 내포장 시뮬 - 슬롯별 동적 호기 ===
+  // 가용 인원 계산 함수 (각 시점 t)
+  const totalWorkers = parseInt(document.getElementById('ttt-total')?.value) || 28;
+  const earlyWorkers = parseInt(document.getElementById('ttt-early')?.value) || 7;
+  const mgrCount = parseInt(document.getElementById('ttt-mgr')?.value) || 2;
+  const mgrTime = tttToMin(document.getElementById('ttt-mgr-time')?.value || '07:00');
+  const joinTime = tttToMin(document.getElementById('ttt-join')?.value || '09:00');
 
-  // 가용 인원 계산 함수
-  // 점심 시간 (11:30~13:30): 14명이 식사 = 작업 가용 14명
-  //   - 자숙(자동) + 내포장 1대(6+이송2) + 관리(1) = 11명 사용
-  //   - 사용자 룰: 점심 시간엔 8명만 있어도 OK → 인원 부족 시 작업 줄임 자동
-  //   - 전처리/파쇄/외포장 = 점심 시간엔 가동 X (식사 우선)
+  const fpMaxLines = scen.fp.info.maxLines || 1;
+  const fpAvailLines = scen.fp.info.availableLines || [3, 4];
+
+  // 가용 인원 = 출근 - 자숙 - 식사 - 관리 - 전처리/파쇄
+  // 단, 점심 시간엔 전처리/파쇄 안 함
   const availAt = (t) => {
     let onsite;
-    if (t < mgrTimeAll) onsite = earlyWorkersAll;
-    else if (t < joinTimeAll) onsite = earlyWorkersAll + mgrCountAll;
-    else onsite = totalWorkersAll;
-    let occupied = 1;  // 관리 1명
+    if (t < mgrTime) onsite = earlyWorkers;
+    else if (t < joinTime) onsite = earlyWorkers + mgrCount;
+    else onsite = totalWorkers;
+    let occupied = 1; // 관리
     if (t >= fpCook.s && t < fpCook.e) occupied += 2;
     fcCook.forEach(c => { if (t >= c.s && t < c.e) occupied += 2; });
-    // 점심 시간 = 식사 14명 + 전처리/파쇄 안 함 (식사 시간이라)
     const isLunch = t >= LUNCH_START && t < LUNCH_END;
     if (isLunch) {
-      occupied += 14;  // 식사
-      // 전처리/파쇄는 점심 시간엔 점유 X (가동 안 함)
+      occupied += 14;
     } else {
       if (t >= fpPre.s && t < fpPre.e) occupied += workers.preFp;
       if (t >= fcPre.s && t < fcPre.e) occupied += workers.preFc;
@@ -2215,138 +2181,85 @@ function ttmSimulate(scen, workers) {
     return Math.max(0, onsite - occupied);
   };
 
+  const CREW_1_LINE = workers.packFp + 2;            // 6 + 이송 2 = 8
+  const CREW_2_LINES = workers.packFp * 2 + 2;        // 6×2 + 이송 2 = 14
   const fpLineSegments = { 1: [], 2: [] };
   let fpProcessed = 0;
   let fpPackEnd = fpPackStart;
-  const CREW_1_LINE = 6 + 2;
-  const CREW_2_LINES = 12 + 2;
 
-  // 시간 슬롯 순회
+  // 슬롯별 호기 시뮬 1차
   for (let si = 0; si < slotBoundaries.length - 1; si++) {
     const slotStart = Math.max(slotBoundaries[si], fpPackStart);
     const slotEnd = slotBoundaries[si + 1];
     if (slotStart >= slotEnd) continue;
     if (fpProcessed >= fpEa) break;
-
-    // 슬롯 중간 시점 기준 가용 인원
     const slotMid = (slotStart + slotEnd) / 2;
     const avail = availAt(slotMid);
     const isLunch = slotMid >= LUNCH_START && slotMid < LUNCH_END;
-
-    // 호기 수 결정
-    // - 점심 시간: 무조건 1대 (가용 인원 무관, 식사 우선)
-    // - 비점심 + 듀얼 가능 제품 + 가용 >= 14 (호기 2개 = 6×2 + 이송 2): 듀얼
-    // - 비점심 + 가용 >= 8: 1대
-    // - 가용 < 8: 정지
-    let linesThisSlot = 0;
-    if (isLunch) {
-      linesThisSlot = (avail >= CREW_1_LINE) ? 1 : 0;
-    } else if (fpMaxLines >= 2 && avail >= CREW_2_LINES) {
-      linesThisSlot = 2;
-    } else if (avail >= CREW_1_LINE) {
-      linesThisSlot = 1;
-    }
-
-    if (linesThisSlot === 0) continue;  // 정지 슬롯
-
-    // 이 슬롯에서 분당 처리 EA × 시간
-    const slotEffectiveEnd = Math.min(slotEnd, slotStart + Math.ceil((fpEa - fpProcessed) / (fpPpackEaMin * linesThisSlot)));
+    let lines = 0;
+    if (isLunch) lines = (avail >= CREW_1_LINE) ? 1 : 0;
+    else if (fpMaxLines >= 2 && avail >= CREW_2_LINES) lines = 2;
+    else if (avail >= CREW_1_LINE) lines = 1;
+    if (lines === 0) continue;
+    const slotEffectiveEnd = Math.min(slotEnd, slotStart + Math.ceil((fpEa - fpProcessed) / (fpPpackEaMin * lines)));
     const minutesUsed = slotEffectiveEnd - slotStart;
-    fpProcessed += fpPpackEaMin * linesThisSlot * minutesUsed;
+    fpProcessed += fpPpackEaMin * lines * minutesUsed;
     fpPackEnd = slotEffectiveEnd;
-
-    // 세그먼트 기록 (호기별)
-    // 호기 1 (항상)
-    if (linesThisSlot >= 1) {
-      const last1 = fpLineSegments[1][fpLineSegments[1].length - 1];
-      if (last1 && last1.end === slotStart) last1.end = slotEffectiveEnd;
-      else fpLineSegments[1].push({ start: slotStart, end: slotEffectiveEnd });
-    }
-    // 호기 2 (듀얼 슬롯만)
-    if (linesThisSlot >= 2) {
-      const last2 = fpLineSegments[2][fpLineSegments[2].length - 1];
-      if (last2 && last2.end === slotStart) last2.end = slotEffectiveEnd;
-      else fpLineSegments[2].push({ start: slotStart, end: slotEffectiveEnd });
-    }
+    if (lines >= 1) fpLineSegments[1].push({ start: slotStart, end: slotEffectiveEnd });
+    if (lines >= 2) fpLineSegments[2].push({ start: slotStart, end: slotEffectiveEnd });
   }
-  const fpPack = { s: fpPackStart, e: fpPackEnd, segments: fpLineSegments };
 
-  // 호기 2 (4호기) 검증
-  // 룰: 짧게 가동되는 4호기 슬롯 제거 (셋업 비효율)
-  //   - 슬롯별로 4호기 가동 분 검사
-  //   - 30분 미만 슬롯 제거 (한 슬롯 안에서 4호기 잠깐 가동은 의미 없음)
-  //   - 또는 전체 4호기 가동 60분 미만 시 모두 제거
-  const FP_DUAL_SLOT_MIN = 60;     // 슬롯당 최소 가동 분 (셋업 비용 고려)
-  const FP_DUAL_TOTAL_MIN = 60;    // 전체 최소 가동 분
-  // 1단계: 짧은 슬롯 제거
+  // 호기 2 짧은 슬롯 제거 (60분 미만)
+  const FP_DUAL_SLOT_MIN = 60;
   fpLineSegments[2] = fpLineSegments[2].filter(seg => (seg.end - seg.start) >= FP_DUAL_SLOT_MIN);
-  const fpLine2TotalMin = fpLineSegments[2].reduce((sum, seg) => sum + (seg.end - seg.start), 0);
-  // 2단계: 전체 4호기 가동 시간 짧으면 모두 제거
-  const needResim = (fpLine2TotalMin > 0 && fpLine2TotalMin < FP_DUAL_TOTAL_MIN);
-  const removedShortSlots = (fpLineSegments[2].length === 0);
-  if (needResim || removedShortSlots) {
-    // 재시뮬: 호기 1만 사용 (4호기 모두 취소)
-    const fpLineSegments2 = { 1: [], 2: [] };
-    let fpProcessed2 = 0;
-    let fpPackEnd2 = fpPackStart;
+
+  // 호기 2 총 가동 60분 미만이면 모두 취소 + 1호기만 재시뮬
+  const line2TotalMin = fpLineSegments[2].reduce((s, seg) => s + (seg.end - seg.start), 0);
+  if (line2TotalMin === 0 || line2TotalMin < FP_DUAL_SLOT_MIN) {
+    fpLineSegments[2] = [];
+    fpLineSegments[1] = [];
+    fpProcessed = 0;
+    fpPackEnd = fpPackStart;
     for (let si = 0; si < slotBoundaries.length - 1; si++) {
       const slotStart = Math.max(slotBoundaries[si], fpPackStart);
       const slotEnd = slotBoundaries[si + 1];
       if (slotStart >= slotEnd) continue;
-      if (fpProcessed2 >= fpEa) break;
+      if (fpProcessed >= fpEa) break;
       const slotMid = (slotStart + slotEnd) / 2;
       const avail = availAt(slotMid);
       if (avail < CREW_1_LINE) continue;
-      const slotEffectiveEnd = Math.min(slotEnd, slotStart + Math.ceil((fpEa - fpProcessed2) / fpPpackEaMin));
+      const slotEffectiveEnd = Math.min(slotEnd, slotStart + Math.ceil((fpEa - fpProcessed) / fpPpackEaMin));
       const minutesUsed = slotEffectiveEnd - slotStart;
-      fpProcessed2 += fpPpackEaMin * minutesUsed;
-      fpPackEnd2 = slotEffectiveEnd;
-      const last1 = fpLineSegments2[1][fpLineSegments2[1].length - 1];
-      if (last1 && last1.end === slotStart) last1.end = slotEffectiveEnd;
-      else fpLineSegments2[1].push({ start: slotStart, end: slotEffectiveEnd });
+      fpProcessed += fpPpackEaMin * minutesUsed;
+      fpPackEnd = slotEffectiveEnd;
+      fpLineSegments[1].push({ start: slotStart, end: slotEffectiveEnd });
     }
-    fpPack.e = fpPackEnd2;
-    fpPack.segments = fpLineSegments2;
   }
+  const fpPack = { s: fpPackStart, e: fpPackEnd, segments: fpLineSegments };
 
-  // FC 내포장: FP 내포장 끝난 후 + FC 파쇄 200kg 누적 시점 시작
-  // 단, 내포장 종료는 반드시 fcCrush.e(마지막 파쇄 완료) 이후여야 함
+  // === 10. FC 내포장 - 잔량 통과 모델 ===
   let fcPackReadyMin;
   if (scen.fc.kg <= 400) {
     fcPackReadyMin = fcCrush.e;
   } else {
     const fcCrushRateKgMin = fcCrushOut / fcCrushMin;
     const fc200kgMin = Math.ceil(200 / fcCrushRateKgMin);
-    fcPackReadyMin = fcCrush.s + fc200kgMin;
+    fcPackReadyMin = fcCrushStart + fc200kgMin;
   }
   const fcPackStart = Math.max(fcPackReadyMin, fpPack.e);
   const fcPackEndRaw = fcPackStart + fcPackMin;
-  // FC 내포장 종료 = max(자체 처리 종료, 잔량 통과 종료)
-  //
-  // 잔량 통과 모델 (사용자 룰):
-  //   파쇄와 내포장은 병렬 진행.
-  //   파쇄 가동 중 매 분마다 산출물이 내포장 라인에 흘러들어옴.
-  //   파쇄가 끝나는 순간 = 내포장은 이미 산출물 대부분 처리한 상태.
-  //   그 시점에 내포장 라인의 미처리 잔량 = (총 파쇄 산출 EA) - (지금까지 내포장 처리한 EA)
-  //   잔량만 추가 통과 시간 필요.
-  //
-  // 계산:
-  //   fcPackStart부터 lastFcCrush.e까지 내포장 가동
-  //   처리한 EA = (lastFcCrush.e - fcPackStart) * pPackEa (1라인)
-  //   잔량 EA = fcEa - 처리한 EA (음수면 0)
-  //   잔량 통과 시간 = 잔량 EA / pPackEa
-  const fcCrushEndMin = (fcCrushes && fcCrushes.length > 0) ? fcCrushes[fcCrushes.length - 1].e : fcCrush.e;
-  const fcPackMinDuringCrush = Math.max(0, fcCrushEndMin - fcPackStart);
+  // 잔량 = fcEa - (파쇄 끝까지 가동 시간 × 속도)
+  const fcPackMinDuringCrush = Math.max(0, fcCrushEnd - fcPackStart);
   const fcEaProcessedDuringCrush = Math.min(fcEa, fcPackMinDuringCrush * fcPpackEaMin);
   const fcRemainEa = Math.max(0, fcEa - fcEaProcessedDuringCrush);
   const fcRemainPackMin = Math.ceil(fcRemainEa / fcPpackEaMin);
-  const fcLastBatchEnd = fcCrushEndMin + fcRemainPackMin;
-  // 둘 중 늦은 쪽
+  const fcLastBatchEnd = fcCrushEnd + fcRemainPackMin;
   const fcPackEnd = Math.max(fcPackEndRaw, fcLastBatchEnd);
   const fcPack = { s: fcPackStart, e: fcPackEnd };
 
-  // === 레토르트 회차 분배 ===
-  // FP: eaPerCart, 4대차/회차 → 회차 수
+  // === 11. 레토르트 회차 분배 ===
+  // FP: 4대차 풀 충전 시 시작 (마지막만 부분)
+  // FC: 부분 OK
   const fpCarts = fpEa / scen.fp.info.eaPerCart;
   const fpCycles = Math.ceil(fpCarts / TTM_FIXED.retortCartsPerCycle);
   const fpCycleList = [];
@@ -2354,27 +2267,26 @@ function ttmSimulate(scen, workers) {
     const cartsThis = Math.min(TTM_FIXED.retortCartsPerCycle, fpCarts - i * TTM_FIXED.retortCartsPerCycle);
     fpCycleList.push({ carts: round1(cartsThis), ea: r2(Math.min(fpEa - i * TTM_FIXED.retortCartsPerCycle * scen.fp.info.eaPerCart, TTM_FIXED.retortCartsPerCycle * scen.fp.info.eaPerCart)) });
   }
-  // 각 회차 시작: 4대차 채워지는 시각 (대차당 EA ÷ 분당 EA = 분/대차)
-  const fpCartMin = scen.fp.info.eaPerCart / (fpPpackEaMin * workers.packFp / 6);
-  // FP 회차 1: 4대차 모이면 시작 (또는 마지막 회차면 내포장 끝)
-  // 단순화: 회차 i 시작 = max(내포장 시작 + (i*4 대차 분) , 호 비는 시각)
-  // 호 배정 B룰: 회차마다 비어있는 호 (1호 → 2호 → 3호 → 1호 ...)
-  const retortBusy = [0, 0, 0]; // 1호, 2호, 3호 각각 비는 시각
+  // FP는 4대차 풀로 채워질 시점 = (회차당 EA / 1라인 속도) × 회차수
+  const fpCartMin = scen.fp.info.eaPerCart / fpPpackEaMin; // 1대차 채우는데 걸리는 분 (단일 라인 기준)
+  const retortBusy = [0, 0, 0];
   const fpRetort = [];
   for (let i = 0; i < fpCycleList.length; i++) {
+    const cartsThis = fpCycleList[i].carts;
+    const fullCycle = (cartsThis >= TTM_FIXED.retortCartsPerCycle);
+    // 마지막 부분 회차면 fpPack.e 까지 기다림. 풀 회차면 (i+1) × cartMin × 4 시점.
     const fillTime = fpPack.s + Math.ceil(fpCartMin * (i+1) * TTM_FIXED.retortCartsPerCycle);
     const lastCycle = (i === fpCycleList.length - 1);
-    const startReady = lastCycle ? fpPack.e : Math.min(fillTime, fpPack.e);
-    // 가장 빨리 비는 호
+    const startReady = (lastCycle && !fullCycle) ? fpPack.e : fillTime;
     let host = 0;
     for (let h = 1; h < 3; h++) if (retortBusy[h] < retortBusy[host]) host = h;
     const start = Math.max(startReady, retortBusy[host]);
     const end = start + TTM_FIXED.retortCycleMin;
     retortBusy[host] = end;
-    fpRetort.push({ s: start, e: end, host: host+1, carts: fpCycleList[i].carts, ea: fpCycleList[i].ea });
+    fpRetort.push({ s: start, e: end, host: host+1, carts: cartsThis, ea: fpCycleList[i].ea });
   }
 
-  // FC 회차
+  // FC 레토르트
   const fcCarts = fcEa / scen.fc.eaPerCart;
   const fcCycles = Math.ceil(fcCarts / TTM_FIXED.retortCartsPerCycle);
   const fcCycleList = [];
@@ -2382,9 +2294,10 @@ function ttmSimulate(scen, workers) {
     const cartsThis = Math.min(TTM_FIXED.retortCartsPerCycle, fcCarts - i * TTM_FIXED.retortCartsPerCycle);
     fcCycleList.push({ carts: round1(cartsThis), ea: r2(Math.min(fcEa - i * TTM_FIXED.retortCartsPerCycle * scen.fc.eaPerCart, TTM_FIXED.retortCartsPerCycle * scen.fc.eaPerCart)) });
   }
-  const fcCartMin = scen.fc.eaPerCart / (fcPpackEaMin * workers.packFc / 6);
+  const fcCartMin = scen.fc.eaPerCart / fcPpackEaMin;
   const fcRetort = [];
   for (let i = 0; i < fcCycleList.length; i++) {
+    // FC는 부분 OK
     const fillTime = fcPack.s + Math.ceil(fcCartMin * (i+1) * TTM_FIXED.retortCartsPerCycle);
     const lastCycle = (i === fcCycleList.length - 1);
     const startReady = lastCycle ? fcPack.e : Math.min(fillTime, fcPack.e);
@@ -2396,15 +2309,87 @@ function ttmSimulate(scen, workers) {
     fcRetort.push({ s: start, e: end, host: host+1, carts: fcCycleList[i].carts, ea: fcCycleList[i].ea });
   }
 
-  // 전체 종료 시각
+  // === 12. 슬롯별 인원 배치 (시뮬에서 결정) ===
+  // 시뮬과 인원표가 자동 일치
+  const overlap = (s, e, ps, pe) => Math.max(0, Math.min(pe, e) - Math.max(ps, s)) >= (e - s) * 0.3;
+  const workerSlots = [];
+  for (let si = 0; si < slotBoundaries.length - 1; si++) {
+    const s = Math.max(slotBoundaries[si], t0);
+    const e = Math.min(slotBoundaries[si + 1], Math.max(...retortBusy, fpPack.e, fcPack.e));
+    if (e <= s) continue;
+    const mid = (s + e) / 2;
+    let onsite;
+    if (mid < mgrTime) onsite = earlyWorkers;
+    else if (mid < joinTime) onsite = earlyWorkers + mgrCount;
+    else onsite = totalWorkers;
+    const mgr = mid >= mgrTime ? mgrCount : 0;
+    const isLunch = mid >= LUNCH_START && mid < LUNCH_END;
+    const lunch = isLunch ? 14 : 0;
+    let mgrActual = isLunch ? 1 : mgr;
+
+    // 가동 검사 (슬롯과 30% 이상 겹침)
+    let pre = 0, crush = 0, pack = 0, trans = 0;
+    if (!isLunch) {
+      if (overlap(s, e, fpPre.s, fpPre.e)) pre += workers.preFp;
+      if (overlap(s, e, fcPre.s, fcPre.e)) pre += workers.preFc;
+      if (overlap(s, e, fpCrush.s, fpCrush.e)) crush += workers.crushFp;
+      fcCrushes.forEach(c => { if (overlap(s, e, c.s, c.e)) crush += workers.crushFc; });
+    }
+    // 내포장 - 슬롯별 호기 세그먼트로
+    let fpLines = 0;
+    fpLineSegments[1].forEach(seg => { if (overlap(s, e, seg.start, seg.end)) fpLines = Math.max(fpLines, 1); });
+    fpLineSegments[2].forEach(seg => { if (overlap(s, e, seg.start, seg.end)) fpLines = Math.max(fpLines, 2); });
+    if (fpLines > 0) { pack += workers.packFp * fpLines; trans += 2; }
+    if (overlap(s, e, fcPack.s, fcPack.e)) { pack += workers.packFc; trans += 2; }
+
+    // 인원 분배 우선순위:
+    //  1. 자숙 (이미 자동 점유) - 인원표에선 별도 표시 안함 (자동)
+    //  2. 관리, 점심, 내포장, 이송, 파쇄(기본10) 까지 fixed
+    //  3. 남는 인원 → 파쇄 추가 (max 18)
+    //  4. 그래도 남으면 외포장
+    const occupied = pre + crush + pack + trans + mgrActual + lunch;
+    let slack = Math.max(0, onsite - occupied);
+    let outer = 0, setting = 0;
+
+    if (crush > 0 && !isLunch) {
+      // 파쇄 가동 중 - 남는 인원 파쇄 추가 (max 18)
+      const PARSE_MAX = 18;
+      const crushAdd = Math.min(slack, Math.max(0, PARSE_MAX - crush));
+      crush += crushAdd;
+      slack -= crushAdd;
+    }
+    // 세팅 시간대 (09:00~11:30 + 파쇄/내포장 가동 전)
+    if (mid >= joinTime && mid < 11*60+30 && crush === 0 && pack === 0) {
+      setting = Math.min(3, slack);
+      slack -= setting;
+    }
+    outer = slack;
+
+    // 점심 시간 - 인원 부족하면 최소 8명까지 줄임 가능
+    if (isLunch) {
+      // 점심에는 내포장+이송+관리=8~9명 정도면 OK
+      // 외포장 인원은 0~5명 가능 (남는 거)
+    }
+
+    workerSlots.push({
+      s, e, mid, onsite,
+      pre, crush, pack, trans, outer, setting, lunch, mgr: mgrActual,
+      total: pre + crush + pack + trans + outer + setting + lunch + mgrActual,
+      fpLines, // 듀얼/싱글
+    });
+  }
+
+  // === 13. 종합 ===
   const endMin = Math.max(...retortBusy, fpPack.e, fcPack.e);
 
   return {
-    fp: { pre: fpPre, cook: fpCook, crush: fpCrush, pack: fpPack, retort: fpRetort, kg: fpPreIn, ea: fpEa, packIn: fpPackIn, linesUsed: fpLinesUsed, availLines: fpAvailLines },
+    fp: { pre: fpPre, cook: fpCook, crush: fpCrush, pack: fpPack, retort: fpRetort, kg: fpPreIn, ea: fpEa, packIn: fpPackIn, availLines: fpAvailLines, lineSegments: fpLineSegments },
     fc: { pre: fcPre, cook: fcCook, crush: fcCrush, crushes: fcCrushes, pack: fcPack, retort: fcRetort, kg: fcPreIn, ea: fcEa, packIn: fcPackIn, tanks: fcTankKgs },
+    workerSlots,
     endMin,
   };
 }
+
 
 // ============================================================
 // 행 분리 SVG 렌더 (한 행 = 한 작업 단위)
@@ -2605,106 +2590,13 @@ function ttmRenderWorkerSlots(scen, workers, sim) {
   const earlyFpCrush = sim.fp.crush.s < 8*60+30;
   const earlyFcCrush = (sim.fc.crushes?.[0]?.s ?? sim.fc.crush.s) < 8*60+30;
 
-  // 고정 슬롯 (원본 타임테이블 탭과 동일)
-  const fixedSlots = [
-    { s: sim.fp.pre.s, e: 7*60,      },
-    { s: 7*60,         e: 9*60,      },
-    { s: 9*60,         e: 11*60+30,  },
-    { s: 11*60+30,     e: 12*60+30,  },
-    { s: 12*60+30,     e: 13*60+30,  },
-    { s: 13*60+30,     e: 17*60,     },
-    { s: 17*60,        e: sim.endMin },
-  ].filter(sl => sl.s < sl.e && sl.s < sim.endMin);
-
-  const ov = (s1,e1,s2,e2) => s1 < e2 && e1 > s2;
-
-  const half1 = Math.ceil(totalWorkers / 2);
-  const half2 = totalWorkers - half1;
-
-  const slots = [];
-  for (const sl of fixedSlots) {
-    const s = sl.s, e = Math.min(sl.e, sim.endMin);
-    if (e <= s) continue;
-    const mid = (s+e)/2;
-
-    let onsite;
-    if (mid < mgrTimeMin) onsite = earlyWorkers;
-    else if (mid < joinTimeMin) onsite = earlyWorkers + mgrMin;
-    else onsite = totalWorkers;
-
-    const mgr = mid >= mgrTimeMin ? mgrMin : 0;
-    // 슬롯과 작업 구간이 겹치는지 검사 (mid만 검사하면 짧은 작업 누락)
-    // 작업 구간이 슬롯의 50% 이상 차지하면 가동 표시
-    const overlap = (ps, pe) => {
-      const ov = Math.max(0, Math.min(pe, e) - Math.max(ps, s));
-      return ov >= (e - s) * 0.5;  // 슬롯의 절반 이상 가동
-    };
-    const act = overlap;
-    let pre = (act(sim.fp.pre.s,sim.fp.pre.e) ? workers.preFp : 0)
-            + (act(sim.fc.pre.s,sim.fc.pre.e) ? workers.preFc : 0);
-    let crush = act(sim.fp.crush.s,sim.fp.crush.e) ? workers.crushFp : 0;
-    (sim.fc.crushes||[sim.fc.crush]).forEach(c => { if(act(c.s,c.e)) crush += workers.crushFc; });
-    let pack=0, trans=0;
-    let fpPackActive = act(sim.fp.pack.s,sim.fp.pack.e);
-    let fcPackActive = act(sim.fc.pack.s,sim.fc.pack.e);
-    if (fpPackActive) { pack+=workers.packFp; trans+=2; }
-    if (fcPackActive) { pack+=workers.packFc; trans+=2; }
-
-    const isLunch1 = mid >= 11*60+30 && mid < 12*60+30;
-    const isLunch2 = mid >= 12*60+30 && mid < 13*60+30;
-    let lunch=0, outer=0, setting=0;
-    let mgrActual = mgr;
-
-    if (isLunch1 || isLunch2) {
-      // 사용자 룰: 점심 시간엔 전처리/파쇄 가동 X (식사 우선)
-      // 내포장 1대만 (6명 + 이송 2) + 관리 1 + 식사 14 = 22
-      // 자숙 자동 (2명/회차) 추가 = 자동 점유
-      pre = 0;
-      crush = 0;
-      mgrActual = 1;
-      lunch = isLunch1 ? half1 : half2;
-      // FP 듀얼 인원 입력했어도 점심엔 1대만
-      if (fpPackActive && workers.packFp >= 12) {
-        pack = pack - workers.packFp + 6;
-        trans = trans - 2;
-        if (!fcPackActive) trans = 2;
-      }
-      const workingHalf = onsite - lunch;
-      const fixedWork = pack + trans + mgrActual;
-      outer = Math.max(0, workingHalf - fixedWork);
-    } else {
-      // 비점심: 남는 인원 분배 우선순위 (사용자 룰)
-      //   1. 파쇄 풀가동 (기본 10 → max 18) ← 외포장보다 우선
-      //   2. 그래도 남으면 외포장
-      // 단, 파쇄 가동 중일 때만 (crush > 0)
-      const occupiedBase = pre + crush + pack + trans + mgr;
-      const slack = Math.max(0, onsite - occupiedBase);
-      if (mid >= joinTimeMin && mid < 11*60+30 && crush === 0 && pack === 0) {
-        // 09:00~11:30 + 파쇄/내포장 가동 전 = 세팅
-        setting = Math.min(3, slack);
-        outer   = Math.max(0, slack - setting);
-      } else if (crush > 0) {
-        // 파쇄 가동 중 - 인원 남으면 파쇄 풀가동 (max 18)
-        const PARSE_MAX = 18;
-        const crushAdd = Math.min(slack, Math.max(0, PARSE_MAX - crush));
-        crush += crushAdd;
-        outer = Math.max(0, slack - crushAdd);
-      } else {
-        // 파쇄 안 도는 시간대 = 외포장
-        outer = slack;
-      }
-    }
-
-    // 인원 초과 시 파쇄에서 삭감 (안전망)
-    let total = pre+crush+pack+trans+outer+setting+lunch+mgrActual;
-    if (total > onsite) {
-      const over = total - onsite;
-      crush = Math.max(0, crush - over);
-      total = pre+crush+pack+trans+outer+setting+lunch+mgrActual;
-    }
-
-    slots.push({ label:`${fmt(s)}~${fmt(e)}`, pre, crush, pack, trans, outer, setting, lunch, mgr:mgrActual, idle:0, total, onsite });
-  }
+  // 시뮬에서 결정된 인원 슬롯 사용 (인원표 = 시뮬 자동 일치)
+  const slots = (sim.workerSlots || []).map(ws => ({
+    label: `${fmt(ws.s)}~${fmt(ws.e)}`,
+    pre: ws.pre, crush: ws.crush, pack: ws.pack, trans: ws.trans,
+    outer: ws.outer, setting: ws.setting, lunch: ws.lunch, mgr: ws.mgr,
+    idle: 0, total: ws.total, onsite: ws.onsite,
+  }));
 
   const wkColors = ['#185FA5','#BA7517','#7F77DD','#534AB7','#1D9E75','#EF9F27','#888780','#5F5E5A','#B4B2A9'];
   const heads = ['전처리','파쇄','내포장','이송','외포장','세팅','점심','관리','유휴'];
@@ -2716,8 +2608,7 @@ function ttmRenderWorkerSlots(scen, workers, sim) {
     const sumMark = isFull
       ? `<span style="color:#0F6E56">${r.total} ✓</span>`
       : `<span style="color:#A32D2D">${r.total}/${r.onsite}</span>`;
-    // 모든 행 동일 높이 = 100% / 행수 (tbody 안에서)
-    const rowH = `height:${(100/slots.length).toFixed(2)}%`;
+    const rowH = `height:${(100/Math.max(1,slots.length)).toFixed(2)}%`;
     return `<tr style="${stripe};${rowH}">
       <td style="padding:6px 4px;border:1px solid #ddd;font-weight:600;font-size:11px;text-align:center;white-space:nowrap;vertical-align:middle">${r.label}</td>
       ${keys.map((k,ci) => {
