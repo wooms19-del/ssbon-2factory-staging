@@ -190,7 +190,79 @@ async function exportDailyReport() {
     addSheet('외포장', s8, [20,12,10,12,10,10,8,20]);
   }
 
-    await _saveXlsx(wb, `순수본2공장_작업일지_${date}.xlsx`);
+  // ── 시트9: 로트 추적표 (클레임 대응용) ───────────
+  // 포장 각 건마다 → 파쇄 → 자숙 → 전처리 역추적
+  const _shAll = dedupeRec(await fbGetByDate('shredding', date), r=>r.wagonIn+'|'+r.start+'|'+r.kg);
+  const _ckAll = dedupeRec(await fbGetByDate('cooking', date), r=>r.tank+'|'+r.start+'|'+r.kg);
+  const _ppAll = dedupeRec(await fbGetByDate('preprocess', date), r=>(r.cage||'')+'|'+r.start+'|'+r.kg);
+
+  const traceRows = pk.map(pkr => {
+    const pkWagons = (pkr.wagon||'').split(',').map(w=>w.trim()).filter(Boolean);
+    const pkCarts  = (pkr.cart ||'').split(',').map(w=>w.trim()).filter(Boolean);
+
+    // 포장 → 파쇄
+    const matchedSh = _shAll.filter(s => {
+      const wo = (s.wagonOut||'').split(',').map(x=>x.trim());
+      const co = (s.cartOut ||'').split(',').map(x=>x.trim());
+      return pkWagons.some(w=>wo.includes(w)) || pkCarts.some(c=>co.includes(c));
+    });
+    const shWagonIn = [...new Set(matchedSh.flatMap(s=>(s.wagonIn||'').split(',').map(x=>x.trim()).filter(Boolean)))];
+    const shTimes   = matchedSh.map(s=>(s.start||'')+'~'+(s.end||'')).join(' / ');
+
+    // 파쇄 → 자숙
+    const matchedCk = _ckAll.filter(c =>
+      shWagonIn.some(w=>(c.wagonOut||'').split(',').map(x=>x.trim()).includes(w))
+    );
+    const ckCages = [...new Set(matchedCk.flatMap(c=>(c.cage||'').split(',').map(x=>x.trim()).filter(Boolean)))];
+    const ckTimes = matchedCk.map(c=>'탱크'+(c.tank||'')+' '+(c.start||'')+'~'+(c.end||'')).join(' / ');
+
+    // 자숙 → 전처리
+    const matchedPp = _ppAll.filter(p =>
+      ckCages.some(c=>(p.cage||'').split(',').map(x=>x.trim()).includes(c))
+    );
+    const ppWagons = [...new Set(matchedPp.flatMap(p=>(p.wagons||'').split(',').map(x=>x.trim()).filter(Boolean)))];
+    const ppTimes  = matchedPp.map(p=>(p.start||'')+'~'+(p.end||'')).join(' / ');
+
+    const lot = [pkr.wagon?'와건 '+pkr.wagon:'', pkr.cart?'카트 '+pkr.cart:''].filter(Boolean).join(' / ');
+    return [
+      pkr.machine||'',
+      pkr.type||'-',
+      pkr.product||'',
+      pkr.start||'', pkr.end||'',
+      pkr.ea||0,
+      lot||'-',
+      matchedSh.map(s=>s.wagonIn||'').join(' / ')||'-',
+      shTimes||'-',
+      matchedCk.map(c=>'탱크'+(c.tank||'')).join(' / ')||'-',
+      ckCages.join(', ')||'-',
+      ckTimes||'-',
+      ppWagons.join(', ')||'-',
+      ppTimes||'-',
+      matchedPp.map(p=>p.type||'').filter(Boolean).join(', ')||'-',
+    ];
+  });
+
+  const s9 = [
+    [`순수본 2공장  공정별 로트 추적표 — ${date}  (클레임 대응용)`],
+    [`※ 원육타입 열로 필터하면 해당 원육만 전 공정 추적 가능`],
+    [],
+    [
+      '설비','원육타입','제품명','포장시작','포장종료','생산EA',
+      '포장 투입LOT',
+      '파쇄 투입와건','파쇄 시간',
+      '자숙 탱크','케이지LOT','자숙 시간',
+      '전처리 대차','전처리 시간',
+      '원육타입(확인)',
+    ],
+    ...traceRows,
+  ];
+  const ws9 = XLSX.utils.aoa_to_sheet(s9);
+  ws9['!cols'] = [8,8,20,8,8,8,14,14,16,10,10,20,12,16,12].map(w=>({wch:w}));
+  // 헤더행(4번째 행=인덱스3)에 자동필터
+  ws9['!autofilter'] = { ref: `A4:O4` };
+  XLSX.utils.book_append_sheet(wb, ws9, '로트추적표');
+
+  await _saveXlsx(wb, `순수본2공장_작업일지_${date}.xlsx`);
   toast('일지 다운로드 완료 ✓');
 }
 
