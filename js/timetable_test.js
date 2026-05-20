@@ -2271,13 +2271,21 @@ function ttmSimulate(scen, workers) {
   }
   const fpPack = { s: fpPackStart, e: fpPackEnd, segments: fpLineSegments };
 
-  // 호기 2 (4호기) 총 가동 시간 검증
-  // - 60분 미만이면 효율 낮음 (셋업 비용 > 시간 절감)
-  // - 4호기 가동 취소 + 1호기 단일로 재시뮬 (시간 늘려서 처리)
-  const FP_DUAL_MIN_THRESHOLD = 60;
+  // 호기 2 (4호기) 검증
+  // 룰: 짧게 가동되는 4호기 슬롯 제거 (셋업 비효율)
+  //   - 슬롯별로 4호기 가동 분 검사
+  //   - 30분 미만 슬롯 제거 (한 슬롯 안에서 4호기 잠깐 가동은 의미 없음)
+  //   - 또는 전체 4호기 가동 60분 미만 시 모두 제거
+  const FP_DUAL_SLOT_MIN = 60;     // 슬롯당 최소 가동 분 (셋업 비용 고려)
+  const FP_DUAL_TOTAL_MIN = 60;    // 전체 최소 가동 분
+  // 1단계: 짧은 슬롯 제거
+  fpLineSegments[2] = fpLineSegments[2].filter(seg => (seg.end - seg.start) >= FP_DUAL_SLOT_MIN);
   const fpLine2TotalMin = fpLineSegments[2].reduce((sum, seg) => sum + (seg.end - seg.start), 0);
-  if (fpLine2TotalMin > 0 && fpLine2TotalMin < FP_DUAL_MIN_THRESHOLD) {
-    // 재시뮬: 호기 1만 사용
+  // 2단계: 전체 4호기 가동 시간 짧으면 모두 제거
+  const needResim = (fpLine2TotalMin > 0 && fpLine2TotalMin < FP_DUAL_TOTAL_MIN);
+  const removedShortSlots = (fpLineSegments[2].length === 0);
+  if (needResim || removedShortSlots) {
+    // 재시뮬: 호기 1만 사용 (4호기 모두 취소)
     const fpLineSegments2 = { 1: [], 2: [] };
     let fpProcessed2 = 0;
     let fpPackEnd2 = fpPackStart;
@@ -2288,7 +2296,6 @@ function ttmSimulate(scen, workers) {
       if (fpProcessed2 >= fpEa) break;
       const slotMid = (slotStart + slotEnd) / 2;
       const avail = availAt(slotMid);
-      // 호기 1만 (단일) - 인원 가용 ≥ 8 이면 가동
       if (avail < CREW_1_LINE) continue;
       const slotEffectiveEnd = Math.min(slotEnd, slotStart + Math.ceil((fpEa - fpProcessed2) / fpPpackEaMin));
       const minutesUsed = slotEffectiveEnd - slotStart;
@@ -2298,7 +2305,6 @@ function ttmSimulate(scen, workers) {
       if (last1 && last1.end === slotStart) last1.end = slotEffectiveEnd;
       else fpLineSegments2[1].push({ start: slotStart, end: slotEffectiveEnd });
     }
-    // 재시뮬 결과로 교체
     fpPack.e = fpPackEnd2;
     fpPack.segments = fpLineSegments2;
   }
