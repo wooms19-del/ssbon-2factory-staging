@@ -425,198 +425,189 @@ function renderTraceTimeline() {
   if (!d || !d.pk || !d.pk.length) { el.innerHTML = ''; if(card) card.style.display='none'; return; }
   if(card) card.style.display='';
 
-  // 시간 → 퍼센트 (05:00 ~ 20:00 = 900분)
-  const START_MIN = 5 * 60;
-  const TOTAL_MIN = 15 * 60;
+  // 시간(HH:MM) → 분
+  const toMin = t => { if(!t) return null; const [h,m]=t.split(':').map(Number); return h*60+m; };
+  // 분 → HH:MM
+  const toHHMM = m => { const h=Math.floor(m/60); return String(h).padStart(2,'0')+':'+String(m%60).padStart(2,'0'); };
+
+  // 시간 → 퍼센트 (05:00 ~ 20:30)
+  const START_MIN = 5*60;
+  const TOTAL_MIN = 15.5*60;
   const pct = t => {
-    if (!t) return null;
-    const [h, m] = t.split(':').map(Number);
-    return Math.max(0, Math.min(100, ((h * 60 + m - START_MIN) / TOTAL_MIN) * 100));
+    const m = toMin(t);
+    if(m===null) return null;
+    return Math.max(0, Math.min(100, ((m - START_MIN) / TOTAL_MIN) * 100));
   };
-  const widthPct = (s, e) => {
-    const sp = pct(s), ep = pct(e);
-    if (sp === null || ep === null) return 0;
-    return Math.max(0.5, ep - sp);
+  const widthPct = (s,e) => {
+    const sp=pct(s), ep=pct(e);
+    if(sp===null||ep===null) return 0;
+    return Math.max(0.5, ep-sp);
   };
 
   // 원육타입 목록
-  const types = [...new Set([
-    ...d.pp.map(r => r.type),
-    ...d.ck.map(r => r.type),
-    ...d.sh.map(r => r.type),
-    ...d.pk.map(r => r.type),
-  ].filter(Boolean))];
+  const types = [...new Set([...d.pp,...d.ck,...d.sh,...d.pk].map(r=>r.type).filter(Boolean))];
 
   // 와건→타입 매핑
   const wagonType = {};
   d.ck.forEach(r => {
-    const t = r.type || '';
-    (r.wagonOut || '').split(',').map(w => w.trim()).filter(Boolean).forEach(w => { wagonType[w] = t; });
+    const t = r.type||'';
+    (r.wagonOut||'').split(',').map(w=>w.trim()).filter(Boolean).forEach(w=>{ wagonType[w]=t; });
   });
   d.sh.forEach(r => {
-    const w = (r.wagonIn || '').trim();
-    if (w && !wagonType[w]) wagonType[w] = r.type || '';
+    const w=(r.wagonIn||'').trim();
+    if(w && !wagonType[w]) wagonType[w]=r.type||'';
   });
 
-  // 내포장 설비→원육타입 매핑 (레토르트 연결용)
-  const machineType = {};
-  d.pk.forEach(r => {
-    const wagons = [...(r.wagon||'').split(','), ...(r.cart||'').split(',')].map(w=>w.trim()).filter(Boolean);
-    const t = r.type || (wagons.length ? wagonType[wagons[0]] : '') || '';
-    if (r.machine && t) machineType[r.machine] = t;
-  });
-
-  const timeLabels = ['05:00','07:00','09:00','11:00','13:00','15:00','17:00','19:00','20:00'];
-
-  const barColors = {
-    pp: { bg:'#B5D4F4', color:'#0C447C' },
-    ck: { bg:'#9FE1CB', color:'#085041' },
-    sh: { bg:'#FAC775', color:'#633806' },
-    pk: { bg:'#CE93D8', color:'#4B1528' },
-    rt: { bg:'#FDA4AF', color:'#9F1239' },
-  };
-
-  const wagonColors = ['#FEF3C7|#92400E','#D1FAE5|#065F46','#EDE9FE|#5B21B6','#FCE7F3|#9D174D','#FFEDD5|#7C2D12','#E0F2FE|#0C4A6E','#FEE2E2|#991B1B','#D1FAE5|#064E3B'];
-  const allWagons = [...new Set([...d.sh.map(r=>r.wagonIn), ...d.pk.flatMap(r=>(r.wagon||'').split(',').map(w=>w.trim()))].filter(Boolean))];
-  const wagonColorMap = {};
-  allWagons.forEach((w, i) => { wagonColorMap[w] = wagonColors[i % wagonColors.length]; });
+  // 와건 색상 매핑
+  const wagonPalette = ['#FEF3C7|#92400E','#D1FAE5|#065F46','#EDE9FE|#5B21B6','#FCE7F3|#9D174D','#FFEDD5|#7C2D12','#E0F2FE|#0C4A6E','#FEE2E2|#991B1B','#ECFCCB|#365314'];
+  const allWagons = [...new Set([...d.sh.map(r=>r.wagonIn),...d.pk.flatMap(r=>(r.wagon||'').split(',').map(w=>w.trim()))].filter(Boolean))];
+  const wCM = {};
+  allWagons.forEach((w,i)=>{ wCM[w]=wagonPalette[i%wagonPalette.length]; });
 
   const wBadge = w => {
-    if (!w) return '';
-    const [bg, col] = (wagonColorMap[w] || '#F3F4F6|#374151').split('|');
-    return `<span style="display:inline-block;font-size:9px;padding:1px 5px;border-radius:3px;background:${bg};color:${col};font-weight:500;margin-left:2px">${w}</span>`;
+    if(!w) return '';
+    const [bg,col]=(wCM[w]||'#F3F4F6|#374151').split('|');
+    return `<span style="display:inline-block;font-size:9px;padding:1px 4px;border-radius:3px;background:${bg};color:${col};font-weight:600;margin:0 1px">${w}</span>`;
   };
 
-  const makeBar = (kind, left, width, label, extraStyle) => {
-    const c = barColors[kind];
-    return `<div style="position:absolute;left:${left.toFixed(1)}%;width:${Math.max(width,0.5).toFixed(1)}%;height:100%;border-radius:3px;background:${c.bg};display:flex;align-items:center;overflow:hidden${extraStyle||''}">
-      <span style="font-size:9px;padding:0 4px;white-space:nowrap;color:${c.color}">${label}</span>
-    </div>`;
+  const barC = {
+    pp:{bg:'#B5D4F4',c:'#0C447C'},
+    ck:{bg:'#9FE1CB',c:'#085041'},
+    sh:{bg:'#FAC775',c:'#633806'},
+    pk:{bg:'#CE93D8',c:'#4B1528'},
+    rt:{bg:'#FDA4AF',c:'#9F1239'},
   };
 
-  const makeRow = (labelHtml, barHtml, dataType) =>
-    `<div class="tr-tl-row" data-type="${dataType}" style="display:flex;align-items:center;margin-bottom:3px">
-      <div style="width:130px;flex-shrink:0;font-size:10px;color:var(--g4);text-align:right;padding-right:8px;line-height:1.5">${labelHtml}</div>
-      <div style="flex:1;height:18px;background:var(--g1);border-radius:3px;position:relative">${barHtml}</div>
+  const LW = 110; // 라벨 width
+
+  const makeBar = (kind, left, width, label) => {
+    const c = barC[kind];
+    return `<div style="position:absolute;left:${left.toFixed(1)}%;width:${Math.max(width,0.5).toFixed(1)}%;height:100%;border-radius:3px;background:${c.bg};display:flex;align-items:center;overflow:hidden">
+      <span style="font-size:9px;padding:0 4px;white-space:nowrap;color:${c.c}">${label}</span></div>`;
+  };
+
+  const makeRow = (label, bar, dtype, h=16) =>
+    `<div class="tr-tl-row" data-type="${dtype}" style="display:flex;align-items:center;margin-bottom:2px">
+      <div style="width:${LW}px;flex-shrink:0;font-size:9px;color:var(--g4);text-align:right;padding-right:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${label}</div>
+      <div style="flex:1;height:${h}px;background:var(--g1);border-radius:3px;position:relative">${bar}</div>
     </div>`;
 
-  const secLabel = txt =>
-    `<div style="font-size:9px;color:var(--g4);padding-left:130px;margin:8px 0 3px;font-weight:500">— ${txt}</div>`;
+  const secLbl = txt =>
+    `<div style="font-size:9px;color:var(--g3);padding-left:${LW}px;margin:6px 0 2px;font-weight:500;letter-spacing:.2px">— ${txt}</div>`;
 
   let rows = '';
 
-  // 전처리 (타입별)
-  rows += secLabel('전처리');
+  // ── 전처리 (타입별 1행)
+  rows += secLbl('전처리');
   const ppByType = {};
   d.pp.forEach(r => {
-    const t = r.type || '기타';
-    if (!ppByType[t]) ppByType[t] = { wagons: [], starts: [], ends: [], cages: [] };
-    ppByType[t].wagons.push(...(r.wagons||'').split(',').map(w=>w.trim()).filter(Boolean));
+    const t=r.type||'기타';
+    if(!ppByType[t]) ppByType[t]={starts:[],ends:[],cages:[]};
     ppByType[t].starts.push(r.start);
     ppByType[t].ends.push(r.end);
     ppByType[t].cages.push(...(r.cage||'').split(',').map(c=>c.trim()).filter(Boolean));
   });
-  Object.entries(ppByType).forEach(([t, v]) => {
-    const s = v.starts.filter(Boolean).sort()[0];
-    const e = v.ends.filter(Boolean).sort().pop();
-    const sp = pct(s), wp = widthPct(s, e);
-    if (sp !== null) {
-      const cageStr = [...new Set(v.cages)].join(',');
-      rows += makeRow(
-        `<span style="font-size:10px;font-weight:500">${t}</span><br><span style="font-size:9px">대차 ${[...new Set(v.wagons)].join(',')||'-'}</span><br><span style="font-size:9px;color:var(--g3)">→ 케이지 ${cageStr||'-'}</span>`,
-        makeBar('pp', sp, wp, `${s} → ${e}`), t);
+  Object.entries(ppByType).forEach(([t,v]) => {
+    const s=v.starts.filter(Boolean).sort()[0];
+    const e=v.ends.filter(Boolean).sort().pop();
+    const sp=pct(s), wp=widthPct(s,e);
+    if(sp!==null) {
+      const cages=[...new Set(v.cages)].join(',');
+      rows += makeRow(`${t} → 케이지 ${cages||'-'}`, makeBar('pp',sp,wp,`${s}→${e}`), t);
     }
   });
 
-  // 자숙 (탱크별, 배출와건 표시)
-  rows += secLabel('자숙');
+  // ── 자숙 (탱크별, 배출와건 표시)
+  rows += secLbl('자숙');
   d.ck.forEach(r => {
-    const sp = pct(r.start), wp = widthPct(r.start, r.end);
-    if (sp === null) return;
-    const t = r.type || '-';
-    const outWagons = (r.wagonOut||'').split(',').map(w=>w.trim()).filter(Boolean);
-    const wBadges = outWagons.map(wBadge).join('');
+    const sp=pct(r.start), wp=widthPct(r.start,r.end);
+    if(sp===null) return;
+    const t=r.type||'-';
+    const outW=(r.wagonOut||'').split(',').map(w=>w.trim()).filter(Boolean);
     rows += makeRow(
-      `${r.tank||''}탱크 · ${r.cage||''}<br><span style="font-size:9px">${t}</span><br><span style="font-size:9px;color:var(--g3)">→ ${wBadges||'-'}</span>`,
-      makeBar('ck', sp, wp, `${r.start} → ${r.end}`), t);
+      `${r.tank||''}탱크·${r.cage||''} →${outW.map(wBadge).join('')}`,
+      makeBar('ck',sp,wp,`${r.start}→${r.end}`), t);
   });
 
-  // 파쇄 (wagonIn별)
-  rows += secLabel('파쇄 (와건별)');
+  // ── 파쇄 (와건별)
+  rows += secLbl('파쇄');
   d.sh.forEach(r => {
-    const sp = pct(r.start), wp = widthPct(r.start, r.end);
-    if (sp === null) return;
-    const w = (r.wagonIn || '').trim();
-    const t = wagonType[w] || r.type || '-';
-    const outW = (r.wagonOut||'').split(',').map(x=>x.trim()).filter(Boolean);
+    const sp=pct(r.start), wp=widthPct(r.start,r.end);
+    if(sp===null) return;
+    const w=(r.wagonIn||'').trim();
+    const t=wagonType[w]||r.type||'-';
+    const outW=(r.wagonOut||'').split(',').map(x=>x.trim()).filter(Boolean);
     rows += makeRow(
-      `${wBadge(w)}<br><span style="font-size:9px;color:var(--g3)">→ ${outW.map(wBadge).join('')||w}</span>`,
-      makeBar('sh', sp, wp, `${r.start}→${r.end}`), t);
+      `${wBadge(w)}→${outW.map(wBadge).join('')||wBadge(w)}`,
+      makeBar('sh',sp,wp,`${r.start}→${r.end}`), t);
   });
 
-  // 내포장 (설비·포장건별, 와건 표시)
-  rows += secLabel('내포장 (설비·와건별)');
+  // ── 내포장 (포장건별)
+  rows += secLbl('내포장');
   d.pk.forEach(r => {
-    const sp = pct(r.start), wp = widthPct(r.start, r.end);
-    if (sp === null) return;
-    const wagons = [...(r.wagon||'').split(','), ...(r.cart||'').split(',')].map(w=>w.trim()).filter(Boolean);
-    const t = r.type || (wagons.length ? wagonType[wagons[0]] : '') || '-';
+    const sp=pct(r.start), wp=widthPct(r.start,r.end);
+    if(sp===null) return;
+    const wagons=[...(r.wagon||'').split(','),...(r.cart||'').split(',')].map(w=>w.trim()).filter(Boolean);
+    const t=r.type||(wagons.length?wagonType[wagons[0]]:'')||'-';
     rows += makeRow(
-      `${r.machine||''}<br>${wagons.map(wBadge).join('')}`,
-      makeBar('pk', sp, wp, `${r.start} → ${r.end} · ${(r.ea||0).toLocaleString()}EA`), t);
+      `${r.machine||''} ${wagons.map(wBadge).join('')}`,
+      makeBar('pk',sp,wp,`${r.start}→${r.end} · ${(r.ea||0).toLocaleString()}EA`), t);
   });
 
-  // 레토르트 (홍두깨 FC 제품, 임시 하드코딩 — 추후 DB 연동)
-  const hasFc = d.pk.some(r => (r.product||'').includes('FC') || (r.product||'').includes('3KG'));
-  if (hasFc) {
+  // ── 레토르트 (FC/홍두깨, 내포장 종료 기준 자동 계산)
+  const fcPk = d.pk.filter(r=>(r.product||'').includes('FC')||(r.product||'').includes('3KG'));
+  if(fcPk.length) {
+    const RT_MIN = 130;
+    // 내포장 전체 종료 시간 중 최대값
+    const pkEndMin = fcPk.map(r=>toMin(r.end)).filter(v=>v!==null).reduce((a,b)=>Math.max(a,b), 0);
+    // 레토르트 2회: 마지막은 내포장 종료 후, 첫번째는 그보다 130분 전
+    const rt2Start = pkEndMin;
+    const rt2End   = rt2Start + RT_MIN;
+    const rt1Start = rt2Start - RT_MIN;
+    const rt1End   = rt2Start;
+
+    rows += secLbl('레토르트');
     const rtType = '홍두깨';
-    rows += secLabel('레토르트');
-    // 2호기: 16:32~19:42 (내포장 2호기 연결)
-    const rt2start = '16:32', rt2end = '19:42';
-    const sp2 = pct(rt2start), wp2 = widthPct(rt2start, rt2end);
-    if (sp2 !== null) {
-      rows += makeRow(
-        `레토르트 2호기<br><span style="font-size:9px;color:var(--g3)">← 내포장 2호기</span>`,
-        makeBar('rt', sp2, wp2, `${rt2start} → ${rt2end} (130분)`), rtType);
-    }
-    // 1호기: 17:02~20:10
-    const rt1start = '17:02', rt1end = '20:10';
-    const sp1 = pct(rt1start), wp1 = widthPct(rt1start, rt1end);
-    if (sp1 !== null) {
-      rows += makeRow(
-        `레토르트 1호기<br><span style="font-size:9px;color:var(--g3)">← 내포장 2호기</span>`,
-        makeBar('rt', sp1, wp1, `${rt1start} → ${rt1end} (130분)`), rtType);
-    }
+
+    const sp1=pct(toHHMM(rt1Start)), wp1=widthPct(toHHMM(rt1Start),toHHMM(rt1End));
+    if(sp1!==null) rows += makeRow(
+      `레토르트 1회차`,
+      makeBar('rt',sp1,wp1,`${toHHMM(rt1Start)}→${toHHMM(rt1End)}`), rtType);
+
+    const sp2=pct(toHHMM(rt2Start)), wp2=widthPct(toHHMM(rt2Start),toHHMM(rt2End));
+    if(sp2!==null) rows += makeRow(
+      `레토르트 2회차`,
+      makeBar('rt',sp2,wp2,`${toHHMM(rt2Start)}→${toHHMM(rt2End)}`), rtType);
   }
 
-  // 필터 버튼
-  const filterBtns = ['전체', ...types].map(t =>
+  // ── 필터 버튼
+  const filterBtns = ['전체',...types].map(t =>
     `<button onclick="trTlFilter('${t}',this)" style="font-size:11px;padding:3px 10px;border-radius:20px;border:0.5px solid var(--g2);background:${t==='전체'?'var(--s)':'var(--bg)'};color:${t==='전체'?'#fff':'var(--g5)'};cursor:pointer;font-weight:${t==='전체'?'500':'400'}">${t}</button>`
   ).join('');
 
-  // 시간축
-  const timeAxis = `<div style="display:flex;padding-left:130px;margin-bottom:6px">
-    ${timeLabels.map(l=>`<div style="flex:1;font-size:9px;color:var(--g4);text-align:left">${l}</div>`).join('')}
+  // 시간축 (05:00~20:30, 2시간 간격)
+  const tlLabels = ['05:00','07:00','09:00','11:00','13:00','15:00','17:00','19:00','20:30'];
+  const timeAxis = `<div style="display:flex;padding-left:${LW}px;margin-bottom:5px">
+    ${tlLabels.map(l=>`<div style="flex:1;font-size:9px;color:var(--g3);text-align:left">${l}</div>`).join('')}
   </div>`;
 
   // 범례
-  const legend = `<div style="display:flex;gap:12px;margin-top:10px;flex-wrap:wrap">
-    ${[['전처리','#B5D4F4'],['자숙','#9FE1CB'],['파쇄','#FAC775'],['내포장','#CE93D8'],['레토르트','#FDA4AF'],['와건색상=공정연결','#FEF3C7']].map(([l,c])=>
-      `<div style="display:flex;align-items:center;gap:4px;font-size:10px;color:var(--g4)">
-        <div style="width:10px;height:10px;border-radius:2px;background:${c}"></div>${l}
-      </div>`).join('')}
+  const legend = `<div style="display:flex;gap:10px;margin-top:8px;flex-wrap:wrap">
+    ${[['전처리','#B5D4F4'],['자숙','#9FE1CB'],['파쇄','#FAC775'],['내포장','#CE93D8'],['레토르트','#FDA4AF']].map(([l,c])=>
+      `<div style="display:flex;align-items:center;gap:3px;font-size:10px;color:var(--g4)">
+        <div style="width:9px;height:9px;border-radius:2px;background:${c}"></div>${l}</div>`).join('')}
+    <div style="font-size:10px;color:var(--g3)">· 와건 색상 = 공정 간 연결</div>
   </div>`;
 
   el.innerHTML = `
-    <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--g2)">
+    <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--g2)">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
         <div style="font-size:12px;font-weight:600;color:var(--g5)">공정 이력 타임라인</div>
-        <div style="display:flex;gap:5px" id="trTlFilters">${filterBtns}</div>
+        <div style="display:flex;gap:4px" id="trTlFilters">${filterBtns}</div>
       </div>
-      <div style="overflow-x:auto;background:var(--bg);border:1px solid var(--g2);border-radius:8px;padding:12px">
-        <div style="min-width:520px">
-          ${timeAxis}
-          ${rows}
+      <div style="overflow-x:auto;background:var(--bg);border:1px solid var(--g2);border-radius:8px;padding:10px 12px">
+        <div style="min-width:500px">
+          ${timeAxis}${rows}
         </div>
       </div>
       ${legend}
