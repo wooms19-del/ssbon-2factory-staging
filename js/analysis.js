@@ -3517,10 +3517,22 @@ function renderPackingChart(dayEntries, opMap, ym) {
 // 일별 원육 사용량 차트
 var _moRmChart = null;
 var _moRmTab = '종합';  // 현재 선택된 탭
-// 부위별 색상 — 자동 깔끔하게 (부위 가나다순으로 매핑되도록 정렬해서 처리)
-var _MO_RM_PALETTE = ['#1D9E75','#D85A30','#185FA5','#BA7517','#993556','#0F6E56','#534AB7'];
+// 부위별 색상 고정 (대표님 헷갈림 방지)
+//   기존: 홍두깨 = 붉은색, 우둔 = 녹색
+//   신규: 설도 = 파란색 (추가된 부위만 새 색)
+//   원칙: 신규 부위 추가되어도 기존 부위 색은 절대 안 바뀜
+var _MO_RM_COLOR_MAP = {
+  '홍두깨': '#D85A30',  // 붉은색 (기존)
+  '우둔':   '#1D9E75',  // 녹색 (기존)
+  '설도':   '#185FA5',  // 파란색 (신규)
+};
+var _MO_RM_PALETTE = ['#BA7517','#993556','#0F6E56','#534AB7','#888780'];  // 매핑에 없는 부위 추가 시 폴백
 function _moRmColorFor(part, allParts){
-  const idx = allParts.indexOf(part);
+  // 1순위: 부위별 고정 색
+  if(_MO_RM_COLOR_MAP[part]) return _MO_RM_COLOR_MAP[part];
+  // 2순위: 매핑에 없는 부위 → 폴백 (안정적 인덱스)
+  const unmapped = (allParts || []).filter(p => !_MO_RM_COLOR_MAP[p]);
+  const idx = unmapped.indexOf(part);
   if(idx < 0) return '#888780';
   return _MO_RM_PALETTE[idx % _MO_RM_PALETTE.length];
 }
