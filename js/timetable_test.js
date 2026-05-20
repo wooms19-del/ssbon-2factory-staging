@@ -2633,7 +2633,13 @@ function ttmRenderWorkerSlots(scen, workers, sim) {
     else onsite = totalWorkers;
 
     const mgr = mid >= mgrTimeMin ? mgrMin : 0;
-    const act = (ps,pe) => mid >= ps && mid < pe;
+    // 슬롯과 작업 구간이 겹치는지 검사 (mid만 검사하면 짧은 작업 누락)
+    // 작업 구간이 슬롯의 50% 이상 차지하면 가동 표시
+    const overlap = (ps, pe) => {
+      const ov = Math.max(0, Math.min(pe, e) - Math.max(ps, s));
+      return ov >= (e - s) * 0.5;  // 슬롯의 절반 이상 가동
+    };
+    const act = overlap;
     let pre = (act(sim.fp.pre.s,sim.fp.pre.e) ? workers.preFp : 0)
             + (act(sim.fc.pre.s,sim.fc.pre.e) ? workers.preFc : 0);
     let crush = act(sim.fp.crush.s,sim.fp.crush.e) ? workers.crushFp : 0;
