@@ -200,6 +200,8 @@ async function doTrace(){
     { key:'pk',  label:'포장',   sub:`${pk.length}건 · ${totalEA.toLocaleString()}EA`,               color:'#6d28d9',  dateStr: dateRange(pk) },
   ];
 
+  document.getElementById('trTimeline') && (document.getElementById('trTimeline').innerHTML = '');
+  setTimeout(renderTraceTimeline, 0);
   el.innerHTML = `
     <div style="font-size:12px;color:var(--g5);margin-bottom:8px">📅 ${q} 포장 기준 역추적 · 클릭하면 세부내용</div>
     ${items.map(item => `
@@ -412,3 +414,192 @@ function showTraceDetail(key){
 async function renderTrTbl(){ /* 더 이상 사용 안 함 */ }
 
 // ============================================================
+// ============================================================
+// 이력추적 타임라인 렌더링
+// ============================================================
+function renderTraceTimeline() {
+  const d = _traceData;
+  const el = document.getElementById('trTimeline');
+  const card = document.getElementById('trTimelineCard');
+  if (!el) return;
+  if (!d || !d.pk || !d.pk.length) { el.innerHTML = ''; if(card) card.style.display='none'; return; }
+  if(card) card.style.display='';
+
+  const r2 = v => Math.round(parseFloat(v) * 100) / 100;
+
+  // 시간 → 퍼센트 (05:00 ~ 18:00 = 780분)
+  const START_MIN = 5 * 60;
+  const TOTAL_MIN = 13 * 60;
+  const pct = t => {
+    if (!t) return null;
+    const [h, m] = t.split(':').map(Number);
+    return Math.max(0, Math.min(100, ((h * 60 + m - START_MIN) / TOTAL_MIN) * 100));
+  };
+  const widthPct = (s, e) => {
+    const sp = pct(s), ep = pct(e);
+    if (sp === null || ep === null) return 0;
+    return Math.max(1, ep - sp);
+  };
+
+  // 원육타입 목록
+  const types = [...new Set([
+    ...d.pp.map(r => r.type),
+    ...d.ck.map(r => r.type),
+    ...d.sh.map(r => r.type),
+    ...d.pk.map(r => r.type),
+  ].filter(Boolean))];
+
+  // 와건→타입 매핑 (자숙 wagonOut 기준)
+  const wagonType = {};
+  d.ck.forEach(r => {
+    const t = r.type || '';
+    (r.wagonOut || '').split(',').map(w => w.trim()).filter(Boolean).forEach(w => { wagonType[w] = t; });
+  });
+  // 파쇄 wagonIn도 보강
+  d.sh.forEach(r => {
+    const w = (r.wagonIn || '').trim();
+    if (w && !wagonType[w]) wagonType[w] = r.type || '';
+  });
+
+  const timeLabels = ['05:00','07:00','09:00','11:00','13:00','15:00','17:00','18:00'];
+
+  const barColors = {
+    pp: { bg:'#B5D4F4', color:'#0C447C' },
+    ck: { bg:'#9FE1CB', color:'#085041' },
+    sh: { bg:'#FAC775', color:'#633806' },
+    pk: { bg:'#CE93D8', color:'#4B1528' },
+  };
+
+  const wagonColors = ['#FEF3C7|#92400E','#D1FAE5|#065F46','#EDE9FE|#5B21B6','#FCE7F3|#9D174D','#FFEDD5|#7C2D12','#E0F2FE|#0C4A6E'];
+  const allWagons = [...new Set([...d.sh.map(r=>r.wagonIn), ...d.pk.flatMap(r=>(r.wagon||'').split(',').map(w=>w.trim()))].filter(Boolean))];
+  const wagonColorMap = {};
+  allWagons.forEach((w, i) => { wagonColorMap[w] = wagonColors[i % wagonColors.length]; });
+
+  const wBadge = w => {
+    if (!w) return '';
+    const [bg, col] = (wagonColorMap[w] || '#F3F4F6|#374151').split('|');
+    return `<span style="display:inline-block;font-size:9px;padding:1px 5px;border-radius:3px;background:${bg};color:${col};font-weight:500;margin-left:2px">${w}</span>`;
+  };
+
+  const makeBar = (kind, left, width, label) => {
+    const c = barColors[kind];
+    return `<div style="position:absolute;left:${left.toFixed(1)}%;width:${Math.max(width,1).toFixed(1)}%;height:100%;border-radius:3px;background:${c.bg};display:flex;align-items:center;overflow:hidden">
+      <span style="font-size:9px;padding:0 4px;white-space:nowrap;color:${c.color}">${label}</span>
+    </div>`;
+  };
+
+  const makeRow = (labelHtml, barHtml, dataType) =>
+    `<div class="tr-tl-row" data-type="${dataType}" style="display:flex;align-items:center;margin-bottom:3px">
+      <div style="width:120px;flex-shrink:0;font-size:10px;color:var(--g4);text-align:right;padding-right:8px;line-height:1.4">${labelHtml}</div>
+      <div style="flex:1;height:17px;background:var(--g1);border-radius:3px;position:relative">${barHtml}</div>
+    </div>`;
+
+  const secLabel = txt =>
+    `<div style="font-size:9px;color:var(--g4);padding-left:120px;margin:7px 0 3px">— ${txt}</div>`;
+
+  let rows = '';
+
+  // 전처리
+  rows += secLabel('전처리');
+  const ppByType = {};
+  d.pp.forEach(r => {
+    const t = r.type || '기타';
+    if (!ppByType[t]) ppByType[t] = { wagons: [], starts: [], ends: [] };
+    ppByType[t].wagons.push(...(r.wagons||'').split(',').map(w=>w.trim()).filter(Boolean));
+    ppByType[t].starts.push(r.start);
+    ppByType[t].ends.push(r.end);
+  });
+  Object.entries(ppByType).forEach(([t, v]) => {
+    const s = v.starts.filter(Boolean).sort()[0];
+    const e = v.ends.filter(Boolean).sort().pop();
+    const sp = pct(s), wp = widthPct(s, e);
+    if (sp !== null) {
+      const label = `${s} → ${e}`;
+      rows += makeRow(`<span style="font-size:9px">${t}</span><br>대차 ${[...new Set(v.wagons)].join(',')||'-'}`,
+        makeBar('pp', sp, wp, label), t);
+    }
+  });
+
+  // 자숙
+  rows += secLabel('자숙');
+  d.ck.forEach(r => {
+    const sp = pct(r.start), wp = widthPct(r.start, r.end);
+    if (sp === null) return;
+    const t = r.type || '-';
+    rows += makeRow(`${r.tank||''}탱크 · ${r.cage||''}<br><span style="font-size:9px;color:var(--g4)">${t}</span>`,
+      makeBar('ck', sp, wp, `${r.start} → ${r.end}`), t);
+  });
+
+  // 파쇄 (wagonIn별)
+  rows += secLabel('파쇄 (와건별)');
+  d.sh.forEach(r => {
+    const sp = pct(r.start), wp = widthPct(r.start, r.end);
+    if (sp === null) return;
+    const w = (r.wagonIn || '').trim();
+    const t = wagonType[w] || r.type || '-';
+    rows += makeRow(`${wBadge(w)} <span style="font-size:9px;color:var(--g4)">${t}</span>`,
+      makeBar('sh', sp, wp, `${r.start}→${r.end}`), t);
+  });
+
+  // 내포장 (설비·와건별)
+  rows += secLabel('내포장 (설비·와건별)');
+  d.pk.forEach(r => {
+    const sp = pct(r.start), wp = widthPct(r.start, r.end);
+    if (sp === null) return;
+    const wagons = [...(r.wagon||'').split(','), ...(r.cart||'').split(',')].map(w=>w.trim()).filter(Boolean);
+    const t = r.type || (wagons.length ? wagonType[wagons[0]] : '') || '-';
+    rows += makeRow(`${r.machine||''} ${wagons.map(wBadge).join('')}`,
+      makeBar('pk', sp, wp, `${r.start} → ${r.end}`), t);
+  });
+
+  // 필터 버튼
+  const filterBtns = ['전체', ...types].map(t =>
+    `<button onclick="trTlFilter('${t}',this)" style="font-size:11px;padding:3px 10px;border-radius:20px;border:0.5px solid var(--g2);background:${t==='전체'?'var(--s)':'var(--bg)'};color:${t==='전체'?'#fff':'var(--g5)'};cursor:pointer;font-weight:${t==='전체'?'500':'400'}">${t}</button>`
+  ).join('');
+
+  // 시간축
+  const timeAxis = `<div style="display:flex;padding-left:120px;margin-bottom:6px">
+    ${timeLabels.map(l=>`<div style="flex:1;font-size:9px;color:var(--g4);text-align:left">${l}</div>`).join('')}
+  </div>`;
+
+  // 범례
+  const legend = `<div style="display:flex;gap:12px;margin-top:10px;flex-wrap:wrap">
+    ${[['전처리','#B5D4F4'],['자숙','#9FE1CB'],['파쇄','#FAC775'],['내포장','#CE93D8']].map(([l,c])=>
+      `<div style="display:flex;align-items:center;gap:4px;font-size:10px;color:var(--g4)">
+        <div style="width:10px;height:10px;border-radius:2px;background:${c}"></div>${l}
+      </div>`).join('')}
+  </div>`;
+
+  el.innerHTML = `
+    <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--g2)">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div style="font-size:12px;font-weight:600;color:var(--g5)">공정 이력 타임라인</div>
+        <div style="display:flex;gap:5px" id="trTlFilters">${filterBtns}</div>
+      </div>
+      <div style="overflow-x:auto;background:var(--bg);border:1px solid var(--g2);border-radius:8px;padding:12px">
+        <div style="min-width:480px">
+          ${timeAxis}
+          ${rows}
+        </div>
+      </div>
+      ${legend}
+    </div>`;
+}
+
+function trTlFilter(type, btn) {
+  document.querySelectorAll('#trTlFilters button').forEach(b => {
+    b.style.background = 'var(--bg)';
+    b.style.color = 'var(--g5)';
+    b.style.fontWeight = '400';
+  });
+  btn.style.background = 'var(--s)';
+  btn.style.color = '#fff';
+  btn.style.fontWeight = '500';
+  document.querySelectorAll('.tr-tl-row').forEach(row => {
+    if (type === '전체') {
+      row.style.display = 'flex';
+    } else {
+      row.style.display = row.dataset.type === type ? 'flex' : 'none';
+    }
+  });
+}
