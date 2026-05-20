@@ -2112,10 +2112,33 @@ function ttmSimulate(scen, workers) {
     fcCookLineEnd = investStart; // 다음 탱크는 이전과 동시 가능 (4탱크 운영)
   }
 
-  // === 5. FP 파쇄 ===
-  const fpCrush = { s: fpCook.e, e: fpCook.e + fpCrushMin };
+  // === 5. FP 파쇄 (점심 시간 회피 - 점심엔 인원 부족으로 정지) ===
+  // 점심 시간(11:30~13:30) 동안 파쇄 멈춤. 그만큼 종료 늦어짐.
+  const LUNCH_S = 11*60+30;
+  const LUNCH_E = 13*60+30;
+  const addWithLunchSkip = (start, duration) => {
+    // start부터 duration 분만큼 작업. 점심 시간 만나면 그만큼 미룸.
+    let elapsed = 0;
+    let t = start;
+    while (elapsed < duration) {
+      // 현재 시점이 점심 시간이면 점심 끝까지 건너뛰기
+      if (t >= LUNCH_S && t < LUNCH_E) {
+        t = LUNCH_E;
+        continue;
+      }
+      // 점심 시간 들어가기 전까지 작업
+      const nextLunch = (t < LUNCH_S) ? LUNCH_S : Infinity;
+      const remaining = duration - elapsed;
+      const canDo = Math.min(remaining, nextLunch - t);
+      elapsed += canDo;
+      t += canDo;
+    }
+    return t;
+  };
+  const fpCrushEnd = addWithLunchSkip(fpCook.e, fpCrushMin);
+  const fpCrush = { s: fpCook.e, e: fpCrushEnd };
 
-  // === 6. FC 파쇄 (회차별, FP 파쇄 후) ===
+  // === 6. FC 파쇄 (회차별, FP 파쇄 후, 점심 시간 회피) ===
   const fcCrushes = [];
   let fcCrushLineEnd = fpCrush.e;
   for (let i = 0; i < fcCook.length; i++) {
@@ -2124,7 +2147,7 @@ function ttmSimulate(scen, workers) {
     const tankKg = fcTankKgs[i] * (scen.fc.yCook / 100) * (fcYcrush / 100);
     const tankCrushMin = Math.ceil(tankKg / (fcPcrush * workers.crushFc) * 60);
     const crushStart = Math.max(tankEnd, fcCrushLineEnd);
-    const crushEnd = crushStart + tankCrushMin;
+    const crushEnd = addWithLunchSkip(crushStart, tankCrushMin);
     fcCrushes.push({ s: crushStart, e: crushEnd, tank: i + 1, kg: r2(tankKg) });
     fcCrushLineEnd = crushEnd;
   }
@@ -2258,56 +2281,59 @@ function ttmSimulate(scen, workers) {
   const fcPackEnd = Math.max(fcPackEndRaw, fcLastBatchEnd);
   const fcPack = { s: fcPackStart, e: fcPackEnd };
 
+
   // === 11. 레토르트 회차 분배 ===
-  // FP: 4대차 풀 충전 시 시작 (마지막만 부분)
-  // FC: 부분 OK
-  const fpCarts = fpEa / scen.fp.info.eaPerCart;
-  const fpCycles = Math.ceil(fpCarts / TTM_FIXED.retortCartsPerCycle);
-  const fpCycleList = [];
-  for (let i = 0; i < fpCycles; i++) {
-    const cartsThis = Math.min(TTM_FIXED.retortCartsPerCycle, fpCarts - i * TTM_FIXED.retortCartsPerCycle);
-    fpCycleList.push({ carts: round1(cartsThis), ea: r2(Math.min(fpEa - i * TTM_FIXED.retortCartsPerCycle * scen.fp.info.eaPerCart, TTM_FIXED.retortCartsPerCycle * scen.fp.info.eaPerCart)) });
-  }
-  // FP는 4대차 풀로 채워질 시점 = (회차당 EA / 1라인 속도) × 회차수
-  const fpCartMin = scen.fp.info.eaPerCart / fpPpackEaMin; // 1대차 채우는데 걸리는 분 (단일 라인 기준)
-  const retortBusy = [0, 0, 0];
+  // 새 룰 (사용자 요청):
+  //   - 각 호기 비면 즉시 가동 (4대차 풀 충전 기다리지 X)
+  //   - 내포장 라인 60분 이상 멈춤 = 그 시점 카트 송출
+  //   - FP/FC 모두 부분 대차 OK
+  const RETORT_GAP_MIN = 60;
   const fpRetort = [];
-  for (let i = 0; i < fpCycleList.length; i++) {
-    const cartsThis = fpCycleList[i].carts;
-    const fullCycle = (cartsThis >= TTM_FIXED.retortCartsPerCycle);
-    // 마지막 부분 회차면 fpPack.e 까지 기다림. 풀 회차면 (i+1) × cartMin × 4 시점.
-    const fillTime = fpPack.s + Math.ceil(fpCartMin * (i+1) * TTM_FIXED.retortCartsPerCycle);
-    const lastCycle = (i === fpCycleList.length - 1);
-    const startReady = (lastCycle && !fullCycle) ? fpPack.e : fillTime;
-    let host = 0;
-    for (let h = 1; h < 3; h++) if (retortBusy[h] < retortBusy[host]) host = h;
-    const start = Math.max(startReady, retortBusy[host]);
-    const end = start + TTM_FIXED.retortCycleMin;
-    retortBusy[host] = end;
-    fpRetort.push({ s: start, e: end, host: host+1, carts: cartsThis, ea: fpCycleList[i].ea });
+  const fcRetort = [];
+  const retortBusy = [0, 0, 0];
+
+  // FP 라인 1, 2 별로 처리
+  for (const line of [1, 2]) {
+    const lineSegs = fpLineSegments[line];
+    if (lineSegs.length === 0) continue;
+    let accumEa = 0;
+    for (let i = 0; i < lineSegs.length; i++) {
+      const seg = lineSegs[i];
+      const minutes = seg.end - seg.start;
+      accumEa += fpPpackEaMin * minutes;
+      // 송출 시점: 마지막 세그먼트 또는 다음 세그먼트와 60분+ 간격
+      const nextSeg = lineSegs[i + 1];
+      const shouldSend = !nextSeg || (nextSeg.start - seg.end >= RETORT_GAP_MIN);
+      if (!shouldSend) continue;
+      // 누적된 EA를 4대차씩 분배 (남는 건 부분)
+      while (accumEa > 0) {
+        const cycleEa = Math.min(accumEa, TTM_FIXED.retortCartsPerCycle * scen.fp.info.eaPerCart);
+        const cartsThis = round1(cycleEa / scen.fp.info.eaPerCart);
+        let host = 0;
+        for (let h = 1; h < 3; h++) if (retortBusy[h] < retortBusy[host]) host = h;
+        const start = Math.max(seg.end, retortBusy[host]);
+        const end = start + TTM_FIXED.retortCycleMin;
+        retortBusy[host] = end;
+        fpRetort.push({ s: start, e: end, host: host+1, carts: cartsThis, ea: r2(cycleEa) });
+        accumEa -= cycleEa;
+      }
+    }
   }
 
-  // FC 레토르트
-  const fcCarts = fcEa / scen.fc.eaPerCart;
-  const fcCycles = Math.ceil(fcCarts / TTM_FIXED.retortCartsPerCycle);
-  const fcCycleList = [];
-  for (let i = 0; i < fcCycles; i++) {
-    const cartsThis = Math.min(TTM_FIXED.retortCartsPerCycle, fcCarts - i * TTM_FIXED.retortCartsPerCycle);
-    fcCycleList.push({ carts: round1(cartsThis), ea: r2(Math.min(fcEa - i * TTM_FIXED.retortCartsPerCycle * scen.fc.eaPerCart, TTM_FIXED.retortCartsPerCycle * scen.fc.eaPerCart)) });
-  }
-  const fcCartMin = scen.fc.eaPerCart / fcPpackEaMin;
-  const fcRetort = [];
-  for (let i = 0; i < fcCycleList.length; i++) {
-    // FC는 부분 OK
-    const fillTime = fcPack.s + Math.ceil(fcCartMin * (i+1) * TTM_FIXED.retortCartsPerCycle);
-    const lastCycle = (i === fcCycleList.length - 1);
-    const startReady = lastCycle ? fcPack.e : Math.min(fillTime, fcPack.e);
-    let host = 0;
-    for (let h = 1; h < 3; h++) if (retortBusy[h] < retortBusy[host]) host = h;
-    const start = Math.max(startReady, retortBusy[host]);
-    const end = start + TTM_FIXED.retortCycleMin;
-    retortBusy[host] = end;
-    fcRetort.push({ s: start, e: end, host: host+1, carts: fcCycleList[i].carts, ea: fcCycleList[i].ea });
+  // FC 레토르트 (한 라인, 4대차씩 분배)
+  {
+    let remaining = fcEa;
+    while (remaining > 0) {
+      const cycleEa = Math.min(remaining, TTM_FIXED.retortCartsPerCycle * scen.fc.eaPerCart);
+      const cartsThis = round1(cycleEa / scen.fc.eaPerCart);
+      let host = 0;
+      for (let h = 1; h < 3; h++) if (retortBusy[h] < retortBusy[host]) host = h;
+      const start = Math.max(fcPack.e, retortBusy[host]);
+      const end = start + TTM_FIXED.retortCycleMin;
+      retortBusy[host] = end;
+      fcRetort.push({ s: start, e: end, host: host+1, carts: cartsThis, ea: r2(cycleEa) });
+      remaining -= cycleEa;
+    }
   }
 
   // === 12. 슬롯별 인원 배치 (시뮬에서 결정) ===
