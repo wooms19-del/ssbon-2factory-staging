@@ -427,61 +427,29 @@ async function renderMonthlyReport(pk, from, effectiveTo, ppMonth, thMonth, opDa
     opMap[dk] = (opMap[dk]||0) + opEa(r);
   });
 
-  // ★ _mpData에서 날짜×제품별 원육 분배값 가져오기 (없으면 직접 생성)
-  let mpRows = window._mpData && window._mpData.rows;
-  if(!mpRows && typeof window._mpProcess === 'function') {
+  // ★ _mpProcess로 날짜×제품별 원육 분배 직접 계산 (실적관리와 동일 로직)
+  const rmByDateProd = {};
+  if(typeof window._mpProcess === 'function') {
     try {
       const _tmp = window._mpProcess(pk, opData||[], ppMonth||[], thMonth||[], shMonth||[], ckMonth||[], new Set());
-      mpRows = _tmp && _tmp.rows;
-      window._mpData = _tmp;
+      const _rows = (_tmp && _tmp.rows) || [];
+      const _mainKeys = new Set();
+      _rows.filter(r => !r.isSubTotal && r.date && r.product && r._isMainRow !== false).forEach(r => {
+        const k = r.date+'|'+r.product;
+        rmByDateProd[k] = (rmByDateProd[k]||0) + (r.rmKg||0);
+        _mainKeys.add(k);
+      });
+      _rows.filter(r => !r.isSubTotal && r.date && r.product && r._isPartRow === true).forEach(r => {
+        const k = r.date+'|'+r.product;
+        if(!_mainKeys.has(k)) rmByDateProd[k] = (rmByDateProd[k]||0) + (r.rmKg||0);
+      });
     } catch(e) { console.warn('[월간일보] _mpProcess 실패:', e); }
   }
 
-  // 날짜×제품별 원육 분배 맵 생성 (실적관리와 동일 수치)
-  const rmByDateProd = {};  // {'2026-05-08|시그니처 장조림 130g': 94.62}
-  if(mpRows) {
-    mpRows.filter(r => !r.isSubTotal && r.date && r.product && r._isMainRow !== false).forEach(r => {
-      const k = r.date+'|'+r.product;
-      rmByDateProd[k] = (rmByDateProd[k]||0) + (r.rmKg||0);
-    });
-  }
+  // 글로벌 저장 (필터용)
+  window._moGD = { dayEntries, rmByDate, rmByDatePart, rmByDateProd, opMap, metaMap, thMonth: thMonth||[], ppMonth: ppMonth||[], shMonth: shMonth||[], metaKey, attendanceMap: attendanceMap||{} };
 
-  // 글로벌 저장 (필터용) — rmByDateProd는 _mpData 로드 후 채움
-  window._moGD = { dayEntries, rmByDate, rmByDatePart, rmByDateProd: null, opMap, metaMap, thMonth: thMonth||[], ppMonth: ppMonth||[], shMonth: shMonth||[], metaKey, attendanceMap: attendanceMap||{} };
-
-  // _mpData 로드 완료 후 rmByDateProd 채우고 렌더
-  const _fillAndRender = () => {
-    const mpRows = window._mpData && window._mpData.rows;
-    const rdp = {};
-    if(mpRows) {
-      // 1차: 메인 행만 (날짜|제품 기준)
-      const mainKeys = new Set();
-      mpRows.filter(r => !r.isSubTotal && r.date && r.product && r._isMainRow !== false).forEach(r => {
-        const k = r.date+'|'+r.product;
-        rdp[k] = (rdp[k]||0) + (r.rmKg||0);
-        mainKeys.add(k);
-      });
-      // 2차: 메인 행 없는 날짜|제품만 보조 행(_isPartRow) 포함 (우둔+설도 혼합 등)
-      mpRows.filter(r => !r.isSubTotal && r.date && r.product && r._isPartRow === true).forEach(r => {
-        const k = r.date+'|'+r.product;
-        if(!mainKeys.has(k)) rdp[k] = (rdp[k]||0) + (r.rmKg||0);
-      });
-    }
-    window._moGD.rmByDateProd = Object.keys(rdp).length ? rdp : null;
-    _moRenderRows(null);
-  };
-
-  const _waitAndRender = (tries=0) => {
-    if(window._mpData) { _fillAndRender(); return; }
-    // _mpData 없으면 로딩 표시 후 직접 로드 트리거
-    if(tries === 0) {
-      if(tbody) tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;color:var(--g4);padding:2rem">월별 데이터 불러오는 중...</td></tr>';
-      if(typeof window._mpReload === 'function') window._mpReload();
-    }
-    if(tries > 80) { _fillAndRender(); return; } // 8초 후 포기
-    setTimeout(()=>_waitAndRender(tries+1), 100);
-  };
-  _waitAndRender();
+  _moRenderRows(null);
   renderPackingChart(dayEntries, opMap, _moYm || tod().slice(0,7));
   // 일별 원육 사용량 차트
   window._moRmByDate = rmByDate;
