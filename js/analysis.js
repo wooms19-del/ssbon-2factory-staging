@@ -454,7 +454,8 @@ async function renderMonthlyReport(pk, from, effectiveTo, ppMonth, thMonth, opDa
     const mpRows = window._mpData && window._mpData.rows;
     const rdp = {};
     if(mpRows) {
-      mpRows.filter(r => !r.isSubTotal && r.date && r.product && r._isMainRow !== false).forEach(r => {
+      // 메인 행 + 보조 행(_isPartRow) 모두 포함 (실적관리 제품별 그룹과 동일)
+      mpRows.filter(r => !r.isSubTotal && r.date && r.product && (r._isMainRow !== false || r._isPartRow === true)).forEach(r => {
         const k = r.date+'|'+r.product;
         rdp[k] = (rdp[k]||0) + (r.rmKg||0);
       });
