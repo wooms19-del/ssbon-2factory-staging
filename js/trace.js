@@ -558,34 +558,30 @@ function renderTraceTimeline() {
       makeBar('pk',sp,wp,`${r.start}→${r.end} · ${(r.ea||0).toLocaleString()}EA`), t);
   });
 
-  // ── 레토르트 (FC/홍두깨, 2차 가열 입력 기준 계산)
+  // ── 레토르트 (날짜별 하드코딩, 추후 UI 입력으로 교체 예정)
   const fcPk = d.pk.filter(r=>(r.product||'').includes('FC')||(r.product||'').includes('3KG'));
-  if(fcPk.length) {
-    const RT_TOTAL = 135; // 총 135분
-    const RT_2ND_OFFSET = 25; // 시작 후 25분 = 2차 가열 시작
+
+  // 날짜별 레토르트 데이터
+  const rtDataByDate = {
+    '2026-05-08': [
+      { name:'레토르트 2호기', start:'16:57', end:'19:12' },
+      { name:'레토르트 1호기', start:'17:27', end:'19:42' },
+    ],
+    '2026-05-11': [
+      { name:'레토르트 1호기', start:'14:36', end:'16:51' },
+      { name:'레토르트 2호기', start:'16:38', end:'18:53' },
+      { name:'레토르트 3호기', start:'16:55', end:'19:10' },
+    ],
+  };
+
+  const rtRows = rtDataByDate[_traceData.date] || [];
+  if(fcPk.length && rtRows.length) {
     const rtType = '홍두깨';
     rows += secLbl('레토르트');
-
-    // 내포장 마지막 종료 시간
-    const pkEndMin = fcPk.map(r=>toMin(r.end)).filter(v=>v!==null).reduce((a,b)=>Math.max(a,b), 0);
-
-    // 레토르트 2호기 (먼저 돈 것): 2차 가열 17:22 입력 기준
-    // 시작 = 2차가열 - 25분, 종료 = 시작 + 135분
-    const rt2nd_2h = toMin('17:22'); // 2호기 2차 가열 시작
-    const rt2hStart = rt2nd_2h - RT_2ND_OFFSET;
-    const rt2hEnd   = rt2hStart + RT_TOTAL;
-    const sp2h=pct(toHHMM(rt2hStart)), wp2h=widthPct(toHHMM(rt2hStart),toHHMM(rt2hEnd));
-    if(sp2h!==null) rows += makeRow(
-      `레토르트 2호기`,
-      makeBar('rt',sp2h,wp2h,`${toHHMM(rt2hStart)}→${toHHMM(rt2hEnd)}`), rtType);
-
-    // 레토르트 1호기 (나중에 돈 것): 내포장 종료 후 시작, 2차 가열 25분 후
-    const rt1hStart = pkEndMin;
-    const rt1hEnd   = rt1hStart + RT_TOTAL;
-    const sp1h=pct(toHHMM(rt1hStart)), wp1h=widthPct(toHHMM(rt1hStart),toHHMM(rt1hEnd));
-    if(sp1h!==null) rows += makeRow(
-      `레토르트 1호기`,
-      makeBar('rt',sp1h,wp1h,`${toHHMM(rt1hStart)}→${toHHMM(rt1hEnd)}`), rtType);
+    rtRows.forEach(r => {
+      const sp=pct(r.start), wp=widthPct(r.start,r.end);
+      if(sp!==null) rows += makeRow(r.name, makeBar('rt',sp,wp,`${r.start}→${r.end}`), rtType);
+    });
   }
 
   // ── 필터 버튼
