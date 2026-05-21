@@ -427,8 +427,27 @@ async function renderMonthlyReport(pk, from, effectiveTo, ppMonth, thMonth, opDa
     opMap[dk] = (opMap[dk]||0) + opEa(r);
   });
 
+  // ★ _mpData에서 날짜×제품별 원육 분배값 가져오기 (없으면 직접 생성)
+  let mpRows = window._mpData && window._mpData.rows;
+  if(!mpRows && typeof window._mpProcess === 'function') {
+    try {
+      const _tmp = window._mpProcess(pk, opData||[], ppMonth||[], thMonth||[], shMonth||[], ckMonth||[], new Set());
+      mpRows = _tmp && _tmp.rows;
+      window._mpData = _tmp;
+    } catch(e) { console.warn('[월간일보] _mpProcess 실패:', e); }
+  }
+
+  // 날짜×제품별 원육 분배 맵 생성 (실적관리와 동일 수치)
+  const rmByDateProd = {};  // {'2026-05-08|시그니처 장조림 130g': 94.62}
+  if(mpRows) {
+    mpRows.filter(r => !r.isSubTotal && r.date && r.product && r._isMainRow !== false).forEach(r => {
+      const k = r.date+'|'+r.product;
+      rmByDateProd[k] = (rmByDateProd[k]||0) + (r.rmKg||0);
+    });
+  }
+
   // 글로벌 저장 (필터용)
-  window._moGD = { dayEntries, rmByDate, rmByDatePart, opMap, metaMap, thMonth: thMonth||[], ppMonth: ppMonth||[], shMonth: shMonth||[], metaKey, attendanceMap: attendanceMap||{} };
+  window._moGD = { dayEntries, rmByDate, rmByDatePart, rmByDateProd, opMap, metaMap, thMonth: thMonth||[], ppMonth: ppMonth||[], shMonth: shMonth||[], metaKey, attendanceMap: attendanceMap||{} };
 
   _moRenderRows(null);
   renderPackingChart(dayEntries, opMap, _moYm || tod().slice(0,7));
@@ -673,7 +692,7 @@ function _moRenderRows(selProds) {
   const tfoot = document.getElementById('mo_report_total');
   if(!tbody || !window._moGD) return;
 
-  const {dayEntries, rmByDate, opMap, metaMap, attendanceMap} = window._moGD;
+  const {dayEntries, rmByDate, rmByDateProd, opMap, metaMap, attendanceMap} = window._moGD;
   const ym = _moYm || tod().slice(0,7);
   const fmtKg = v => v>0 ? v.toLocaleString('ko-KR',{minimumFractionDigits:1,maximumFractionDigits:1}) : '—';
   const PC='padding:8px 8px;', P='padding:8px 10px;', vm='vertical-align:middle;';
@@ -697,8 +716,11 @@ function _moRenderRows(selProds) {
     });
     const totalAllPkKg = r2(allRows.reduce((s,r)=>s+(effPkMap[r.product]||0),0));
     const dayPkKg = r2(dayRows.reduce((s,r)=>s+(effPkMap[r.product]||0),0));
-    const propRm  = totalAllPkKg>0 ? r2(dayRm*(dayPkKg/totalAllPkKg)) : dayRm;
-    const dayYld  = propRm>0 ? dayPkKg/propRm*100 : null;
+    // ★ 날짜×제품별 원육 분배값 (실적관리와 동일) — 없으면 비율 배분 폴백
+    const dayPropRm = rmByDateProd
+      ? r2(dayRows.reduce((s,r)=>s+(rmByDateProd[date+'|'+r.product]||0),0))
+      : (totalAllPkKg>0 ? r2(dayRm*(dayPkKg/totalAllPkKg)) : dayRm);
+    const dayYld  = dayPropRm>0 ? dayPkKg/dayPropRm*100 : null;
 
     const dow   = ['일','월','화','수','목','금','토'][new Date(date+'T00:00:00').getDay()];
     const meta  = metaMap[date]||{};
@@ -712,7 +734,7 @@ function _moRenderRows(selProds) {
     const yldTxt = dayYld==null?'color:#aaa;':dayYld>=55?'color:#047857;':dayYld>=52?'color:#1d4ed8;':dayYld>=50?'color:#c2410c;':'color:#b91c1c;';
     const yldBg  = dayYld==null?bg:dayYld>=55?'background:#ecfdf5;':dayYld>=52?'background:#eff6ff;':dayYld>=50?'background:#fff7ed;':'background:#fef2f2;';
 
-    totRm += propRm; totPkKg += dayPkKg;
+    totRm += dayPropRm; totPkKg += dayPkKg;
 
     const mkEdit = (field,val,display,style='') =>
       `<span class="mo-edit" data-date="${date}" data-field="${field}" title="클릭하여 수정" style="cursor:pointer;border-bottom:1px dashed #aaa;${style}">${display}</span>`;
@@ -752,10 +774,10 @@ function _moRenderRows(selProds) {
         ? `<span style="display:inline-block;background:#dbeafe;color:#1e40af;border-radius:3px;padding:1px 6px;font-size:11px;font-weight:600;white-space:nowrap">${_myType}</span>`
         : '<span style="color:#ccc">—</span>';
 
-      // 원육사용량: 복수타입이면 합산, 단일이면 부위별
-      const _partRm = _myType.includes('+')
-        ? r2(Object.values(_rmByPart).reduce((s,v)=>s+v,0))
-        : r2(_rmByPart[_myType]||0);
+      // 원육사용량: rmByDateProd에서 날짜×제품 키로 직접 가져옴
+      const _partRm = rmByDateProd
+        ? r2(rmByDateProd[date+'|'+row.product]||0)
+        : (_myType.includes('+') ? r2(Object.values(_rmByPart).reduce((s,v)=>s+v,0)) : r2(_rmByPart[_myType]||0));
 
       const _opEa = opMap[date+'|'+row.product]||0;
       const _dispEa = _opEa>0?_opEa:(row.ea>0?Math.round(row.ea):0);
