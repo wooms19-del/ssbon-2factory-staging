@@ -347,6 +347,7 @@
         _mpData     = _mpProcess(R[0],R[1],R[2],R[3],R[4],R[5], pendingDates);
         _mpPrevData = _mpProcess(R[6],R[7],R[8],R[9],R[10],R[11], null);  // 작년 비교는 그대로
         window._mpData = _mpData;  // 월간 생산 일보에서 접근용
+        window._mpProcess = _mpProcess;  // 월간 생산 일보에서 직접 생성용
         _mpRender();
       } catch(e){
         console.error('[mp] reload error', e);

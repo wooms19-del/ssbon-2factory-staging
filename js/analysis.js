@@ -429,13 +429,14 @@ async function renderMonthlyReport(pk, from, effectiveTo, ppMonth, thMonth, opDa
 
   // 글로벌 저장 (필터용)
   window._moGD = { dayEntries, rmByDate, rmByDatePart, opMap, metaMap, thMonth: thMonth||[], ppMonth: ppMonth||[], shMonth: shMonth||[], metaKey, attendanceMap: attendanceMap||{} };
-  // _mpData(실적관리) 로드 완료 후 렌더 — 없으면 폴링
-  const _waitMpData = (cb, tries=0) => {
-    if(window._mpData) { cb(); return; }
-    if(tries > 20) { cb(); return; } // 2초 대기 후 포기
-    setTimeout(()=>_waitMpData(cb, tries+1), 100);
-  };
-  _waitMpData(()=>_moRenderRows(null));
+
+  // _mpData가 없으면 동일 데이터로 직접 생성 (실적관리 탭 안 열어도 동작)
+  if(!window._mpData && typeof _mpProcess === 'function') {
+    try {
+      window._mpData = _mpProcess(pk, opData||[], ppMonth||[], thMonth||[], shMonth||[], ckMonth||[], new Set());
+    } catch(e) { console.warn('[월간일보] _mpProcess 호출 실패:', e); }
+  }
+  _moRenderRows(null);
   renderPackingChart(dayEntries, opMap, _moYm || tod().slice(0,7));
   // 일별 원육 사용량 차트
   window._moRmByDate = rmByDate;
