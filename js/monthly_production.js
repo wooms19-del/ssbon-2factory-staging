@@ -1082,11 +1082,10 @@
           return String(a.date||'').localeCompare(String(b.date||''));
         });
         // ★ 제품별 모드: 메인 행 + 부위별 보조 행(_isPartRow) 모두 표시
-        // 메인 행이 없고 보조 행만 있는 날짜(우둔+설도 혼합 등)도 표시
-        var mainList = list.filter(function(r){ return r._isMainRow !== false; });
-        var partList = list.filter(function(r){ return r._isPartRow === true; });
-        // 메인 행 없으면 보조 행으로 대체
-        var displayList = mainList.length > 0 ? mainList : partList;
+        // 우둔+설도 혼합 날짜는 _isPartRow만 있으므로 둘 다 포함
+        var displayList = list.filter(function(r){
+          return r._isMainRow !== false || r._isPartRow === true;
+        });
         displayList.forEach(function(r){
           // ★ 제품별 모드에서는 일자/부위 rowspan 효과 끄기 — 모든 행에 td 출력
           r.dateRowIdx = 0;
