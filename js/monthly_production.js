@@ -1946,6 +1946,7 @@
   window.mpSetGroupMode = mpSetGroupMode;
   window.mpToggleFilter = mpToggleFilter;
   window._mpReload      = _mpReload;
+  window._mpProcess     = _mpProcess;  // 월간 생산 일보에서 즉시 사용 가능하도록
 
   ['setMode','setModeSchedule','setModeAtt'].forEach(function(fn){
     var orig = window[fn];
