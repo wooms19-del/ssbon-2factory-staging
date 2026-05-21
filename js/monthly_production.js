@@ -349,6 +349,24 @@
         window._mpData = _mpData;  // 월간 생산 일보에서 접근용
         window._mpProcess = _mpProcess;  // 월간 생산 일보에서 직접 생성용
         _mpRender();
+        // 월간 생산 일보가 대기 중이면 재렌더 트리거
+        if(typeof window._moGD !== 'undefined' && window._moGD) {
+          if(typeof _moRenderRows === 'function') {
+            // _moGD의 rmByDateProd 업데이트 후 재렌더
+            var rdp2 = {};
+            var mainKeys2 = new Set();
+            (_mpData.rows||[]).filter(function(r){ return !r.isSubTotal && r.date && r.product && r._isMainRow !== false; }).forEach(function(r){
+              var k = r.date+'|'+r.product;
+              rdp2[k] = (rdp2[k]||0) + (r.rmKg||0);
+              mainKeys2.add(k);
+            });
+            (_mpData.rows||[]).filter(function(r){ return !r.isSubTotal && r.date && r.product && r._isPartRow === true; }).forEach(function(r){
+              var k = r.date+'|'+r.product;
+              if(!mainKeys2.has(k)) rdp2[k] = (rdp2[k]||0) + (r.rmKg||0);
+            });
+            window._moGD.rmByDateProd = Object.keys(rdp2).length ? rdp2 : null;
+          }
+        }
       } catch(e){
         console.error('[mp] reload error', e);
         var st=document.getElementById('mpStatus');

@@ -473,11 +473,12 @@ async function renderMonthlyReport(pk, from, effectiveTo, ppMonth, thMonth, opDa
 
   const _waitAndRender = (tries=0) => {
     if(window._mpData) { _fillAndRender(); return; }
-    // _mpData 없으면 직접 로드 트리거
-    if(tries === 0 && typeof window._mpReload === 'function') {
-      window._mpReload();
+    // _mpData 없으면 로딩 표시 후 직접 로드 트리거
+    if(tries === 0) {
+      if(tbody) tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;color:var(--g4);padding:2rem">월별 데이터 불러오는 중...</td></tr>';
+      if(typeof window._mpReload === 'function') window._mpReload();
     }
-    if(tries > 50) { _fillAndRender(); return; } // 5초 대기 후 포기
+    if(tries > 80) { _fillAndRender(); return; } // 8초 후 포기
     setTimeout(()=>_waitAndRender(tries+1), 100);
   };
   _waitAndRender();
