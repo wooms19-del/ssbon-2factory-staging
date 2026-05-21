@@ -715,8 +715,7 @@ function _moRenderRows(selProds) {
     dayRows.forEach(r => {
       const types = r.types || {};
       const sorted = Object.entries(types).sort((a,b)=>b[1]-a[1]);
-      // 타입이 2개 이상이면 "우둔+설도" 형태로 표시
-      _rowType[r.product] = sorted.length > 1 ? sorted.map(([t])=>t).join('+') : (sorted.length ? sorted[0][0] : '');
+      _rowType[r.product] = sorted.length ? sorted[0][0] : '';
     });
 
     // ★ 같은 type끼리 묶음 (rowspan 병합용)
