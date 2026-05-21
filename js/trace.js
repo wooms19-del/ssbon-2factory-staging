@@ -432,7 +432,7 @@ function renderTraceTimeline() {
 
   // 시간 → 퍼센트 (05:00 ~ 20:30)
   const START_MIN = 5*60;
-  const TOTAL_MIN = 15.5*60;
+  const TOTAL_MIN = 15*60; // 05:00~20:00
   const pct = t => {
     const m = toMin(t);
     if(m===null) return null;
@@ -594,7 +594,7 @@ function renderTraceTimeline() {
   ).join('');
 
   // 시간축 — 절대 위치로 막대와 정확히 매칭
-  const tlLabels = ['05:00','07:00','09:00','11:00','13:00','15:00','17:00','19:00'];
+  const tlLabels = ['05:00','07:00','09:00','11:00','13:00','15:00','17:00','19:00','20:00'];
   const timeAxis = `<div style="position:relative;margin-left:${LW}px;height:16px;margin-bottom:4px">
     ${tlLabels.map(l=>{
       const p = pct(l);
