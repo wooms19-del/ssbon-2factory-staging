@@ -1927,6 +1927,7 @@
   window.mpToggleGrp    = mpToggleGrp;
   window.mpSetGroupMode = mpSetGroupMode;
   window.mpToggleFilter = mpToggleFilter;
+  window._mpReload      = _mpReload;
 
   ['setMode','setModeSchedule','setModeAtt'].forEach(function(fn){
     var orig = window[fn];

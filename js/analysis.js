@@ -473,7 +473,11 @@ async function renderMonthlyReport(pk, from, effectiveTo, ppMonth, thMonth, opDa
 
   const _waitAndRender = (tries=0) => {
     if(window._mpData) { _fillAndRender(); return; }
-    if(tries > 30) { _fillAndRender(); return; } // 3초 대기 후 포기
+    // _mpData 없으면 직접 로드 트리거
+    if(tries === 0 && typeof window._mpReload === 'function') {
+      window._mpReload();
+    }
+    if(tries > 50) { _fillAndRender(); return; } // 5초 대기 후 포기
     setTimeout(()=>_waitAndRender(tries+1), 100);
   };
   _waitAndRender();
