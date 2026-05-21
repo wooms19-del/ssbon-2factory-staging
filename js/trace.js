@@ -478,7 +478,7 @@ function renderTraceTimeline() {
     rt:{bg:'#FDA4AF',c:'#9F1239'},
   };
 
-  const LW = 110; // 라벨 width
+  const LW = 120; // 라벨 width
 
   const makeBar = (kind, left, width, label) => {
     const c = barC[kind];
@@ -486,10 +486,10 @@ function renderTraceTimeline() {
       <span style="font-size:9px;padding:0 4px;white-space:nowrap;color:${c.c}">${label}</span></div>`;
   };
 
-  const makeRow = (label, bar, dtype, h=16) =>
-    `<div class="tr-tl-row" data-type="${dtype}" style="display:flex;align-items:center;margin-bottom:2px">
-      <div style="width:${LW}px;flex-shrink:0;font-size:9px;color:var(--g4);text-align:right;padding-right:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${label}</div>
-      <div style="flex:1;height:${h}px;background:var(--g1);border-radius:3px;position:relative">${bar}</div>
+  const makeRow = (label, bar, dtype) =>
+    `<div class="tr-tl-row" data-type="${dtype}" style="display:flex;align-items:center;margin-bottom:2px;min-height:18px">
+      <div style="width:${LW}px;flex-shrink:0;font-size:9px;color:var(--g4);text-align:right;padding-right:6px;line-height:1.4;word-break:keep-all">${label}</div>
+      <div style="flex:1;height:16px;background:var(--g1);border-radius:3px;position:relative">${bar}</div>
     </div>`;
 
   const secLbl = txt =>
@@ -524,9 +524,13 @@ function renderTraceTimeline() {
     if(sp===null) return;
     const t=r.type||'-';
     const outW=(r.wagonOut||'').split(',').map(w=>w.trim()).filter(Boolean);
-    rows += makeRow(
-      `${r.tank||''}탱크·${r.cage||''} →${outW.map(wBadge).join('')}`,
-      makeBar('ck',sp,wp,`${r.start}→${r.end}`), t);
+    const wBadgesHtml = outW.map(wBadge).join('');
+    rows += `<div class="tr-tl-row" data-type="${t}" style="display:flex;align-items:flex-start;margin-bottom:2px">
+      <div style="width:${LW}px;flex-shrink:0;font-size:9px;color:var(--g4);text-align:right;padding-right:6px;padding-top:2px;line-height:1.5">
+        ${r.tank||''}탱크·${r.cage||''}<br>→ ${wBadgesHtml||'-'}
+      </div>
+      <div style="flex:1;height:16px;background:var(--g1);border-radius:3px;position:relative;margin-top:2px">${makeBar('ck',sp,wp,`${r.start}→${r.end}`)}</div>
+    </div>`;
   });
 
   // ── 파쇄 (와건별)
@@ -589,10 +593,13 @@ function renderTraceTimeline() {
     `<button onclick="trTlFilter('${t}',this)" style="font-size:11px;padding:3px 10px;border-radius:20px;border:0.5px solid var(--g2);background:${t==='전체'?'var(--s)':'var(--bg)'};color:${t==='전체'?'#fff':'var(--g5)'};cursor:pointer;font-weight:${t==='전체'?'500':'400'}">${t}</button>`
   ).join('');
 
-  // 시간축 (05:00~20:30, 2시간 간격)
-  const tlLabels = ['05:00','07:00','09:00','11:00','13:00','15:00','17:00','19:00','20:30'];
-  const timeAxis = `<div style="display:flex;padding-left:${LW}px;margin-bottom:5px">
-    ${tlLabels.map(l=>`<div style="flex:1;font-size:9px;color:var(--g3);text-align:left">${l}</div>`).join('')}
+  // 시간축 — 절대 위치로 막대와 정확히 매칭
+  const tlLabels = ['05:00','07:00','09:00','11:00','13:00','15:00','17:00','19:00'];
+  const timeAxis = `<div style="position:relative;margin-left:${LW}px;height:16px;margin-bottom:4px">
+    ${tlLabels.map(l=>{
+      const p = pct(l);
+      return p!==null ? `<div style="position:absolute;left:${p.toFixed(1)}%;font-size:9px;color:var(--g3);transform:translateX(-50%)">${l}</div>` : '';
+    }).join('')}
   </div>`;
 
   // 범례
