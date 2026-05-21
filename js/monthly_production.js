@@ -1939,4 +1939,9 @@
     }
   });
 
+  // ★ 페이지 로드 시 백그라운드에서 _mpData 미리 로드 (월간 생산 일보용)
+  setTimeout(function() {
+    if(!window._mpData) _mpReload();
+  }, 1500);
+
 })();

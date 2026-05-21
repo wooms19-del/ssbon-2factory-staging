@@ -446,10 +446,29 @@ async function renderMonthlyReport(pk, from, effectiveTo, ppMonth, thMonth, opDa
     });
   }
 
-  // 글로벌 저장 (필터용)
-  window._moGD = { dayEntries, rmByDate, rmByDatePart, rmByDateProd, opMap, metaMap, thMonth: thMonth||[], ppMonth: ppMonth||[], shMonth: shMonth||[], metaKey, attendanceMap: attendanceMap||{} };
+  // 글로벌 저장 (필터용) — rmByDateProd는 _mpData 로드 후 채움
+  window._moGD = { dayEntries, rmByDate, rmByDatePart, rmByDateProd: null, opMap, metaMap, thMonth: thMonth||[], ppMonth: ppMonth||[], shMonth: shMonth||[], metaKey, attendanceMap: attendanceMap||{} };
 
-  _moRenderRows(null);
+  // _mpData 로드 완료 후 rmByDateProd 채우고 렌더
+  const _fillAndRender = () => {
+    const mpRows = window._mpData && window._mpData.rows;
+    const rdp = {};
+    if(mpRows) {
+      mpRows.filter(r => !r.isSubTotal && r.date && r.product && r._isMainRow !== false).forEach(r => {
+        const k = r.date+'|'+r.product;
+        rdp[k] = (rdp[k]||0) + (r.rmKg||0);
+      });
+    }
+    window._moGD.rmByDateProd = Object.keys(rdp).length ? rdp : null;
+    _moRenderRows(null);
+  };
+
+  const _waitAndRender = (tries=0) => {
+    if(window._mpData) { _fillAndRender(); return; }
+    if(tries > 30) { _fillAndRender(); return; } // 3초 대기 후 포기
+    setTimeout(()=>_waitAndRender(tries+1), 100);
+  };
+  _waitAndRender();
   renderPackingChart(dayEntries, opMap, _moYm || tod().slice(0,7));
   // 일별 원육 사용량 차트
   window._moRmByDate = rmByDate;
