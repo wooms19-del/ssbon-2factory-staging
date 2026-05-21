@@ -427,21 +427,14 @@ async function renderMonthlyReport(pk, from, effectiveTo, ppMonth, thMonth, opDa
     opMap[dk] = (opMap[dk]||0) + opEa(r);
   });
 
-  // ★ _mpProcess로 날짜×제품별 원육 분배 직접 계산 (실적관리와 동일 로직)
+  // ★ _mpProcess의 allocMap으로 날짜×제품별 원육 직접 사용 (실적관리와 100% 동일)
   const rmByDateProd = {};
   if(typeof window._mpProcess === 'function') {
     try {
       const _tmp = window._mpProcess(pk, opData||[], ppMonth||[], thMonth||[], shMonth||[], ckMonth||[], new Set());
-      const _rows = (_tmp && _tmp.rows) || [];
-      const _mainKeys = new Set();
-      _rows.filter(r => !r.isSubTotal && r.date && r.product && r._isMainRow !== false).forEach(r => {
-        const k = r.date+'|'+r.product;
-        rmByDateProd[k] = (rmByDateProd[k]||0) + (r.rmKg||0);
-        _mainKeys.add(k);
-      });
-      _rows.filter(r => !r.isSubTotal && r.date && r.product && r._isPartRow === true).forEach(r => {
-        const k = r.date+'|'+r.product;
-        if(!_mainKeys.has(k)) rmByDateProd[k] = (rmByDateProd[k]||0) + (r.rmKg||0);
+      const _allocMap = (_tmp && _tmp.allocMap) || {};
+      Object.keys(_allocMap).forEach(k => {
+        rmByDateProd[k] = _allocMap[k].rmKg || 0;
       });
     } catch(e) { console.warn('[월간일보] _mpProcess 실패:', e); }
   }
