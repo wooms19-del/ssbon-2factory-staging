@@ -429,7 +429,13 @@ async function renderMonthlyReport(pk, from, effectiveTo, ppMonth, thMonth, opDa
 
   // 글로벌 저장 (필터용)
   window._moGD = { dayEntries, rmByDate, rmByDatePart, opMap, metaMap, thMonth: thMonth||[], ppMonth: ppMonth||[], shMonth: shMonth||[], metaKey, attendanceMap: attendanceMap||{} };
-  _moRenderRows(null);
+  // _mpData(실적관리) 로드 완료 후 렌더 — 없으면 폴링
+  const _waitMpData = (cb, tries=0) => {
+    if(window._mpData) { cb(); return; }
+    if(tries > 20) { cb(); return; } // 2초 대기 후 포기
+    setTimeout(()=>_waitMpData(cb, tries+1), 100);
+  };
+  _waitMpData(()=>_moRenderRows(null));
   renderPackingChart(dayEntries, opMap, _moYm || tod().slice(0,7));
   // 일별 원육 사용량 차트
   window._moRmByDate = rmByDate;
@@ -670,160 +676,124 @@ async function renderMonthlyReport(pk, from, effectiveTo, ppMonth, thMonth, opDa
 function _moRenderRows(selProds) {
   const tbody = document.getElementById('mo_report_tbl');
   const tfoot = document.getElementById('mo_report_total');
-  if(!tbody || !window._moGD) return;
-  const {dayEntries, rmByDate, opMap, metaMap, thMonth, ppMonth, shMonth, metaKey, attendanceMap} = window._moGD;
-  const _attMap = attendanceMap || {};
+  if(!tbody) return;
+
+  // ★ _mpData(실적관리 월단위) 기반으로 렌더링 — 수치 일치 보장
+  const mpRows = (window._mpData && window._mpData.rows) || [];
+  if(!mpRows.length) {
+    tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;color:#aaa;padding:2rem">데이터 없음</td></tr>';
+    if(tfoot) tfoot.innerHTML = '';
+    return;
+  }
+
+  // 메타(작업인원, capa, 비고) 로드
+  const ym = _moYm || tod().slice(0,7);
+  const metaMap = (window._moGD && window._moGD.metaMap) || {};
+  const attendanceMap = (window._moGD && window._moGD.attendanceMap) || {};
+
   const fmtKg = v => v>0 ? v.toLocaleString('ko-KR',{minimumFractionDigits:1,maximumFractionDigits:1}) : '—';
   const PC='padding:8px 8px;', P='padding:8px 10px;', vm='vertical-align:middle;';
   const dayBg=['background:#ffffff;','background:#f8fafc;'];
-  let dayNo=1, totRm=0, totPkKg=0, totEa=0;
-  const html=[];
 
-  dayEntries.forEach(([date, allRows])=>{
-    const dayRows = selProds&&selProds.size>0 ? allRows.filter(r=>selProds.has(r.product)) : allRows;
-    if(!dayRows.length) return;
-    const cnt    = dayRows.length;
-    const dayRm  = r2(rmByDate[date]||0);
-    // 외포장 EA 기준으로 완제품 중량 재계산 (필터 포함 전체 행 대상)
-    const effPkMap = {};
-    allRows.forEach(row=>{
-      const _opEa2 = opMap[date+'|'+row.product]||0;
-      const _p2 = L.products.find(x=>x.name===row.product);
-      effPkMap[row.product] = _opEa2>0&&_p2 ? r2(_opEa2*_p2.kgea) : row.pkKg;
-    });
-    const totalAllPkKg = r2(allRows.reduce((s,r)=>s+(effPkMap[r.product]||0),0));
-    const dayPkKg = r2(dayRows.reduce((s,r)=>s+(effPkMap[r.product]||0),0));
-    // 비례 배분: 필터된 제품 비중만큼 원육 배분
-    const propRm  = totalAllPkKg>0 ? r2(dayRm*(dayPkKg/totalAllPkKg)) : dayRm;
-    const dayYld  = propRm>0 ? dayPkKg/propRm*100 : null;
-    const dow    = ['일','월','화','수','목','금','토'][new Date(date).getDay()];
-    const meta   = metaMap[date]||{};
-    const bg     = dayBg[(dayNo-1)%2];
+  // 메인 행만, isSubTotal/합계 제외, 필터 적용
+  let rows = mpRows.filter(r => !r.isSubTotal && r.date && r._isMainRow !== false);
+
+  // 필터 (제품 필터)
+  if(selProds && selProds.size > 0) {
+    rows = rows.filter(r => selProds.has(r.product));
+  }
+
+  // 날짜별 그룹핑
+  const byDate = {};
+  const dateOrder = [];
+  rows.forEach(r => {
+    if(!byDate[r.date]) { byDate[r.date] = []; dateOrder.push(r.date); }
+    byDate[r.date].push(r);
+  });
+  const uniqueDates = [...new Set(dateOrder)].sort();
+
+  const html = [];
+  let dayNo = 1, totRm = 0, totPkKg = 0, totEa = 0;
+
+  uniqueDates.forEach(date => {
+    const dayRows = byDate[date];
+    if(!dayRows || !dayRows.length) return;
+
+    const cnt   = dayRows.length;
+    const dayRm = dayRows.reduce((s,r) => s+(r.rmKg||0), 0);
+    const dayPkKg = dayRows.reduce((s,r) => s+(r.meatKg||r.pkEa*(r.kgea||0)||0), 0);
+    const dayEa = dayRows.reduce((s,r) => s+(r.pkEaDisp||r.pkEa||0), 0);
+    const dayYld = dayRm>0 ? dayPkKg/dayRm*100 : null;
+
+    const dow   = ['일','월','화','수','목','금','토'][new Date(date+'T00:00:00').getDay()];
+    const meta  = metaMap[date] || {};
+    const autoW = attendanceMap[date] || 0;
+    const bg    = dayBg[(dayNo-1)%2];
+    const workers = meta.workers!=null ? meta.workers : (autoW||'');
+    const firstProd = L.products.find(x=>x.name===(dayRows[0]&&dayRows[0].product));
+    const capa  = meta.capa!=null ? meta.capa : (firstProd&&firstProd.capa ? firstProd.capa.toLocaleString() : '');
+    const note  = meta.note!=null ? meta.note : '';
+
     const yldTxt = dayYld==null?'color:#aaa;':dayYld>=55?'color:#047857;':dayYld>=52?'color:#1d4ed8;':dayYld>=50?'color:#c2410c;':'color:#b91c1c;';
     const yldBg  = dayYld==null?bg:dayYld>=55?'background:#ecfdf5;':dayYld>=52?'background:#eff6ff;':dayYld>=50?'background:#fff7ed;':'background:#fef2f2;';
-    const autoW  = _attMap[date] || 0;
-    const workers= meta.workers!=null?meta.workers:(autoW||'');
-    const firstProd=L.products.find(x=>x.name===allRows[0].product);
-    const capa   = meta.capa!=null?meta.capa:(firstProd&&firstProd.capa?firstProd.capa.toLocaleString():'');
-    const note   = meta.note!=null?meta.note:'';
-    const thDay  = thMonth.filter(r=>String(r.date||'').slice(0,10)===date);
-    // 그날 모든 제품이 무육(메추리알 등)이면 부위 표시 안 함
-    const _isAllNoMeat = dayRows.length>0 && dayRows.every(r => /메추리알/.test(r.product||''));
 
-    // ★ 제품별 type 결정 (packing record의 type 필드 기준, 복수 타입이면 "우둔+설도" 형태로 합산)
-    const _rowType = {};  // {product: type}
-    dayRows.forEach(r => {
-      const types = r.types || {};
-      const sorted = Object.entries(types).sort((a,b)=>b[1]-a[1]);
-      _rowType[r.product] = sorted.length ? sorted[0][0] : '';
-    });
+    totRm += dayRm; totPkKg += dayPkKg; totEa += dayEa;
 
-    // ★ 같은 type끼리 묶음 (rowspan 병합용)
-    // dayRows 순서를 type별로 정렬하여 같은 type 인접하게
-    if(!_isAllNoMeat){
-      dayRows.sort((a,b) => {
-        const ta = _rowType[a.product] || '';
-        const tb = _rowType[b.product] || '';
-        if(ta !== tb) return ta.localeCompare(tb);
-        return a.product.localeCompare(b.product);
-      });
-    }
+    const mkEdit = (field,val,display,style='') =>
+      `<span class="mo-edit" data-date="${date}" data-field="${field}" title="클릭하여 수정" style="cursor:pointer;border-bottom:1px dashed #aaa;${style}">${display}</span>`;
+    const editW    = mkEdit('workers', workers, workers||'—')+'명';
+    const editCapa = mkEdit('capa', capa, capa||'—');
+    const editNote = mkEdit('note', note, note||'＋메모','font-size:12px;color:#999;display:inline-block;min-width:40px');
 
-    // type별 그룹 (첫 row 위치 + 개수)
-    const _typeGroups = {};  // {type: {startIdx, count, products:[]}}
-    dayRows.forEach((r, idx) => {
-      const t = _rowType[r.product] || '';
-      if(!_typeGroups[t]) _typeGroups[t] = {startIdx: idx, count: 0, products: []};
-      _typeGroups[t].count++;
-      _typeGroups[t].products.push(r.product);
-    });
+    dayRows.forEach((row, ri) => {
+      const isFirst = ri===0, isLast = ri===cnt-1;
+      const rowBorder = isLast ? 'border-bottom:2px solid #cbd5e1;' : 'border-bottom:1px solid #e2e8f0;';
 
-    // 부위별 원육 사용량 (rmByDatePart에서 부위별)
-    const _rmByPart = (window._moGD && window._moGD.rmByDatePart && window._moGD.rmByDatePart[date]) || {};
-    // fallback: thDay에서 부위별 합산
-    if(Object.keys(_rmByPart).length === 0){
-      thDay.forEach(r => {
-        const tps = (r.type||'').split(',').map(s=>s.trim()).filter(Boolean);
-        if(!tps.length) return;
-        const per = (parseFloat(r.totalKg)||0) / tps.length;
-        tps.forEach(t => { _rmByPart[t] = (_rmByPart[t]||0) + per; });
-      });
-    }
+      // 원육타입 배지 (복수면 "우둔+설도")
+      const typeStr = row.type || '';
+      const typeBadge = typeStr
+        ? `<span style="display:inline-block;background:#dbeafe;color:#1e40af;border-radius:3px;padding:1px 6px;font-size:11px;font-weight:600;white-space:nowrap;margin:1px 2px">${typeStr}</span>`
+        : '<span style="color:#ccc">—</span>';
 
-    totRm+=propRm; totPkKg+=dayPkKg;
-    const mkEdit=(field,val,display,style='')=>`<span class="mo-edit" data-date="${date}" data-field="${field}" title="클릭하여 수정" style="cursor:pointer;border-bottom:1px dashed #aaa;${style}">${display}</span>`;
-    const editW   =mkEdit('workers',workers,workers||'—')+'명';
-    const editCapa=mkEdit('capa',capa,capa||'—');
-    const editNote=mkEdit('note',note,note||'＋메모','font-size:12px;color:#999;display:inline-block;min-width:40px');
+      // 원육사용량: 행별 rmKg
+      const rowRm = row.rmKg || 0;
 
-    dayRows.forEach((row,ri)=>{
-      const isFirst=ri===0, isLast=ri===cnt-1;
-      const rowBorder=isLast?'border-bottom:2px solid #cbd5e1;':'border-bottom:1px solid #e2e8f0;';
-      const pkDisp=fmtKg(effPkMap[row.product]||r2(row.pkKg));
+      // EA 표시
+      const opEa = row.pkEaSrc==='외' ? (row.pkEaDisp||row.pkEa||0) : 0;
+      const dispEa = row.pkEaDisp || row.pkEa || 0;
+      const eaLbl = dispEa>0
+        ? `${dispEa.toLocaleString()}<span style="font-size:10px;color:${row.pkEaSrc==='외'?'#6b7280':'#9ca3af'};margin-left:2px">(${row.pkEaSrc||'내'})</span>`
+        : '—';
 
-      // 이 row의 type, 그룹 정보
-      const _myType = _rowType[row.product] || '';
-      const _grp = _typeGroups[_myType] || {startIdx:ri, count:1};
-      const _isTypeFirstRow = (ri === _grp.startIdx);
+      // 완제품 중량
+      const pkKg = fmtKg(row.meatKg || row.pkEa*(row.kgea||0) || 0);
 
-      let cells='';
+      let cells = '';
       if(isFirst){
         cells+=`<td rowspan="${cnt}" style="${vm}${PC}${bg}text-align:center;font-weight:700;font-size:15px;color:#1e293b;border-right:1px solid #e2e8f0;border-bottom:2px solid #cbd5e1;">${dayNo}</td>`;
         cells+=`<td rowspan="${cnt}" style="${vm}${PC}${bg}text-align:center;border-right:1px solid #e2e8f0;border-bottom:2px solid #cbd5e1;line-height:1.5"><span style="font-weight:600;font-size:13px;color:#334155">${date.slice(5).replace('-','/')}</span><br><span style="font-size:10px;color:#94a3b8">(${dow})</span></td>`;
         cells+=`<td rowspan="${cnt}" style="${vm}${PC}${bg}text-align:center;color:#475569;border-right:1px solid #e2e8f0;border-bottom:2px solid #cbd5e1">${editW}</td>`;
       }
-      // 부위 컬럼: 같은 type 그룹에서 첫 row만 출력 (rowspan 병합)
-      if(_isTypeFirstRow){
-        // 이 그룹이 그날의 마지막에 닿으면 두꺼운 선, 아니면 얇은 선
-        const _grpEndsAtDay = (_grp.startIdx + _grp.count >= cnt);
-        const _grpBorder = _grpEndsAtDay ? 'border-bottom:2px solid #cbd5e1' : 'border-bottom:1px solid #cbd5e1';
-        const _typeBadge = _isAllNoMeat || !_myType
-          ? '<span style="color:#ccc">—</span>'
-          : `<span style="display:inline-block;background:#dbeafe;color:#1e40af;border-radius:3px;padding:1px 6px;font-size:11px;font-weight:600;white-space:nowrap;margin:1px 2px">${_myType}</span>`;
-        cells+=`<td rowspan="${_grp.count}" style="${vm}${PC}${bg}text-align:center;border-right:1px solid #e2e8f0;${_grpBorder}">${_typeBadge}</td>`;
-      }
-      cells+=`<td style="${vm}${PC}${bg}text-align:center;font-weight:500;color:#1e293b;border-right:1px solid #e2e8f0;${rowBorder}">${row.product}</td>`;
-      // 원육 사용량: 같은 type 그룹에서 첫 row만 출력 (해당 부위 사용량)
-      if(_isTypeFirstRow){
-        const _grpEndsAtDay = (_grp.startIdx + _grp.count >= cnt);
-        const _grpBorder = _grpEndsAtDay ? 'border-bottom:2px solid #cbd5e1' : 'border-bottom:1px solid #cbd5e1';
-        const _partRm = _rmByPart[_myType] || 0;
-        cells+=`<td rowspan="${_grp.count}" style="${vm}${PC}${bg}text-align:center;font-variant-numeric:tabular-nums;color:#374151;border-right:1px solid #e2e8f0;${_grpBorder}">${fmtKg(r2(_partRm))}</td>`;
-      }
-      const _opEa=opMap[date+'|'+row.product]||0;
-      const _dispEa=_opEa>0?_opEa:(row.ea>0?Math.round(row.ea):0);
-      totEa+=_dispEa;
-      const _lbl=_opEa>0?`${_dispEa.toLocaleString()}<span style="font-size:10px;color:#6b7280;margin-left:2px">(외)</span>`:(_dispEa>0?`${_dispEa.toLocaleString()}<span style="font-size:10px;color:#9ca3af;margin-left:2px">(내)</span>`:'—');
-      cells+=`<td style="${vm}${PC}${bg}text-align:center;font-variant-numeric:tabular-nums;color:#374151;border-right:1px solid #e2e8f0;${rowBorder}">${_lbl}</td>`;
-      cells+=`<td style="${vm}${PC}${bg}text-align:center;font-weight:600;font-variant-numeric:tabular-nums;color:#374151;border-right:1px solid #e2e8f0;${rowBorder}">${pkDisp}</td>`;
+      cells+=`<td style="${vm}${PC}${bg}text-align:center;border-right:1px solid #e2e8f0;${rowBorder}">${typeBadge}</td>`;
+      cells+=`<td style="${vm}${PC}${bg}text-align:center;font-weight:500;color:#1e293b;border-right:1px solid #e2e8f0;${rowBorder}">${row.product||''}</td>`;
+      cells+=`<td style="${vm}${PC}${bg}text-align:center;font-variant-numeric:tabular-nums;color:#374151;border-right:1px solid #e2e8f0;${rowBorder}">${fmtKg(r2(rowRm))}</td>`;
+      cells+=`<td style="${vm}${PC}${bg}text-align:center;font-variant-numeric:tabular-nums;color:#374151;border-right:1px solid #e2e8f0;${rowBorder}">${eaLbl}</td>`;
+      cells+=`<td style="${vm}${PC}${bg}text-align:center;font-weight:600;font-variant-numeric:tabular-nums;color:#374151;border-right:1px solid #e2e8f0;${rowBorder}">${pkKg}</td>`;
+
       if(isFirst){
         cells+=`<td rowspan="${cnt}" style="${vm}${PC}${yldBg}text-align:center;font-weight:700;font-size:15px;${yldTxt}border-right:1px solid #e2e8f0;border-bottom:2px solid #cbd5e1">${dayYld!=null?dayYld.toFixed(1)+'%':'—'}</td>`;
         cells+=`<td rowspan="${cnt}" style="${vm}${PC}${bg}text-align:center;color:#64748b;border-right:1px solid #e2e8f0;border-bottom:2px solid #cbd5e1">${editCapa}</td>`;
-        // 비고: 메모에 '비가식부' 단어가 있을 때만 비율 자동 추가 (원육 대비 %, 빨간색)
-        const _hasWasteNote = /비가식부|손실|폐기|불량/.test(note||'');
-        let _wasteHtml = '';
-        if(_hasWasteNote){
-          const _ppDay = (ppMonth||[]).filter(r=>String(r.date||'').slice(0,10)===date);
-          const _shDay = (shMonth||[]).filter(r=>String(r.date||'').slice(0,10)===date);
-          const _wastePp = _ppDay.reduce((s,r)=>s+(parseFloat(r.waste)||0),0);
-          const _wasteSh = _shDay.reduce((s,r)=>s+(parseFloat(r.waste)||0),0);
-          const _wasteTotal = _wastePp + _wasteSh;
-          const _wasteRate = (dayRm>0 && _wasteTotal>0) ? (_wasteTotal/dayRm*100) : null;
-          if(_wasteRate!=null){
-            _wasteHtml = `<div style="font-size:11px;color:#dc2626;margin-top:3px">원육 대비 ${_wasteRate.toFixed(1)}%</div>`;
-          }
-        }
-        cells+=`<td rowspan="${cnt}" style="${vm}${P}${bg}text-align:left;font-size:12px;color:#64748b;border-bottom:2px solid #cbd5e1;white-space:pre-wrap">${editNote}${_wasteHtml}</td>`;
+        cells+=`<td rowspan="${cnt}" style="${vm}${P}${bg}text-align:left;font-size:12px;color:#64748b;border-bottom:2px solid #cbd5e1;white-space:pre-wrap">${editNote}</td>`;
       }
       html.push(`<tr data-mo-date="${date}">${cells}</tr>`);
     });
     dayNo++;
   });
 
-  tbody.innerHTML=html.join('')||`<tr><td colspan="11" style="text-align:center;color:#aaa;padding:2rem">데이터 없음</td></tr>`;
+  tbody.innerHTML = html.join('') || '<tr><td colspan="11" style="text-align:center;color:#aaa;padding:2rem">데이터 없음</td></tr>';
 
-  const totYld=totRm>0?(totPkKg/totRm*100).toFixed(1)+'%':'—';
-  const selLabel=selProds&&selProds.size>0?` [${[...selProds].join(' + ')}]`:'';
+  const totYld = totRm>0 ? (totPkKg/totRm*100).toFixed(1)+'%' : '—';
+  const selLabel = selProds&&selProds.size>0 ? ` [${[...selProds].join(' + ')}]` : '';
   if(tfoot) tfoot.innerHTML=`<tr style="background:#1e293b;color:#fff;font-weight:700">
     <td colspan="5" style="padding:10px 8px;text-align:center;font-size:13px;letter-spacing:.5px">합 계 (${dayNo-1}일)${selLabel}</td>
     <td style="padding:10px 8px;text-align:center;border-left:1px solid #334155;font-variant-numeric:tabular-nums">${fmtKg(totRm)}</td>
@@ -833,15 +803,12 @@ function _moRenderRows(selProds) {
     <td colspan="2" style="border-left:1px solid #334155"></td>
   </tr>`;
 
-  // ★ 호버 효과 (같은 date의 모든 tr 동시에 강조 - 셀 배경 보존)
-  // 원래 td 배경을 미리 저장 (cells 인라인 style의 background 보존)
+  // 호버 효과
   tbody.querySelectorAll('tr[data-mo-date]').forEach(tr => {
     tr.addEventListener('mouseenter', function(){
       const d = this.dataset.moDate;
-      if(!d) return;
       tbody.querySelectorAll(`tr[data-mo-date="${d}"]`).forEach(r => {
         r.querySelectorAll('td').forEach(td => {
-          // 원래 배경 저장 (최초 1회)
           if(!td.dataset._origBg) td.dataset._origBg = td.style.background || 'none';
           td.style.background = '#fef9c3';
         });
@@ -849,7 +816,6 @@ function _moRenderRows(selProds) {
     });
     tr.addEventListener('mouseleave', function(){
       const d = this.dataset.moDate;
-      if(!d) return;
       tbody.querySelectorAll(`tr[data-mo-date="${d}"]`).forEach(r => {
         r.querySelectorAll('td').forEach(td => {
           td.style.background = (td.dataset._origBg === 'none') ? '' : td.dataset._origBg;
@@ -858,12 +824,11 @@ function _moRenderRows(selProds) {
     });
   });
 
-  // 인라인 편집 이벤트 재바인딩
+  // 인라인 편집 이벤트
   tbody.querySelectorAll('.mo-edit').forEach(el=>{
     el.addEventListener('click',async function(){
       const field=this.dataset.field, date=this.dataset.date;
       const labels={workers:'작업 인원 (명)',capa:'Full Capa (예: 10,000)',note:'비고'};
-      // ★ 메모리 캐시(=Firestore 최신)에서 읽음
       const cacheData = _moMetaCache[ym] || {};
       let cur = (cacheData[date]||{})[field] || '';
       const val=prompt(labels[field]+' 입력 (비우면 자동값 사용):',cur);
