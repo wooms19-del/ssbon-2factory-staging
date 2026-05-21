@@ -710,12 +710,13 @@ function _moRenderRows(selProds) {
     // 그날 모든 제품이 무육(메추리알 등)이면 부위 표시 안 함
     const _isAllNoMeat = dayRows.length>0 && dayRows.every(r => /메추리알/.test(r.product||''));
 
-    // ★ 제품별 type 결정 (packing record의 type 필드 기준, 가장 많이 쓴 type 1개)
+    // ★ 제품별 type 결정 (packing record의 type 필드 기준, 복수 타입이면 "우둔+설도" 형태로 합산)
     const _rowType = {};  // {product: type}
     dayRows.forEach(r => {
       const types = r.types || {};
       const sorted = Object.entries(types).sort((a,b)=>b[1]-a[1]);
-      _rowType[r.product] = sorted.length ? sorted[0][0] : '';
+      // 타입이 2개 이상이면 "우둔+설도" 형태로 표시
+      _rowType[r.product] = sorted.length > 1 ? sorted.map(([t])=>t).join('+') : (sorted.length ? sorted[0][0] : '');
     });
 
     // ★ 같은 type끼리 묶음 (rowspan 병합용)
