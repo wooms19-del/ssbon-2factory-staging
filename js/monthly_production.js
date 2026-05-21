@@ -241,6 +241,7 @@
     if(_mpRaw){
       _mpData     = _mpProcess(_mpRaw[0],_mpRaw[1],_mpRaw[2],_mpRaw[3],_mpRaw[4],_mpRaw[5]);
       _mpPrevData = _mpProcess(_mpRaw[6],_mpRaw[7],_mpRaw[8],_mpRaw[9],_mpRaw[10],_mpRaw[11]);
+      window._mpData = _mpData;
     }
     _mpRenderShell();
     if(_mpData) _mpRender();
@@ -345,6 +346,7 @@
         window._mpPendingDates = pendingDates;  // 디버그용
         _mpData     = _mpProcess(R[0],R[1],R[2],R[3],R[4],R[5], pendingDates);
         _mpPrevData = _mpProcess(R[6],R[7],R[8],R[9],R[10],R[11], null);  // 작년 비교는 그대로
+        window._mpData = _mpData;  // 월간 생산 일보에서 접근용
         _mpRender();
       } catch(e){
         console.error('[mp] reload error', e);
