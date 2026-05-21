@@ -430,12 +430,6 @@ async function renderMonthlyReport(pk, from, effectiveTo, ppMonth, thMonth, opDa
   // 글로벌 저장 (필터용)
   window._moGD = { dayEntries, rmByDate, rmByDatePart, opMap, metaMap, thMonth: thMonth||[], ppMonth: ppMonth||[], shMonth: shMonth||[], metaKey, attendanceMap: attendanceMap||{} };
 
-  // _mpData가 없으면 동일 데이터로 직접 생성 (실적관리 탭 안 열어도 동작)
-  if(!window._mpData && typeof _mpProcess === 'function') {
-    try {
-      window._mpData = _mpProcess(pk, opData||[], ppMonth||[], thMonth||[], shMonth||[], ckMonth||[], new Set());
-    } catch(e) { console.warn('[월간일보] _mpProcess 호출 실패:', e); }
-  }
   _moRenderRows(null);
   renderPackingChart(dayEntries, opMap, _moYm || tod().slice(0,7));
   // 일별 원육 사용량 차트
@@ -677,97 +671,98 @@ async function renderMonthlyReport(pk, from, effectiveTo, ppMonth, thMonth, opDa
 function _moRenderRows(selProds) {
   const tbody = document.getElementById('mo_report_tbl');
   const tfoot = document.getElementById('mo_report_total');
-  if(!tbody) return;
+  if(!tbody || !window._moGD) return;
 
-  // ★ _mpData(실적관리 월단위) 기반으로 렌더링 — 수치 일치 보장
-  const mpRows = (window._mpData && window._mpData.rows) || [];
-  if(!mpRows.length) {
-    tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;color:#aaa;padding:2rem">데이터 없음</td></tr>';
-    if(tfoot) tfoot.innerHTML = '';
-    return;
-  }
-
-  // 메타(작업인원, capa, 비고) 로드
+  const {dayEntries, rmByDate, opMap, metaMap, attendanceMap} = window._moGD;
   const ym = _moYm || tod().slice(0,7);
-  const metaMap = (window._moGD && window._moGD.metaMap) || {};
-  const attendanceMap = (window._moGD && window._moGD.attendanceMap) || {};
-
   const fmtKg = v => v>0 ? v.toLocaleString('ko-KR',{minimumFractionDigits:1,maximumFractionDigits:1}) : '—';
   const PC='padding:8px 8px;', P='padding:8px 10px;', vm='vertical-align:middle;';
   const dayBg=['background:#ffffff;','background:#f8fafc;'];
-
-  // 메인 행만, isSubTotal/합계 제외, 필터 적용
-  let rows = mpRows.filter(r => !r.isSubTotal && r.date && r._isMainRow !== false);
-
-  // 필터 (제품 필터)
-  if(selProds && selProds.size > 0) {
-    rows = rows.filter(r => selProds.has(r.product));
-  }
-
-  // 날짜별 그룹핑
-  const byDate = {};
-  const dateOrder = [];
-  rows.forEach(r => {
-    if(!byDate[r.date]) { byDate[r.date] = []; dateOrder.push(r.date); }
-    byDate[r.date].push(r);
-  });
-  const uniqueDates = [...new Set(dateOrder)].sort();
+  const _attMap = attendanceMap || {};
 
   const html = [];
   let dayNo = 1, totRm = 0, totPkKg = 0, totEa = 0;
 
-  uniqueDates.forEach(date => {
-    const dayRows = byDate[date];
-    if(!dayRows || !dayRows.length) return;
+  dayEntries.forEach(([date, allRows]) => {
+    const dayRows = selProds&&selProds.size>0 ? allRows.filter(r=>selProds.has(r.product)) : allRows;
+    if(!dayRows.length) return;
 
-    const cnt   = dayRows.length;
-    const dayRm = dayRows.reduce((s,r) => s+(r.rmKg||0), 0);
-    const dayPkKg = dayRows.reduce((s,r) => s+(r.meatKg||r.pkEa*(r.kgea||0)||0), 0);
-    const dayEa = dayRows.reduce((s,r) => s+(r.pkEaDisp||r.pkEa||0), 0);
-    const dayYld = dayRm>0 ? dayPkKg/dayRm*100 : null;
+    const cnt    = dayRows.length;
+    const dayRm  = r2(rmByDate[date]||0);
+    const effPkMap = {};
+    allRows.forEach(row => {
+      const _opEa = opMap[date+'|'+row.product]||0;
+      const _p = L.products.find(x=>x.name===row.product);
+      effPkMap[row.product] = _opEa>0&&_p ? r2(_opEa*_p.kgea) : row.pkKg;
+    });
+    const totalAllPkKg = r2(allRows.reduce((s,r)=>s+(effPkMap[r.product]||0),0));
+    const dayPkKg = r2(dayRows.reduce((s,r)=>s+(effPkMap[r.product]||0),0));
+    const propRm  = totalAllPkKg>0 ? r2(dayRm*(dayPkKg/totalAllPkKg)) : dayRm;
+    const dayYld  = propRm>0 ? dayPkKg/propRm*100 : null;
 
     const dow   = ['일','월','화','수','목','금','토'][new Date(date+'T00:00:00').getDay()];
-    const meta  = metaMap[date] || {};
-    const autoW = attendanceMap[date] || 0;
+    const meta  = metaMap[date]||{};
     const bg    = dayBg[(dayNo-1)%2];
+    const autoW = _attMap[date]||0;
     const workers = meta.workers!=null ? meta.workers : (autoW||'');
     const firstProd = L.products.find(x=>x.name===(dayRows[0]&&dayRows[0].product));
-    const capa  = meta.capa!=null ? meta.capa : (firstProd&&firstProd.capa ? firstProd.capa.toLocaleString() : '');
+    const capa  = meta.capa!=null ? meta.capa : (firstProd&&firstProd.capa?firstProd.capa.toLocaleString():'');
     const note  = meta.note!=null ? meta.note : '';
 
     const yldTxt = dayYld==null?'color:#aaa;':dayYld>=55?'color:#047857;':dayYld>=52?'color:#1d4ed8;':dayYld>=50?'color:#c2410c;':'color:#b91c1c;';
     const yldBg  = dayYld==null?bg:dayYld>=55?'background:#ecfdf5;':dayYld>=52?'background:#eff6ff;':dayYld>=50?'background:#fff7ed;':'background:#fef2f2;';
 
-    totRm += dayRm; totPkKg += dayPkKg; totEa += dayEa;
+    totRm += propRm; totPkKg += dayPkKg;
 
     const mkEdit = (field,val,display,style='') =>
       `<span class="mo-edit" data-date="${date}" data-field="${field}" title="클릭하여 수정" style="cursor:pointer;border-bottom:1px dashed #aaa;${style}">${display}</span>`;
-    const editW    = mkEdit('workers', workers, workers||'—')+'명';
-    const editCapa = mkEdit('capa', capa, capa||'—');
-    const editNote = mkEdit('note', note, note||'＋메모','font-size:12px;color:#999;display:inline-block;min-width:40px');
+    const editW    = mkEdit('workers',workers,workers||'—')+'명';
+    const editCapa = mkEdit('capa',capa,capa||'—');
+    const editNote = mkEdit('note',note,note||'＋메모','font-size:12px;color:#999;display:inline-block;min-width:40px');
+
+    // 타입별 그룹
+    const _rowType = {};
+    dayRows.forEach(r => {
+      const types = r.types||{};
+      const sorted = Object.entries(types).sort((a,b)=>b[1]-a[1]);
+      // 복수 타입이면 "우둔+설도" 형태
+      _rowType[r.product] = sorted.length>1 ? sorted.map(([t])=>t).join('+') : (sorted.length?sorted[0][0]:'');
+    });
+
+    // 타입별 rowspan 그룹
+    const _typeGroups = {};
+    dayRows.forEach((r,idx) => {
+      const t = _rowType[r.product]||'';
+      if(!_typeGroups[t]) _typeGroups[t]={startIdx:idx, count:0};
+      _typeGroups[t].count++;
+    });
+
+    // 부위별 원육사용량
+    const _rmByPart = (window._moGD&&window._moGD.rmByDatePart&&window._moGD.rmByDatePart[date])||{};
 
     dayRows.forEach((row, ri) => {
       const isFirst = ri===0, isLast = ri===cnt-1;
-      const rowBorder = isLast ? 'border-bottom:2px solid #cbd5e1;' : 'border-bottom:1px solid #e2e8f0;';
+      const rowBorder = isLast?'border-bottom:2px solid #cbd5e1;':'border-bottom:1px solid #e2e8f0;';
+      const _myType = _rowType[row.product]||'';
+      const _grp = _typeGroups[_myType]||{startIdx:ri,count:1};
+      const _isTypeFirst = ri===_grp.startIdx;
+      const _grpBorder = (_grp.startIdx+_grp.count>=cnt)?'border-bottom:2px solid #cbd5e1':'border-bottom:1px solid #cbd5e1';
 
-      // 원육타입 배지 (복수면 "우둔+설도")
-      const typeStr = row.type || '';
-      const typeBadge = typeStr
-        ? `<span style="display:inline-block;background:#dbeafe;color:#1e40af;border-radius:3px;padding:1px 6px;font-size:11px;font-weight:600;white-space:nowrap;margin:1px 2px">${typeStr}</span>`
+      const typeBadge = _myType
+        ? `<span style="display:inline-block;background:#dbeafe;color:#1e40af;border-radius:3px;padding:1px 6px;font-size:11px;font-weight:600;white-space:nowrap">${_myType}</span>`
         : '<span style="color:#ccc">—</span>';
 
-      // 원육사용량: 행별 rmKg
-      const rowRm = row.rmKg || 0;
+      // 원육사용량: 복수타입이면 합산, 단일이면 부위별
+      const _partRm = _myType.includes('+')
+        ? r2(Object.values(_rmByPart).reduce((s,v)=>s+v,0))
+        : r2(_rmByPart[_myType]||0);
 
-      // EA 표시
-      const opEa = row.pkEaSrc==='외' ? (row.pkEaDisp||row.pkEa||0) : 0;
-      const dispEa = row.pkEaDisp || row.pkEa || 0;
-      const eaLbl = dispEa>0
-        ? `${dispEa.toLocaleString()}<span style="font-size:10px;color:${row.pkEaSrc==='외'?'#6b7280':'#9ca3af'};margin-left:2px">(${row.pkEaSrc||'내'})</span>`
-        : '—';
-
-      // 완제품 중량
-      const pkKg = fmtKg(row.meatKg || row.pkEa*(row.kgea||0) || 0);
+      const _opEa = opMap[date+'|'+row.product]||0;
+      const _dispEa = _opEa>0?_opEa:(row.ea>0?Math.round(row.ea):0);
+      totEa += _dispEa;
+      const eaLbl = _opEa>0
+        ? `${_dispEa.toLocaleString()}<span style="font-size:10px;color:#6b7280;margin-left:2px">(외)</span>`
+        : (_dispEa>0?`${_dispEa.toLocaleString()}<span style="font-size:10px;color:#9ca3af;margin-left:2px">(내)</span>`:'—');
 
       let cells = '';
       if(isFirst){
@@ -775,12 +770,15 @@ function _moRenderRows(selProds) {
         cells+=`<td rowspan="${cnt}" style="${vm}${PC}${bg}text-align:center;border-right:1px solid #e2e8f0;border-bottom:2px solid #cbd5e1;line-height:1.5"><span style="font-weight:600;font-size:13px;color:#334155">${date.slice(5).replace('-','/')}</span><br><span style="font-size:10px;color:#94a3b8">(${dow})</span></td>`;
         cells+=`<td rowspan="${cnt}" style="${vm}${PC}${bg}text-align:center;color:#475569;border-right:1px solid #e2e8f0;border-bottom:2px solid #cbd5e1">${editW}</td>`;
       }
-      cells+=`<td style="${vm}${PC}${bg}text-align:center;border-right:1px solid #e2e8f0;${rowBorder}">${typeBadge}</td>`;
-      cells+=`<td style="${vm}${PC}${bg}text-align:center;font-weight:500;color:#1e293b;border-right:1px solid #e2e8f0;${rowBorder}">${row.product||''}</td>`;
-      cells+=`<td style="${vm}${PC}${bg}text-align:center;font-variant-numeric:tabular-nums;color:#374151;border-right:1px solid #e2e8f0;${rowBorder}">${fmtKg(r2(rowRm))}</td>`;
+      if(_isTypeFirst){
+        cells+=`<td rowspan="${_grp.count}" style="${vm}${PC}${bg}text-align:center;border-right:1px solid #e2e8f0;${_grpBorder}">${typeBadge}</td>`;
+      }
+      cells+=`<td style="${vm}${PC}${bg}text-align:center;font-weight:500;color:#1e293b;border-right:1px solid #e2e8f0;${rowBorder}">${row.product}</td>`;
+      if(_isTypeFirst){
+        cells+=`<td rowspan="${_grp.count}" style="${vm}${PC}${bg}text-align:center;font-variant-numeric:tabular-nums;color:#374151;border-right:1px solid #e2e8f0;${_grpBorder}">${fmtKg(_partRm)}</td>`;
+      }
       cells+=`<td style="${vm}${PC}${bg}text-align:center;font-variant-numeric:tabular-nums;color:#374151;border-right:1px solid #e2e8f0;${rowBorder}">${eaLbl}</td>`;
-      cells+=`<td style="${vm}${PC}${bg}text-align:center;font-weight:600;font-variant-numeric:tabular-nums;color:#374151;border-right:1px solid #e2e8f0;${rowBorder}">${pkKg}</td>`;
-
+      cells+=`<td style="${vm}${PC}${bg}text-align:center;font-weight:600;font-variant-numeric:tabular-nums;color:#374151;border-right:1px solid #e2e8f0;${rowBorder}">${fmtKg(effPkMap[row.product]||r2(row.pkKg))}</td>`;
       if(isFirst){
         cells+=`<td rowspan="${cnt}" style="${vm}${PC}${yldBg}text-align:center;font-weight:700;font-size:15px;${yldTxt}border-right:1px solid #e2e8f0;border-bottom:2px solid #cbd5e1">${dayYld!=null?dayYld.toFixed(1)+'%':'—'}</td>`;
         cells+=`<td rowspan="${cnt}" style="${vm}${PC}${bg}text-align:center;color:#64748b;border-right:1px solid #e2e8f0;border-bottom:2px solid #cbd5e1">${editCapa}</td>`;
@@ -791,10 +789,10 @@ function _moRenderRows(selProds) {
     dayNo++;
   });
 
-  tbody.innerHTML = html.join('') || '<tr><td colspan="11" style="text-align:center;color:#aaa;padding:2rem">데이터 없음</td></tr>';
+  tbody.innerHTML = html.join('')||`<tr><td colspan="11" style="text-align:center;color:#aaa;padding:2rem">데이터 없음</td></tr>`;
 
-  const totYld = totRm>0 ? (totPkKg/totRm*100).toFixed(1)+'%' : '—';
-  const selLabel = selProds&&selProds.size>0 ? ` [${[...selProds].join(' + ')}]` : '';
+  const totYld = totRm>0?(totPkKg/totRm*100).toFixed(1)+'%':'—';
+  const selLabel = selProds&&selProds.size>0?` [${[...selProds].join(' + ')}]`:'';
   if(tfoot) tfoot.innerHTML=`<tr style="background:#1e293b;color:#fff;font-weight:700">
     <td colspan="5" style="padding:10px 8px;text-align:center;font-size:13px;letter-spacing:.5px">합 계 (${dayNo-1}일)${selLabel}</td>
     <td style="padding:10px 8px;text-align:center;border-left:1px solid #334155;font-variant-numeric:tabular-nums">${fmtKg(totRm)}</td>
@@ -804,37 +802,35 @@ function _moRenderRows(selProds) {
     <td colspan="2" style="border-left:1px solid #334155"></td>
   </tr>`;
 
-  // 호버 효과
   tbody.querySelectorAll('tr[data-mo-date]').forEach(tr => {
     tr.addEventListener('mouseenter', function(){
-      const d = this.dataset.moDate;
-      tbody.querySelectorAll(`tr[data-mo-date="${d}"]`).forEach(r => {
-        r.querySelectorAll('td').forEach(td => {
-          if(!td.dataset._origBg) td.dataset._origBg = td.style.background || 'none';
-          td.style.background = '#fef9c3';
+      const d=this.dataset.moDate;
+      tbody.querySelectorAll(`tr[data-mo-date="${d}"]`).forEach(r=>{
+        r.querySelectorAll('td').forEach(td=>{
+          if(!td.dataset._origBg) td.dataset._origBg=td.style.background||'none';
+          td.style.background='#fef9c3';
         });
       });
     });
     tr.addEventListener('mouseleave', function(){
-      const d = this.dataset.moDate;
-      tbody.querySelectorAll(`tr[data-mo-date="${d}"]`).forEach(r => {
-        r.querySelectorAll('td').forEach(td => {
-          td.style.background = (td.dataset._origBg === 'none') ? '' : td.dataset._origBg;
+      const d=this.dataset.moDate;
+      tbody.querySelectorAll(`tr[data-mo-date="${d}"]`).forEach(r=>{
+        r.querySelectorAll('td').forEach(td=>{
+          td.style.background=(td.dataset._origBg==='none')?'':td.dataset._origBg;
         });
       });
     });
   });
 
-  // 인라인 편집 이벤트
   tbody.querySelectorAll('.mo-edit').forEach(el=>{
     el.addEventListener('click',async function(){
       const field=this.dataset.field, date=this.dataset.date;
       const labels={workers:'작업 인원 (명)',capa:'Full Capa (예: 10,000)',note:'비고'};
-      const cacheData = _moMetaCache[ym] || {};
-      let cur = (cacheData[date]||{})[field] || '';
+      const cacheData=_moMetaCache[ym]||{};
+      let cur=(cacheData[date]||{})[field]||'';
       const val=prompt(labels[field]+' 입력 (비우면 자동값 사용):',cur);
       if(val===null) return;
-      const mm = JSON.parse(JSON.stringify(cacheData));
+      const mm=JSON.parse(JSON.stringify(cacheData));
       if(!mm[date]) mm[date]={};
       if(val.trim()===''){
         delete mm[date][field];
@@ -843,11 +839,11 @@ function _moRenderRows(selProds) {
         mm[date][field]=(field==='note')?val:(parseFloat(val.replace(/,/g,''))||val);
       }
       try {
-        await _moSaveMeta(ym, mm);
+        await _moSaveMeta(ym,mm);
         renderMonthly();
       } catch(e) {
-        if(typeof toast === 'function') toast('저장 실패: ' + e.message, 'd');
-        console.error('[월간메모 저장 실패]', e);
+        if(typeof toast==='function') toast('저장 실패: '+e.message,'d');
+        console.error('[월간메모 저장 실패]',e);
       }
     });
   });
