@@ -1081,17 +1081,22 @@
         list.sort(function(a,b){
           return String(a.date||'').localeCompare(String(b.date||''));
         });
-        // ★ 일자별 메인 행만 표시 (부위별 보조 행은 숨김)
-        var displayList = list.filter(function(r){ return r._isMainRow !== false; });
+        // ★ 제품별 모드: 메인 행 + 부위별 보조 행(_isPartRow) 모두 표시
+        // 메인 행이 없고 보조 행만 있는 날짜(우둔+설도 혼합 등)도 표시
+        var mainList = list.filter(function(r){ return r._isMainRow !== false; });
+        var partList = list.filter(function(r){ return r._isPartRow === true; });
+        // 메인 행 없으면 보조 행으로 대체
+        var displayList = mainList.length > 0 ? mainList : partList;
         displayList.forEach(function(r){
           // ★ 제품별 모드에서는 일자/부위 rowspan 효과 끄기 — 모든 행에 td 출력
           r.dateRowIdx = 0;
           r._grpSize = 1;
           r._grpFirst = true;
+          r._isMainRow = true; // 서브토탈 합산 대상으로 승격
           newRows.push(r);
         });
-        // ★ 서브토탈 계산 — 메인 행만 합산 (부위별 보조 행 제외, 이중 집계 방지)
-        var sumList = list.filter(function(r){ return r._isMainRow !== false; });
+        // ★ 서브토탈 계산 — displayList 기준 합산
+        var sumList = displayList;
         var sub = {
           product: prod,
           type: '',
