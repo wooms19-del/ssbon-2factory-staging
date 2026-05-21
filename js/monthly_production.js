@@ -935,7 +935,6 @@
 
     return {
       rows: rows,
-      allocMap: allocMap,
       testCount: pk.filter(isTestPk).length
     };
   }
