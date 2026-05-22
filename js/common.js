@@ -2,7 +2,7 @@
 
 
 var firebaseConfig = {
-  apiKey: "AIzaSyA0Y6VK8EOahDE6O7LEWtyG9-U8YP3yqDE",
+  apiKey: "AIzaSyA0Y6VK8EOahDE607LEWtyG9-U8YP3yqDE",
   authDomain: "ssbon-factory.firebaseapp.com",
   projectId: "ssbon-factory",
   storageBucket: "ssbon-factory.firebasestorage.app",
