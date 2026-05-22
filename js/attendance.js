@@ -943,12 +943,23 @@ function attDownloadWeekly(){
     // ─ 셀 범위 설정
     ws['!ref']=addr(1,1)+':'+addr(LASTROW,LASTCOL);
 
-    // ─ 인쇄 설정
-    ws['!pageSetup']={orientation:'landscape',paperSize:9,fitToPage:true,fitToWidth:1,fitToHeight:1};
-
     wb.Sheets['출퇴근기록부']=ws;
     var fname='출퇴근_'+yr+String(mo).padStart(2,'0')+'.xlsx';
-    XLSX.writeFile(wb,fname,{cellStyles:true});
+    // ─ 인쇄 설정: xlsx-js-style는 !pageSetup을 출력 안 하므로, 생성 후 sheet XML에 직접 주입
+    var _arr=XLSX.write(wb,{type:'array',bookType:'xlsx',cellStyles:true});
+    var _z=fflate.unzipSync(new Uint8Array(_arr));
+    var _dec=new TextDecoder(), _enc=new TextEncoder();
+    var _ps='<pageMargins left="0.2" right="0.2" top="0.3" bottom="0.3" header="0.1" footer="0.1"/><pageSetup paperSize="9" orientation="landscape" fitToWidth="1" fitToHeight="1"/>';
+    Object.keys(_z).forEach(function(k){
+      if(/^xl\/worksheets\/sheet\d+\.xml$/.test(k)){
+        var xml=_dec.decode(_z[k]);
+        if(xml.indexOf('<sheetPr')<0) xml=xml.replace(/(<worksheet[^>]*>)/, '$1<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>');
+        xml = xml.indexOf('<ignoredErrors')>=0 ? xml.replace('<ignoredErrors', _ps+'<ignoredErrors') : xml.replace('</worksheet>', _ps+'</worksheet>');
+        _z[k]=_enc.encode(xml);
+      }
+    });
+    var _blob=new Blob([fflate.zipSync(_z)],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+    var _a=document.createElement('a');_a.href=URL.createObjectURL(_blob);_a.download=fname;document.body.appendChild(_a);_a.click();document.body.removeChild(_a);URL.revokeObjectURL(_a.href);
     toast('엑셀 다운로드 완료 ✓','s');
   }catch(e){
     alert('다운로드 실패: '+e.message);
