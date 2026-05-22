@@ -1071,32 +1071,60 @@ function _agentFormatData(data, start, end) {
   if(cols.length === 0 || cols.every(c => data[c].length === 0)) {
     return '[조회결과: ' + label + '] 해당 기간 데이터 없음';
   }
+  var colLabel = {thawing:'방혈',preprocess:'전처리',cooking:'자숙',shredding:'파쇄',packing:'내포장',outerpacking:'외포장',sauce:'소스'};
+  var num = v => parseFloat(v)||0;
+
+  // 방혈 원물 총량 (원물 대비 누적 수율 기준값)
+  var rawTotal = (data.thawing||[]).reduce((a,r)=>a+num(r.totalKg),0);
+  var rawByType = {};
+  (data.thawing||[]).forEach(r=>{ var t=r.type||'기타'; rawByType[t]=(rawByType[t]||0)+num(r.totalKg); });
+
   cols.forEach(col => {
     var recs = data[col];
     if(!recs.length) return;
-    var colLabel = {thawing:'방혈',preprocess:'전처리',cooking:'자숙',shredding:'파쇄',packing:'내포장',outerpacking:'외포장',sauce:'소스'}[col]||col;
-    lines.push('\n▶ ' + colLabel + ' (' + recs.length + '건)');
+    lines.push('\n▶ ' + (colLabel[col]||col) + ' (' + recs.length + '건)');
     recs.forEach(r => {
       var parts = [];
       if(r.date)    parts.push('날짜:'+r.date);
-      if(r.inKg)    parts.push('투입:'+r.inKg+'kg');
-      if(r.outKg)   parts.push('산출:'+r.outKg+'kg');
-      if(r.totalKg) parts.push('총중량:'+r.totalKg+'kg');
-      if(r.boxes)   parts.push('박스:'+r.boxes);
+      if(r.type)    parts.push('부위:'+r.type);
+      if(r.totalKg) parts.push('원물:'+r.totalKg+'kg');   // 방혈
+      if(r.kgIn)    parts.push('투입:'+r.kgIn+'kg');        // 자숙/파쇄
+      if(r.kg!=null)parts.push('산출:'+r.kg+'kg');          // 전처리/자숙/파쇄
+      if(r.waste)   parts.push('비가식:'+r.waste+'kg');
       if(r.ea)      parts.push('EA:'+r.ea);
       if(r.product) parts.push('제품:'+r.product);
-      if(r.inedible)parts.push('비가식:'+r.inedible+'kg');
-      if(r.defPouch)parts.push('불량:'+r.defPouch);
-      if(r.type)    parts.push('종류:'+r.type);
+      if(r.defect)  parts.push('불량:'+r.defect);
+      if(r.boxes)   parts.push('박스:'+r.boxes);
       if(r.start)   parts.push('시작:'+r.start);
-      if(r.end)     parts.push('종료:'+(r.end||'진행중'));
+      if('end' in r)parts.push('종료:'+(r.end||'진행중'));
       lines.push('  - ' + parts.join(', '));
     });
-    // 수율 자동 계산
+
+    // 공정별 수율: 단계별(산출/투입) + 원물대비 누적(산출/방혈원물)
     if(col==='preprocess'||col==='cooking'||col==='shredding') {
-      var inSum = recs.reduce((a,r)=>a+(parseFloat(r.inKg)||0),0);
-      var outSum = recs.reduce((a,r)=>a+(parseFloat(r.outKg)||0),0);
-      if(inSum>0) lines.push('  ※ 합계: 투입'+inSum.toFixed(1)+'kg → 산출'+outSum.toFixed(1)+'kg (수율'+(outSum/inSum*100).toFixed(1)+'%)');
+      var outSum = recs.reduce((a,r)=>a+num(r.kg),0);
+      // 단계별 투입: 전처리는 방혈원물 기준, 자숙/파쇄는 kgIn
+      var inSum;
+      if(col==='preprocess') inSum = rawTotal;
+      else inSum = recs.reduce((a,r)=>a+num(r.kgIn),0);
+
+      if(inSum>0) lines.push('  ※ 단계별 수율: 투입'+inSum.toFixed(1)+'kg → 산출'+outSum.toFixed(1)+'kg ('+(outSum/inSum*100).toFixed(1)+'%)');
+      if(rawTotal>0) lines.push('  ※ 원물대비 누적수율: 방혈원물'+rawTotal.toFixed(1)+'kg → '+(colLabel[col]||col)+'산출'+outSum.toFixed(1)+'kg ('+(outSum/rawTotal*100).toFixed(1)+'%)');
+
+      // 부위별 (type 있는 경우만)
+      var byType = {};
+      recs.forEach(r=>{ var t=r.type||'기타'; if(!byType[t])byType[t]={out:0,kin:0}; byType[t].out+=num(r.kg); byType[t].kin+=num(r.kgIn); });
+      var types = Object.keys(byType);
+      if(types.length>1 || (types.length===1 && types[0]!=='기타')) {
+        types.forEach(t=>{
+          var o=byType[t].out;
+          var ki = col==='preprocess' ? (rawByType[t]||0) : byType[t].kin;
+          var seg = []; 
+          seg.push(t+': 산출'+o.toFixed(1)+'kg');
+          if(ki>0) seg.push('단계수율'+(o/ki*100).toFixed(1)+'%');
+          lines.push('    └ '+seg.join(', '));
+        });
+      }
     }
   });
   return lines.join('\n');
@@ -1108,7 +1136,7 @@ function _agentFormatOpen(data) {
   if(data.cooking && data.cooking.length) {
     any = true;
     lines.push('▶ 자숙 진행중 ' + data.cooking.length + '건:');
-    data.cooking.forEach(r => lines.push('  - 시작:' + r.start + ' 투입:' + (r.inKg||'?') + 'kg'));
+    data.cooking.forEach(r => lines.push('  - 시작:' + r.start + ' 투입:' + (r.kgIn||'?') + 'kg'));
   }
   if(data.packing && data.packing.length) {
     any = true;
@@ -1126,18 +1154,25 @@ function _agentFormatOpen(data) {
 
 function _agentFormatMonthly(data, ym) {
   var lines = ['[' + ym + ' 월간 집계]'];
-  var thawKg=0, thawBox=0, preIn=0, preOut=0, ckIn=0, ckOut=0, shrIn=0, shrOut=0, pkEa=0, pkDef=0, outBox=0;
+  var thawKg=0, thawBox=0, preOut=0, ckIn=0, ckOut=0, shrIn=0, shrOut=0, pkEa=0, pkDef=0, outBox=0;
   (data.thawing||[]).forEach(r=>{thawKg+=(parseFloat(r.totalKg)||0);thawBox+=(parseInt(r.boxes)||0);});
-  (data.preprocess||[]).forEach(r=>{preIn+=(parseFloat(r.inKg)||0);preOut+=(parseFloat(r.outKg)||0);});
-  (data.cooking||[]).forEach(r=>{ckIn+=(parseFloat(r.inKg)||0);ckOut+=(parseFloat(r.outKg)||0);});
-  (data.shredding||[]).forEach(r=>{shrIn+=(parseFloat(r.inKg)||0);shrOut+=(parseFloat(r.outKg)||0);});
-  (data.packing||[]).forEach(r=>{pkEa+=(parseInt(r.ea)||0);pkDef+=(parseInt(r.defPouch)||0);});
-  (data.outerpacking||[]).forEach(r=>{outBox+=(parseFloat(r.outBoxes)||0);});
-  if(thawKg>0)  lines.push('방혈: ' + thawBox + '박스 / ' + thawKg.toFixed(0) + 'kg');
-  if(preIn>0)   lines.push('전처리: ' + preIn.toFixed(0) + ' → ' + preOut.toFixed(0) + 'kg (수율'+(preOut/preIn*100).toFixed(1)+'%)');
-  if(ckIn>0)    lines.push('자숙: '  + ckIn.toFixed(0)  + ' → ' + ckOut.toFixed(0)  + 'kg (수율'+(ckOut/ckIn*100).toFixed(1)+'%)');
-  if(shrIn>0)   lines.push('파쇄: '  + shrIn.toFixed(0)  + ' → ' + shrOut.toFixed(0)  + 'kg (수율'+(shrOut/shrIn*100).toFixed(1)+'%)');
-  if(pkEa>0)    lines.push('포장: '  + pkEa.toLocaleString() + 'EA (불량'+pkDef+'개/'+(pkEa>0?(pkDef/pkEa*100).toFixed(2):'0')+'%)');
+  (data.preprocess||[]).forEach(r=>{preOut+=(parseFloat(r.kg)||0);});
+  (data.cooking||[]).forEach(r=>{ckIn+=(parseFloat(r.kgIn)||0);ckOut+=(parseFloat(r.kg)||0);});
+  (data.shredding||[]).forEach(r=>{shrIn+=(parseFloat(r.kgIn)||0);shrOut+=(parseFloat(r.kg)||0);});
+  (data.packing||[]).forEach(r=>{pkEa+=(parseInt(r.ea)||0);pkDef+=(parseInt(r.defect)||0);});
+  (data.outerpacking||[]).forEach(r=>{outBox+=(parseFloat(r.outerBoxes)||0);});
+  if(thawKg>0)  lines.push('방혈(원물): ' + thawBox + '박스 / ' + thawKg.toFixed(0) + 'kg');
+  function _y(label, inKg, outKg, rawKg){
+    if(outKg<=0) return;
+    var seg = label+': 산출'+outKg.toFixed(0)+'kg';
+    if(inKg>0)  seg += ' / 단계수율'+(outKg/inKg*100).toFixed(1)+'%';
+    if(rawKg>0) seg += ' / 원물대비누적'+(outKg/rawKg*100).toFixed(1)+'%';
+    lines.push(seg);
+  }
+  _y('전처리', thawKg, preOut, thawKg);
+  _y('자숙',   ckIn,   ckOut,  thawKg);
+  _y('파쇄',   shrIn,  shrOut, thawKg);
+  if(pkEa>0)    lines.push('내포장: '  + pkEa.toLocaleString() + 'EA (불량'+pkDef+'개/'+(pkEa>0?(pkDef/pkEa*100).toFixed(2):'0')+'%)');
   if(outBox>0)  lines.push('외포장: ' + outBox.toFixed(0) + '박스');
   if(lines.length===1) lines.push('데이터 없음');
   return lines.join('\n');
@@ -1192,8 +1227,11 @@ async function _sendChatMsg() {
 2. 날짜/기간/현황/예상/분석 질문 → 반드시 도구 호출해서 실제 데이터 확인 후 답변. 데이터 없이 추측/예상 금지.
 3. 데이터 없으면 "해당 날짜 데이터 없음"으로 명시. "probably", "아마도", "예상컨대" 등 추측성 표현 금지.
 4. 마크다운 사용 금지. 일반 텍스트만. 단, 차트는 아래 규칙 적용.
-5. 수율은 원물 대비 누적 수율로 계산.
+5. 수율은 원물 대비 누적 수율로 계산. 도구 결과에 "원물대비 누적수율"과 "단계별 수율"이 둘 다 나오면 둘 다 보고. 부위별(홍두깨/우둔/설도) 질문이면 도구 결과의 부위별(└) 수치를 그대로 사용.
 6. "오늘", "어제", "이번달" = 오늘(${today}) 기준으로 날짜 계산.
+7. ★최우선★ 절대 수치를 지어내지 마라. 모든 kg·수율·% 숫자는 반드시 도구가 반환한 실제 값만 사용. 도구 결과에 없는 숫자는 절대 만들지 마라.
+8. ★최우선★ "홍두깨는 보통 ~%", "설도는 지방이 많아 ~% 손실" 같은 부위별 일반론·표준 추정치를 데이터 없이 지어내는 것 절대 금지. 부위별 수율을 물으면 반드시 도구로 그 부위 실제 데이터를 조회해서 계산. 데이터가 없으면 "해당 데이터가 없어 계산할 수 없습니다"라고만 답하고, 일반적인 공정 설명이나 추정 범위를 만들어내지 마라.
+9. 도구 결과의 kg가 비어 보이거나 0이면, 추정으로 메우지 말고 "해당 항목 데이터 없음"이라고 정직하게 보고.
 
 [차트/그래프/타임라인 요청 시 — 반드시 따를 것]
 - 그래프, 차트, 타임라인, 시각화, 이미지 형식 요청 시 → SVG 코드를 [CHART]SVG코드[/CHART] 태그로 감싸서 출력.
