@@ -1,12 +1,12 @@
 // ============================================================
 // 일정표  js/schedule.js  v5
 // ============================================================
-var _schYear=new Date().getFullYear(), _schMonth=new Date().getMonth(), _schTab='input';
+var _schYear=new Date().getFullYear(), _schMonth=new Date().getMonth(), _schTab='view';
 
 function _schDocId(y,m){return y+'-'+String(m+1).padStart(2,'0');}
 
 function initSchedule(){
-  _schYear=new Date().getFullYear();_schMonth=new Date().getMonth();_schTab='input';
+  _schYear=new Date().getFullYear();_schMonth=new Date().getMonth();_schTab='view';
   renderSchedule();
 }
 function setModeSchedule(){
@@ -55,7 +55,7 @@ function renderSchedule(){
     +'<button class="btn" style="padding:4px 10px" onclick="schNextMonth()">▶</button>'
     +'</div><button class="btn" style="padding:4px 12px;font-size:12px" onclick="schGoToday()">오늘</button></div>'
     +'<div style="display:flex;gap:0;padding:0 14px;margin-top:6px">'
-    +['input','view'].map(function(t){
+    +['view','input'].map(function(t){
       var on=_schTab===t,lb=t==='input'?'일정 저장':'일정 현황';
       return '<button onclick="schSwitchTab(\''+t+'\')" style="padding:8px 20px;font-size:13px;font-weight:'+(on?700:500)+';color:'+(on?'var(--p)':'var(--g5)')+';border-bottom:'+(on?'2px solid var(--p)':'2px solid transparent')+';background:none;border-top:none;border-left:none;border-right:none;cursor:pointer">'+lb+'</button>';
     }).join('')+'</div></div>'
