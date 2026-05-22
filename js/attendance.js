@@ -902,15 +902,21 @@ function attDownloadWeekly(){
         var ds=dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0');
         var raw=localStorage.getItem(_attDateKey(ds));
         var r=raw?JSON.parse(raw)[name]:null;
-        var inT='', outT='';
+        var inT='', outT='', mark='';
         if(r){
           var tags=r.tags||[];
-          if(tags.indexOf('absent')>=0){inT='결근';}
-          else if(tags.indexOf('annual')>=0){inT='연차';}
+          if(tags.indexOf('absent')>=0){mark='absent';}
+          else if(tags.indexOf('annual')>=0){mark='annual';}
           else{inT=r.inTime||'';outT=r.outTime||'';}
         }
-        setRange(row,base,row,base+3,inT,{bl:d==0?med():thin(),br:thin(),bt:thin(),bb:bb});
-        setRange(row,base+4,row,base+7,outT,{bl:thin(),br:d==6?med():thin(),bt:thin(),bb:bb});
+        if(mark){
+          var lbl=mark==='absent'?'결근':'연차';
+          var bgc=mark==='absent'?'FBE0E0':'EFEFEF';   // 결근=옅은 빨강, 연차=옅은 회색
+          setRange(row,base,row,base+7,lbl,{fill:bgc,bl:d==0?med():thin(),br:d==6?med():thin(),bt:thin(),bb:bb});
+        }else{
+          setRange(row,base,row,base+3,inT,{bl:d==0?med():thin(),br:thin(),bt:thin(),bb:bb});
+          setRange(row,base+4,row,base+7,outT,{bl:thin(),br:d==6?med():thin(),bt:thin(),bb:bb});
+        }
       }
       setRange(row,SS,row,LASTCOL,'',{bl:med(),br:med(),bt:thin(),bb:bb});
     }
