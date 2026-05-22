@@ -1201,7 +1201,7 @@ ${knowledgeBase ? '\n[도메인 지식]\n' + knowledgeBase : ''}`;
         system_instruction: {parts:[{text:systemPrompt}]},
         contents,
         tools:_AGENT_TOOLS,
-        generationConfig:{temperature:0.3, maxOutputTokens:3000}
+        generationConfig:{temperature:0.3, maxOutputTokens:8000}
       })
     });
     if(!res1.ok) throw new Error('API ' + res1.status + ': ' + (await res1.text()).slice(0,200));
@@ -1246,7 +1246,7 @@ ${knowledgeBase ? '\n[도메인 지식]\n' + knowledgeBase : ''}`;
           system_instruction: {parts:[{text:systemPrompt}]},
           contents,
           tools:_AGENT_TOOLS,
-          generationConfig:{temperature:0.3, maxOutputTokens:3000}
+          generationConfig:{temperature:0.3, maxOutputTokens:8000}
         })
       });
       if(!res2.ok) throw new Error('API2 ' + res2.status + ': ' + (await res2.text()).slice(0,200));
