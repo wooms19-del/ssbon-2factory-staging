@@ -936,7 +936,7 @@ function attDownloadWeekly(){
     var _hdr=[20,16,14];                                 // 제목/날짜/출퇴근 (얇게)
     var _hdrSum=_hdr[0]+_hdr[1]+_hdr[2];
     var _totalWch=4+6*3.5+numDays*8*2.75+3*perSignCell;   // 전체 열 너비 합(wch)
-    var _natW=_totalWch*5.25;                            // 자연 폭(pt 근사)
+    var _natW=_totalWch*7.2;                            // 자연 폭(pt 근사)
     var _targetH=_natW*(552/813);                        // 페이지 비율에 맞춘 총 높이(pt)
     var _dataH=Math.max(14, Math.min(100, (_targetH-_hdrSum)/_attEmps.length));
     var rows=[{hpt:_hdr[0]},{hpt:_hdr[1]},{hpt:_hdr[2]}];
