@@ -863,12 +863,11 @@ function attDownloadWeekly(){
     var yr=dates[0].getFullYear(), mo=dates[0].getMonth()+1;
     setRange(1,1,1,SS-1, yr+'년 '+mo+'월 출퇴근 기록부',
       {sz:13,bold:true,bl:med(),br:thin(),bt:med(),bb:thin()});
-    setRange(1,SS,1,LASTCOL,'담당 / 검토 / 승인',
+    setRange(1,SS,4,LASTCOL,'서  명',
       {bold:true,fill:'DBE5F1',bl:med(),br:med(),bt:med(),bb:thin()});
 
     // ─ 행2 서명 공간
     setRange(2,1,2,SS-1,'',{bl:med(),br:thin(),bt:thin(),bb:med()});
-    setRange(2,SS,2,LASTCOL,'',{bl:med(),br:med(),bt:thin(),bb:med()});
 
     // ─ 행3 날짜
     setRange(3,1,3,7,'성  명',{bold:true,fill:'DBE5F1',bl:med(),br:med(),bt:med(),bb:thin()});
@@ -879,7 +878,6 @@ function attDownloadWeekly(){
       setRange(3,base,3,base+7,lb,{bold:true,fill:'DBE5F1',
         bl:d==0?med():thin(),br:d==6?med():thin(),bt:med(),bb:thin()});
     }
-    setRange(3,SS,3,LASTCOL,'서  명',{bold:true,fill:'DBE5F1',bl:med(),br:med(),bt:med(),bb:thin()});
 
     // ─ 행4 출근/퇴근
     setRange(4,1,4,7,'',{fill:'DBE5F1',bl:med(),br:med(),bt:thin(),bb:med()});
@@ -890,7 +888,6 @@ function attDownloadWeekly(){
       setRange(4,base+4,4,base+7,'퇴  근',{bold:true,fill:'DBE5F1',
         bl:thin(),br:d==6?med():thin(),bt:thin(),bb:med()});
     }
-    setRange(4,SS,4,LASTCOL,'',{fill:'DBE5F1',bl:med(),br:med(),bt:thin(),bb:med()});
 
     // ─ 직원 행
     for(var idx=0;idx<_attEmps.length;idx++){
@@ -936,8 +933,16 @@ function attDownloadWeekly(){
     for(var i=0;i<3;i++) cols.push({wch:perSignCell});    // 서명 3칸(넓게)
     ws['!cols']=cols;
 
-    var rows=[{hpt:28},{hpt:40},{hpt:22},{hpt:18}];
-    for(var i=0;i<_attEmps.length;i++) rows.push({hpt:19});
+    // 행 높이: A4 한 장에 세로까지 꽉 차도록 동적 계산
+    //   한 달치는 폭이 넓어 폭 기준으로 축소되므로, 그 축소율에 맞춰 데이터 행을 키워 세로를 채움
+    var _hdr=[28,40,22,18];                                  // 헤더 4행 고정
+    var _totalWch=4+6*3.5+numDays*8*2.6+3*perSignCell;       // 전체 열 너비 합(wch)
+    var _wScale=Math.min(1, 813/(_totalWch*5.25));           // 가로 인쇄영역(≈813pt) 기준 축소율
+    var _needH=552/_wScale;                                  // 세로 인쇄영역(≈552pt)을 채우는 데 필요한 총 높이
+    var _hdrSum=_hdr[0]+_hdr[1]+_hdr[2]+_hdr[3];
+    var _dataH=Math.max(19, Math.min(80, (_needH-_hdrSum)/_attEmps.length));
+    var rows=[{hpt:_hdr[0]},{hpt:_hdr[1]},{hpt:_hdr[2]},{hpt:_hdr[3]}];
+    for(var i=0;i<_attEmps.length;i++) rows.push({hpt:_dataH});
     ws['!rows']=rows;
 
     // ─ 셀 범위 설정
