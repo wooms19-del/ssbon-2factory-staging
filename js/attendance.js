@@ -993,7 +993,7 @@ function attDownloadRange() {
   var dlabels=['일','월','화','수','목','금','토'];
 
   try {
-    var wb=XLSX.utils.book_new();
+    var wb={SheetNames:[],Sheets:{}};
 
     // ── 공통 헬퍼
     var thin={style:'thin',color:{rgb:'CCCCCC'}};
@@ -1009,42 +1009,43 @@ function attDownloadRange() {
       return s;
     }
     function R(r,c){return XLSX.utils.encode_cell({r:r,c:c});}
+    function C(v,style){return {v:v, t:(typeof v==='number'?'n':'s'), s:style};}
 
     // ══════════════════════════════════════════
     // 시트1: 서명표
     // ══════════════════════════════════════════
-    var ws1={}, m1=[];
+    var ws1={'!type':'sheet'}, m1=[];
     var DS=8, perSign=3; // 번호1+성명6+날짜8*numDays+서명3
     var LASTCOL=DS+numDays*8+perSign-1;
 
     // 행0: 제목 + 서명헤더
-    ws1[R(0,0)]={v:from.slice(0,7).replace('-','년 ')+'월 출퇴근 기록부',
+    ws1[R(0,0)]={v:from.slice(0,7).replace('-','년 ')+'월 출퇴근 기록부', t:'s',
       s:{font:{name:'맑은 고딕',sz:13,bold:true},alignment:{horizontal:'center',vertical:'center'},
          fill:{patternType:'solid',fgColor:{rgb:'DBE5F1'}},border:bdr(med,thin,med,thin)}};
     m1.push({s:{r:0,c:0},e:{r:0,c:DS+numDays*8-1}});
-    ws1[R(0,DS+numDays*8)]={v:'서  명',
+    ws1[R(0,DS+numDays*8)]={v:'서  명', t:'s',
       s:{font:{name:'맑은 고딕',sz:9,bold:true},alignment:{horizontal:'center',vertical:'center'},
          fill:{patternType:'solid',fgColor:{rgb:'DBE5F1'}},border:bdr(med,med,med,thin)}};
     m1.push({s:{r:0,c:DS+numDays*8},e:{r:2,c:LASTCOL}});
 
     // 행1: 성명 + 날짜
-    ws1[R(1,0)]={v:'',s:cs('DBE5F1',true)}; // 번호
-    ws1[R(1,1)]={v:'성  명',s:cs('DBE5F1',true)};
+    ws1[R(1,0)]={v:'',t:'s',s:cs('DBE5F1',true)}; // 번호
+    ws1[R(1,1)]=C('성  명',cs('DBE5F1',true));
     m1.push({s:{r:1,c:0},e:{r:2,c:0}});
     m1.push({s:{r:1,c:1},e:{r:2,c:7}});
     for(var di=0;di<numDays;di++){
       var base=DS+di*8;
       var dt=dates[di];
       var lb=(dt.getMonth()+1)+'/'+dt.getDate()+'('+dlabels[dt.getDay()]+')';
-      ws1[R(1,base)]={v:lb,s:cs('DBE5F1',true)};
+      ws1[R(1,base)]=C(lb,cs('DBE5F1',true));
       m1.push({s:{r:1,c:base},e:{r:1,c:base+7}});
     }
 
     // 행2: 출근/퇴근
     for(var di=0;di<numDays;di++){
       var base=DS+di*8;
-      ws1[R(2,base)]  ={v:'출  근',s:cs('DBE5F1',true)};
-      ws1[R(2,base+4)]={v:'퇴  근',s:cs('DBE5F1',true)};
+      ws1[R(2,base)]  =C('출  근',cs('DBE5F1',true));
+      ws1[R(2,base+4)]=C('퇴  근',cs('DBE5F1',true));
       m1.push({s:{r:2,c:base},e:{r:2,c:base+3}});
       m1.push({s:{r:2,c:base+4},e:{r:2,c:base+7}});
     }
@@ -1053,8 +1054,8 @@ function attDownloadRange() {
     _attEmps.forEach(function(emp,idx){
       var row=3+idx;
       var isLast=idx===_attEmps.length-1;
-      ws1[R(row,0)]={v:idx+1,s:cs(null,false)};
-      ws1[R(row,1)]={v:emp.name,s:cs(null,false,9,'left')};
+      ws1[R(row,0)]=C(idx+1,cs(null,false));
+      ws1[R(row,1)]=C(emp.name,cs(null,false,9,'left'));
       m1.push({s:{r:row,c:1},e:{r:row,c:7}});
       for(var di=0;di<numDays;di++){
         var base=DS+di*8;
@@ -1071,15 +1072,15 @@ function attDownloadRange() {
         if(mark){
           var lbl=mark==='absent'?'결근':'연차';
           var bgc=mark==='absent'?'FBE0E0':'EFEFEF';
-          ws1[R(row,base)]={v:lbl,s:cs(bgc,false)};
+          ws1[R(row,base)]=C(lbl,cs(bgc,false));
           m1.push({s:{r:row,c:base},e:{r:row,c:base+7}});
         } else {
-          ws1[R(row,base)]  ={v:inT, s:cs(null,false)};
-          ws1[R(row,base+4)]={v:outT,s:cs(null,false)};
+          ws1[R(row,base)]  =C(inT,cs(null,false));
+          ws1[R(row,base+4)]=C(outT,cs(null,false));
           m1.push({s:{r:row,c:base},e:{r:row,c:base+3}});
           m1.push({s:{r:row,c:base+4},e:{r:row,c:base+7}});
         }
-        ws1[R(row,DS+numDays*8)]={v:'',s:cs(null,false)};
+        ws1[R(row,DS+numDays*8)]=C('',cs(null,false));
         m1.push({s:{r:row,c:DS+numDays*8},e:{r:row,c:LASTCOL}});
       }
     });
@@ -1098,31 +1099,31 @@ function attDownloadRange() {
     ws1['!rows']=rows1;
     ws1['!merges']=m1;
     ws1['!ref']=XLSX.utils.encode_range({r:0,c:0},{r:2+_attEmps.length,c:LASTCOL});
-    XLSX.utils.book_append_sheet(wb,'서명표');
+    wb.SheetNames.push('서명표');
     wb.Sheets['서명표']=ws1;
 
     // ══════════════════════════════════════════
     // 시트2: 공수표
     // ══════════════════════════════════════════
-    var ws2={}, m2=[];
+    var ws2={'!type':'sheet'}, m2=[];
     // 행0: 날짜 헤더 (3열 병합), 행1: 정상근무/연장근무/연장초과
-    ws2[R(0,0)]={v:'성명(한글)',s:cs('D9E1F2',true,9,'left')};
+    ws2[R(0,0)]=C('성명(한글)',cs('D9E1F2',true,9,'left'));
     m2.push({s:{r:0,c:0},e:{r:1,c:0}});
     for(var di=0;di<numDays;di++){
       var col=1+di*3;
       var dt=dates[di];
       var lbl=(dt.getMonth()+1)+'/'+dt.getDate()+'('+dlabels[dt.getDay()]+')';
-      ws2[R(0,col)]={v:lbl,s:cs('D9E1F2',true,9)};
+      ws2[R(0,col)]=C(lbl,cs('D9E1F2',true,9));
       m2.push({s:{r:0,c:col},e:{r:0,c:col+2}});
-      ws2[R(1,col)]  ={v:'정상근무',s:cs('EBF0FA',false,8)};
-      ws2[R(1,col+1)]={v:'연장근무',s:cs('EBF0FA',false,8)};
-      ws2[R(1,col+2)]={v:'연장초과',s:cs('EBF0FA',false,8)};
+      ws2[R(1,col)]  =C('정상근무',cs('EBF0FA',false,8));
+      ws2[R(1,col+1)]=C('연장근무',cs('EBF0FA',false,8));
+      ws2[R(1,col+2)]=C('연장초과',cs('EBF0FA',false,8));
     }
 
     // 직원 행
     _attEmps.forEach(function(emp,idx){
       var row=2+idx;
-      ws2[R(row,0)]={v:emp.name,s:cs(null,false,9,'left')};
+      ws2[R(row,0)]=C(emp.name,cs(null,false,9,'left'));
       for(var di=0;di<numDays;di++){
         var col=1+di*3;
         var dt=dates[di];
@@ -1136,15 +1137,15 @@ function attDownloadRange() {
             norm=Math.min(8,wh); ext=Math.max(0,parseFloat((wh-8).toFixed(1)));
           }
         }
-        ws2[R(row,col)]  ={v:norm||0,  s:cs(null,false,9)};
-        ws2[R(row,col+1)]={v:ext||0,   s:cs(null,false,9)};
-        ws2[R(row,col+2)]={v:0,        s:cs(null,false,9)};
+        ws2[R(row,col)]  =C(norm||0,cs(null,false,9));
+        ws2[R(row,col+1)]=C(ext||0,cs(null,false,9));
+        ws2[R(row,col+2)]=C(0,cs(null,false,9));
       }
     });
 
     // 총합계 행
     var totRow=2+_attEmps.length;
-    ws2[R(totRow,0)]={v:'총합계',s:cs('D9E1F2',true,9)};
+    ws2[R(totRow,0)]=C('총합계',cs('D9E1F2',true,9));
     for(var di=0;di<numDays;di++){
       var col=1+di*3;
       var sumN=0,sumE=0;
@@ -1160,9 +1161,9 @@ function attDownloadRange() {
           }
         }
       });
-      ws2[R(totRow,col)]  ={v:parseFloat(sumN.toFixed(2)),s:cs('D9E1F2',true,9)};
-      ws2[R(totRow,col+1)]={v:parseFloat(sumE.toFixed(2)),s:cs('D9E1F2',true,9)};
-      ws2[R(totRow,col+2)]={v:0,s:cs('D9E1F2',true,9)};
+      ws2[R(totRow,col)]  =C(parseFloat(sumN.toFixed(2)),cs('D9E1F2',true,9));
+      ws2[R(totRow,col+1)]=C(parseFloat(sumE.toFixed(2)),cs('D9E1F2',true,9));
+      ws2[R(totRow,col+2)]=C(0,cs('D9E1F2',true,9));
     }
 
     var cols2=[{wch:14}];
@@ -1173,7 +1174,7 @@ function attDownloadRange() {
     ws2['!rows']=rows2;
     ws2['!merges']=m2;
     ws2['!ref']=XLSX.utils.encode_range({r:0,c:0},{r:totRow,c:numDays*3});
-    XLSX.utils.book_append_sheet(wb,'공수표');
+    wb.SheetNames.push('공수표');
     wb.Sheets['공수표']=ws2;
 
     // ── fflate로 인쇄설정 주입 (서명표만 landscape+fitTo)
