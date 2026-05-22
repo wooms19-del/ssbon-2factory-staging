@@ -1120,30 +1120,82 @@ function attDownloadRange() {
       ws2[R(1,col+2)]=C('연장초과',cs('EBF0FA',false,8));
     }
 
+    // 소수시간 → 시:분 소수 표기 (1.5시간=1시간30분 → 1.3)
+    function _hm(hours){
+      if(!hours||hours<=0) return 0;
+      var h=Math.floor(hours);
+      var m=Math.round((hours-h)*60);
+      if(m===60){h+=1;m=0;}
+      // 정수부=시, 소수부=분(2자리). 예: 1시간30분 → 1.3 (=1.30)
+      return parseFloat((h + m/100).toFixed(2));
+    }
+    // 주 키 (월요일 기준) — 같은 주 묶기용
+    function _weekKey(dt){
+      var d=new Date(dt); var day=d.getDay();
+      var diff=day===0?-6:1-day;
+      d.setDate(d.getDate()+diff);
+      return d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate();
+    }
+
     // 직원 행
     _attEmps.forEach(function(emp,idx){
       var row=2+idx;
       ws2[R(row,0)]=C(emp.name,cs(null,false,9,'left'));
+
+      // 1차: 일별 정상/연장(소수시간) 수집 + 주별 연장합계 + 주별 마지막 근무 칸 위치
+      var dayExt=[];          // 일별 연장(소수시간)
+      var weekExtSum={};      // 주키 → 연장합계(소수시간)
+      var weekLastCol={};     // 주키 → 마지막 근무일의 연장초과 칸 컬럼
+      for(var di=0;di<numDays;di++){
+        var dt=dates[di];
+        var ds=dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0');
+        var raw=localStorage.getItem(_attDateKey(ds));
+        var r=raw?JSON.parse(raw)[emp.name]:null;
+        var wh=0, worked=false;
+        if(r){var tags=r.tags||[];
+          if(tags.indexOf('absent')<0&&tags.indexOf('annual')<0){
+            wh=_calcWorkHoursByTime(r.inTime||'',r.outTime||'',tags);
+            worked=wh>0;
+          }
+        }
+        var extRaw=Math.max(0, wh-8);
+        dayExt[di]=extRaw;
+        if(worked){
+          var wk=_weekKey(dt);
+          weekExtSum[wk]=(weekExtSum[wk]||0)+extRaw;
+          weekLastCol[wk]=1+di*3+2;  // 연장초과 칸
+        }
+      }
+
+      // 2차: 주별 연장초과(주 연장합계가 12h 초과 시) 계산 → 마지막 근무일 칸에
+      var overByCol={};
+      Object.keys(weekExtSum).forEach(function(wk){
+        var over=Math.max(0, weekExtSum[wk]-12);  // 주 연장 12h 초과분 = 주52시간 초과
+        if(over>0) overByCol[weekLastCol[wk]]=over;
+      });
+
+      // 3차: 셀 출력
       for(var di=0;di<numDays;di++){
         var col=1+di*3;
         var dt=dates[di];
         var ds=dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0');
         var raw=localStorage.getItem(_attDateKey(ds));
         var r=raw?JSON.parse(raw)[emp.name]:null;
-        var norm=0,ext=0;
+        var norm=0;
         if(r){var tags=r.tags||[];
           if(tags.indexOf('absent')<0&&tags.indexOf('annual')<0){
             var wh=_calcWorkHoursByTime(r.inTime||'',r.outTime||'',tags);
-            norm=Math.min(8,wh); ext=Math.max(0,parseFloat((wh-8).toFixed(1)));
+            norm=Math.min(8,wh);
           }
         }
-        ws2[R(row,col)]  =C(norm||0,cs(null,false,9));
-        ws2[R(row,col+1)]=C(ext||0,cs(null,false,9));
-        ws2[R(row,col+2)]=C(0,cs(null,false,9));
+        var overCell=overByCol[col+2]||0;
+        ws2[R(row,col)]  =C(norm||0, cs(null,false,9));               // 정상: 그대로(8)
+        ws2[R(row,col+1)]=C(_hm(dayExt[di]), cs(null,false,9));       // 연장: 시:분
+        ws2[R(row,col+2)]=C(_hm(overCell), cs(null,false,9));         // 연장초과: 시:분
       }
     });
 
-    // 총합계 행
+    // 총합계 행 (정상=소수합, 연장/연장초과=시:분 합산은 의미 약하므로 소수합 표시)
     var totRow=2+_attEmps.length;
     ws2[R(totRow,0)]=C('총합계',cs('D9E1F2',true,9));
     for(var di=0;di<numDays;di++){
@@ -1162,7 +1214,7 @@ function attDownloadRange() {
         }
       });
       ws2[R(totRow,col)]  =C(parseFloat(sumN.toFixed(2)),cs('D9E1F2',true,9));
-      ws2[R(totRow,col+1)]=C(parseFloat(sumE.toFixed(2)),cs('D9E1F2',true,9));
+      ws2[R(totRow,col+1)]=C(_hm(sumE),cs('D9E1F2',true,9));
       ws2[R(totRow,col+2)]=C(0,cs('D9E1F2',true,9));
     }
 
