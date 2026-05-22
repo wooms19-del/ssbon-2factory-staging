@@ -922,10 +922,18 @@ function attDownloadWeekly(){
     }
 
     // ─ 열 너비 / 행 높이
-    var cols=[{wch:4}];
-    for(var i=0;i<6;i++) cols.push({wch:3.5});
-    for(var i=0;i<numDays*8;i++) cols.push({wch:3.8});
-    for(var i=0;i<3;i++) cols.push({wch:6});
+    // ─ 열 너비 (비율만 지정 — 한 장 맞춤은 아래 fitToWidth가 자동 처리)
+    //   날짜 칸은 좁게, 서명란은 성명칸(6칸=21)의 1.5배로.
+    //   fitToWidth:1 이 인쇄 시 전체를 A4 가로 한 장 너비에 자동 축소하므로,
+    //   여기서는 칸들의 상대 비율만 맞추면 됨.
+    var NAME_W  = 3.5*6;        // 성명 6칸 합계 = 21
+    var SIGN_W  = NAME_W*1.5;   // 서명 = 성명의 1.5배 = 31.5
+    var perSignCell = SIGN_W/3; // 서명 3칸 각각 = 10.5
+
+    var cols=[{wch:4}];                                    // 번호
+    for(var i=0;i<6;i++) cols.push({wch:3.5});            // 성명 6칸
+    for(var i=0;i<numDays*8;i++) cols.push({wch:2.6});    // 날짜 칸(좁게)
+    for(var i=0;i<3;i++) cols.push({wch:perSignCell});    // 서명 3칸(넓게)
     ws['!cols']=cols;
 
     var rows=[{hpt:28},{hpt:40},{hpt:22},{hpt:18}];
@@ -936,7 +944,7 @@ function attDownloadWeekly(){
     ws['!ref']=addr(1,1)+':'+addr(LASTROW,LASTCOL);
 
     // ─ 인쇄 설정
-    ws['!pageSetup']={orientation:'landscape',paperSize:9,fitToPage:true,fitToWidth:1,fitToHeight:0};
+    ws['!pageSetup']={orientation:'landscape',paperSize:9,fitToPage:true,fitToWidth:1,fitToHeight:1};
 
     wb.Sheets['출퇴근기록부']=ws;
     var fname='출퇴근_'+yr+String(mo).padStart(2,'0')+'.xlsx';
