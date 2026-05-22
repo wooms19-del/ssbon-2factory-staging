@@ -38,6 +38,7 @@ function setMode(m){
   var _mai=document.getElementById('modeAI'); if(_mai) _mai.classList.toggle('on',m==='ai');
   document.getElementById('inav').classList.toggle('hid',m!=='i');
   document.getElementById('dnav').classList.toggle('hid',m!=='d');
+  var _pnav=document.getElementById('pnav'); if(_pnav) _pnav.classList.add('hid');
   document.getElementById('mscroll').scrollTop=0;
   if(m==='ai'){
     document.querySelectorAll('.pg').forEach(p=>p.classList.remove('on'));
