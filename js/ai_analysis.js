@@ -767,7 +767,6 @@ function _renderChatLog() {
     const textColor = isUser ? '#fff' : '#0f172a';
     const align = isUser ? 'flex-end' : 'flex-start';
     const icon = isUser ? '👤' : '🤖';
-    const escText = (m.text||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
 
     // 첨부 표시 (사용자 메시지만)
     let attachHtml = '';
@@ -779,12 +778,39 @@ function _renderChatLog() {
       attachHtml = `<div style="margin-bottom:4px">${items}</div>`;
     }
 
+    // AI 답변: [CHART]SVG[/CHART] 태그 감지 → 실제 렌더링
+    let contentHtml;
+    if(!isUser) {
+      const raw = m.text || '';
+      const chartRe = /\[CHART\]([\s\S]*?)\[\/CHART\]/g;
+      let last = 0, parts = [];
+      let match;
+      while((match = chartRe.exec(raw)) !== null) {
+        // 차트 앞 텍스트
+        if(match.index > last) {
+          const before = raw.slice(last, match.index).trim();
+          if(before) parts.push('<div style="margin-bottom:8px">' + before.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>') + '</div>');
+        }
+        // SVG 그대로 삽입 (XSS 위험 없음 — AI 생성 SVG만)
+        parts.push('<div style="margin:8px 0;overflow-x:auto">' + match[1].trim() + '</div>');
+        last = match.index + match[0].length;
+      }
+      // 차트 뒤 텍스트
+      if(last < raw.length) {
+        const after = raw.slice(last).trim();
+        if(after) parts.push('<div style="margin-top:8px">' + after.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>') + '</div>');
+      }
+      contentHtml = parts.length ? parts.join('') : raw.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
+    } else {
+      contentHtml = (m.text||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
+    }
+
     return `
       <div style="display:flex;justify-content:${align};margin-bottom:10px">
-        <div style="max-width:80%;padding:10px 14px;background:${bgColor};color:${textColor};border-radius:10px;border:${isUser?'none':'1px solid #e5e7eb'};box-shadow:0 1px 2px rgba(0,0,0,0.03)">
+        <div style="max-width:90%;padding:10px 14px;background:${bgColor};color:${textColor};border-radius:10px;border:${isUser?'none':'1px solid #e5e7eb'};box-shadow:0 1px 2px rgba(0,0,0,0.03)">
           <div style="font-size:11px;opacity:0.7;margin-bottom:4px">${icon} ${isUser?'사용자':'AI'}</div>
           ${attachHtml}
-          <div>${escText}</div>
+          <div>${contentHtml}</div>
         </div>
       </div>
     `;
@@ -1165,9 +1191,17 @@ async function _sendChatMsg() {
 1. 반드시 한국어로만 답변. 영어 사용 절대 금지.
 2. 날짜/기간/현황/예상/분석 질문 → 반드시 도구 호출해서 실제 데이터 확인 후 답변. 데이터 없이 추측/예상 금지.
 3. 데이터 없으면 "해당 날짜 데이터 없음"으로 명시. "probably", "아마도", "예상컨대" 등 추측성 표현 금지.
-4. 마크다운 사용 금지. 일반 텍스트만.
+4. 마크다운 사용 금지. 일반 텍스트만. 단, 차트는 아래 규칙 적용.
 5. 수율은 원물 대비 누적 수율로 계산.
 6. "오늘", "어제", "이번달" = 오늘(${today}) 기준으로 날짜 계산.
+
+[차트/그래프/타임라인 요청 시 — 반드시 따를 것]
+- 그래프, 차트, 타임라인, 시각화, 이미지 형식 요청 시 → SVG 코드를 [CHART]SVG코드[/CHART] 태그로 감싸서 출력.
+- SVG 형식: viewBox="0 0 900 높이", font-family="Arial, sans-serif", 한글 직접 사용 가능.
+- 간트차트(타임라인): 가로축=시간(분 단위 눈금), 공정별 색상 다르게, 각 바 위에 시작/종료 시각 표시.
+- 바차트: 공정별 수율/수량 비교 시 사용.
+- SVG 안에 스타일 하드코딩, 외부 CSS/JS 참조 금지.
+- [CHART] 태그 앞뒤에 설명 텍스트 추가 가능.
 ${knowledgeBase ? '\n[도메인 지식]\n' + knowledgeBase : ''}`;
 
     // Gemini system instruction으로 분리 (user role 대신)
