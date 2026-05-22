@@ -14,6 +14,25 @@ firebase.initializeApp(firebaseConfig);
 var db = firebase.firestore();
 
 // ============================================================
+// 🔐 익명 인증 — 외부 무단 접근 차단용
+// 앱 시작 시 자동으로 익명 로그인. 사용자는 아무것도 안 함(화면 변화 없음).
+// Firestore 규칙을 "request.auth != null" 로 잠그면, 통행증 없는
+// 외부 요청은 차단되고 이 앱에서 온 요청만 통과.
+// 실패해도 앱은 계속 동작(규칙 잠그기 전까지는 영향 없음).
+// ============================================================
+window._authReady = false;
+if (firebase.auth) {
+  firebase.auth().signInAnonymously().then(function(){
+    window._authReady = true;
+    console.log('[auth] 익명 로그인 성공');
+  }).catch(function(err){
+    console.warn('[auth] 익명 로그인 실패 (무시):', err && err.message);
+  });
+} else {
+  console.warn('[auth] firebase.auth 미로드 — Auth SDK 확인 필요');
+}
+
+// ============================================================
 // 외포장 완료 EA 계산 헬퍼
 // outerEa(박스×입수) + remainEa(잔량 EA) 합산
 // 외포장 EA를 표시/집계하는 모든 곳에서 사용
