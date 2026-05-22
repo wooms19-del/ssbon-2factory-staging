@@ -1160,18 +1160,18 @@ async function _sendChatMsg() {
     const today = (typeof tod==='function') ? tod() : new Date().toISOString().slice(0,10);
 
     const systemPrompt = `당신은 순수본 2공장 스마트팩토리 AI 어시스턴트입니다. 오늘 날짜: ${today}.
-도구(함수)를 사용해 Firestore에서 실제 데이터를 조회하고 정확한 수치로 답변하세요.
 
-[지침]
-- 날짜/기간/현황 질문 → 반드시 도구 호출해서 실제 데이터 인용
-- "오늘", "어제", "이번달" 같은 표현은 오늘(${today}) 기준으로 날짜 계산
-- 수율은 항상 원물 대비 누적 수율로 계산
-- 추측 금지 — 데이터 없으면 "해당 날짜 데이터 없음" 명시
-- 마크다운 X, 일반 텍스트, 한국어
-- "모니터링하세요" 같은 추상적 답변 금지, 실제 수치 + 판단 제시
+절대 규칙:
+1. 반드시 한국어로만 답변. 영어 사용 절대 금지.
+2. 날짜/기간/현황/예상/분석 질문 → 반드시 도구 호출해서 실제 데이터 확인 후 답변. 데이터 없이 추측/예상 금지.
+3. 데이터 없으면 "해당 날짜 데이터 없음"으로 명시. "probably", "아마도", "예상컨대" 등 추측성 표현 금지.
+4. 마크다운 사용 금지. 일반 텍스트만.
+5. 수율은 원물 대비 누적 수율로 계산.
+6. "오늘", "어제", "이번달" = 오늘(${today}) 기준으로 날짜 계산.
 ${knowledgeBase ? '\n[도메인 지식]\n' + knowledgeBase : ''}`;
 
-    // 첨부 파일 처리
+    // Gemini system instruction으로 분리 (user role 대신)
+    const apiUrlBase = 'https://generativelanguage.googleapis.com/v1beta/models/' + _AI_GEMINI_MODEL + ':generateContent?key=' + apiKey;
     let attachmentsText = '';
     const inlineParts = [];
     for(const a of attachmentsForSend) {
@@ -1189,18 +1189,20 @@ ${knowledgeBase ? '\n[도메인 지식]\n' + knowledgeBase : ''}`;
       + '[질문]\n' + (text||(attachmentsForSend.length?'첨부 파일을 분석해주세요.':''));
 
     const userParts = [{text: userMsg}, ...inlineParts];
-    const apiUrl = 'https://generativelanguage.googleapis.com/v1beta/models/' + _AI_GEMINI_MODEL + ':generateContent?key=' + apiKey;
 
     // ── 1차 호출: AI가 도구 선택
     var contents = [
-      {role:'user', parts:[{text:systemPrompt}]},
-      {role:'model', parts:[{text:'알겠습니다. 필요 시 도구를 호출해 실제 데이터로 답변하겠습니다.'}]},
       {role:'user', parts: userParts}
     ];
 
-    const res1 = await fetch(apiUrl, {
+    const res1 = await fetch(apiUrlBase, {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({contents, tools:_AGENT_TOOLS, generationConfig:{temperature:0.3, maxOutputTokens:3000}})
+      body: JSON.stringify({
+        system_instruction: {parts:[{text:systemPrompt}]},
+        contents,
+        tools:_AGENT_TOOLS,
+        generationConfig:{temperature:0.3, maxOutputTokens:3000}
+      })
     });
     if(!res1.ok) throw new Error('API ' + res1.status + ': ' + (await res1.text()).slice(0,200));
     const d1 = await res1.json();
@@ -1230,9 +1232,14 @@ ${knowledgeBase ? '\n[도메인 지식]\n' + knowledgeBase : ''}`;
       contents.push({role:'model', parts: parts1});
       contents.push({role:'user', parts: toolResults});
 
-      const res2 = await fetch(apiUrl, {
+      const res2 = await fetch(apiUrlBase, {
         method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({contents, tools:_AGENT_TOOLS, generationConfig:{temperature:0.3, maxOutputTokens:3000}})
+        body: JSON.stringify({
+          system_instruction: {parts:[{text:systemPrompt}]},
+          contents,
+          tools:_AGENT_TOOLS,
+          generationConfig:{temperature:0.3, maxOutputTokens:3000}
+        })
       });
       if(!res2.ok) throw new Error('API2 ' + res2.status + ': ' + (await res2.text()).slice(0,200));
       const d2 = await res2.json();
