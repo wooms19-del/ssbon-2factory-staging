@@ -1206,7 +1206,15 @@ ${knowledgeBase ? '\n[도메인 지식]\n' + knowledgeBase : ''}`;
     });
     if(!res1.ok) throw new Error('API ' + res1.status + ': ' + (await res1.text()).slice(0,200));
     const d1 = await res1.json();
-    const parts1 = d1.candidates?.[0]?.content?.parts || [];
+    console.log('[Agent] 1차 응답:', JSON.stringify(d1).slice(0,500));
+    const cand1 = d1.candidates?.[0];
+    const parts1 = cand1?.content?.parts || [];
+    const finishReason1 = cand1?.finishReason || '';
+
+    // finishReason이 SAFETY/OTHER 등이면 fallback
+    if(!parts1.length && finishReason1 && finishReason1 !== 'STOP' && finishReason1 !== 'MAX_TOKENS') {
+      throw new Error('Gemini 응답 차단: ' + finishReason1 + (d1.promptFeedback ? ' / ' + JSON.stringify(d1.promptFeedback) : ''));
+    }
 
     // 도구 호출이 있으면 실행 후 2차 호출
     const toolCalls = parts1.filter(p => p.functionCall);
