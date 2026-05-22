@@ -946,166 +946,314 @@ window._aiRemoveAttachment = function(idx){
   _aiRenderAttachPreview();
 };
 
+// ============================================================
+// Agent 도구 정의 (Gemini function calling)
+// ============================================================
+const _AGENT_TOOLS = [{
+  functionDeclarations: [
+    {
+      name: 'get_data_by_date',
+      description: '특정 날짜 또는 날짜 범위의 공정 데이터를 Firestore에서 조회합니다. 오늘/어제/특정날짜/기간 질문에 사용.',
+      parameters: {
+        type: 'OBJECT',
+        properties: {
+          collections: {
+            type: 'ARRAY',
+            items: { type: 'STRING', enum: ['thawing','preprocess','cooking','shredding','packing','outerpacking','sauce'] },
+            description: '조회할 컬렉션 목록. 질문에 맞게 필요한 것만 선택.'
+          },
+          start_date: { type: 'STRING', description: 'YYYY-MM-DD 형식 시작일' },
+          end_date:   { type: 'STRING', description: 'YYYY-MM-DD 형식 종료일. 단일 날짜면 start_date와 동일하게.' }
+        },
+        required: ['collections','start_date','end_date']
+      }
+    },
+    {
+      name: 'get_open_processes',
+      description: '현재 진행 중(미종료) 공정 조회. 자숙/포장 진행 중인 거 있는지 확인할 때 사용.',
+      parameters: {
+        type: 'OBJECT',
+        properties: {
+          targets: {
+            type: 'ARRAY',
+            items: { type: 'STRING', enum: ['cooking','packing','thawing'] },
+            description: '조회할 미종료 공정'
+          }
+        },
+        required: ['targets']
+      }
+    },
+    {
+      name: 'get_monthly_summary',
+      description: '월별 집계 데이터 조회. 이번달/저번달/특정월 생산 총합 질문에 사용.',
+      parameters: {
+        type: 'OBJECT',
+        properties: {
+          year_month: { type: 'STRING', description: 'YYYY-MM 형식. 예: 2026-05' }
+        },
+        required: ['year_month']
+      }
+    }
+  ]
+}];
+
+// Agent 도구 실행기 — AI가 선택한 함수를 실제로 Firestore에서 실행
+async function _agentRunTool(name, args) {
+  try {
+    if(name === 'get_data_by_date') {
+      const cols = args.collections || [];
+      const results = {};
+      await Promise.all(cols.map(async col => {
+        if(args.start_date === args.end_date) {
+          results[col] = await fbGetByDate(col, args.start_date) || [];
+        } else {
+          results[col] = await fbGetRange(col, args.start_date, args.end_date) || [];
+        }
+      }));
+      return _agentFormatData(results, args.start_date, args.end_date);
+    }
+    if(name === 'get_open_processes') {
+      const results = {};
+      const targets = args.targets || [];
+      if(targets.indexOf('cooking')>=0)  results.cooking  = await fbGetOpenCooking()  || [];
+      if(targets.indexOf('packing')>=0)  results.packing  = await fbGetOpenPacking()  || [];
+      if(targets.indexOf('thawing')>=0)  results.thawing  = await fbGetOpenThawing()  || [];
+      return _agentFormatOpen(results);
+    }
+    if(name === 'get_monthly_summary') {
+      const ym = args.year_month;
+      const start = ym + '-01';
+      const end   = ym + '-31';
+      const cols = ['thawing','preprocess','cooking','shredding','packing','outerpacking'];
+      const results = {};
+      await Promise.all(cols.map(async col => {
+        results[col] = await fbGetRange(col, start, end) || [];
+      }));
+      return _agentFormatMonthly(results, ym);
+    }
+    return '(알 수 없는 도구: ' + name + ')';
+  } catch(e) {
+    return '(도구 실행 오류: ' + e.message + ')';
+  }
+}
+
+// 조회 결과 → 텍스트 포맷
+function _agentFormatData(data, start, end) {
+  const label = start === end ? start : start + ' ~ ' + end;
+  const lines = ['[조회결과: ' + label + ']'];
+  var cols = Object.keys(data);
+  if(cols.length === 0 || cols.every(c => data[c].length === 0)) {
+    return '[조회결과: ' + label + '] 해당 기간 데이터 없음';
+  }
+  cols.forEach(col => {
+    var recs = data[col];
+    if(!recs.length) return;
+    var colLabel = {thawing:'방혈',preprocess:'전처리',cooking:'자숙',shredding:'파쇄',packing:'내포장',outerpacking:'외포장',sauce:'소스'}[col]||col;
+    lines.push('\n▶ ' + colLabel + ' (' + recs.length + '건)');
+    recs.forEach(r => {
+      var parts = [];
+      if(r.date)    parts.push('날짜:'+r.date);
+      if(r.inKg)    parts.push('투입:'+r.inKg+'kg');
+      if(r.outKg)   parts.push('산출:'+r.outKg+'kg');
+      if(r.totalKg) parts.push('총중량:'+r.totalKg+'kg');
+      if(r.boxes)   parts.push('박스:'+r.boxes);
+      if(r.ea)      parts.push('EA:'+r.ea);
+      if(r.product) parts.push('제품:'+r.product);
+      if(r.inedible)parts.push('비가식:'+r.inedible+'kg');
+      if(r.defPouch)parts.push('불량:'+r.defPouch);
+      if(r.type)    parts.push('종류:'+r.type);
+      if(r.start)   parts.push('시작:'+r.start);
+      if(r.end)     parts.push('종료:'+(r.end||'진행중'));
+      lines.push('  - ' + parts.join(', '));
+    });
+    // 수율 자동 계산
+    if(col==='preprocess'||col==='cooking'||col==='shredding') {
+      var inSum = recs.reduce((a,r)=>a+(parseFloat(r.inKg)||0),0);
+      var outSum = recs.reduce((a,r)=>a+(parseFloat(r.outKg)||0),0);
+      if(inSum>0) lines.push('  ※ 합계: 투입'+inSum.toFixed(1)+'kg → 산출'+outSum.toFixed(1)+'kg (수율'+(outSum/inSum*100).toFixed(1)+'%)');
+    }
+  });
+  return lines.join('\n');
+}
+
+function _agentFormatOpen(data) {
+  var lines = ['[현재 진행중 공정]'];
+  var any = false;
+  if(data.cooking && data.cooking.length) {
+    any = true;
+    lines.push('▶ 자숙 진행중 ' + data.cooking.length + '건:');
+    data.cooking.forEach(r => lines.push('  - 시작:' + r.start + ' 투입:' + (r.inKg||'?') + 'kg'));
+  }
+  if(data.packing && data.packing.length) {
+    any = true;
+    lines.push('▶ 포장 진행중 ' + data.packing.length + '건:');
+    data.packing.forEach(r => lines.push('  - ' + (r.product||'?') + ' 시작:' + r.start));
+  }
+  if(data.thawing && data.thawing.length) {
+    any = true;
+    lines.push('▶ 방혈 미종료 ' + data.thawing.length + '건:');
+    data.thawing.forEach(r => lines.push('  - ' + r.date + ' ' + (r.type||'') + ' ' + (r.totalKg||'?') + 'kg'));
+  }
+  if(!any) lines.push('현재 진행 중인 공정 없음');
+  return lines.join('\n');
+}
+
+function _agentFormatMonthly(data, ym) {
+  var lines = ['[' + ym + ' 월간 집계]'];
+  var thawKg=0, thawBox=0, preIn=0, preOut=0, ckIn=0, ckOut=0, shrIn=0, shrOut=0, pkEa=0, pkDef=0, outBox=0;
+  (data.thawing||[]).forEach(r=>{thawKg+=(parseFloat(r.totalKg)||0);thawBox+=(parseInt(r.boxes)||0);});
+  (data.preprocess||[]).forEach(r=>{preIn+=(parseFloat(r.inKg)||0);preOut+=(parseFloat(r.outKg)||0);});
+  (data.cooking||[]).forEach(r=>{ckIn+=(parseFloat(r.inKg)||0);ckOut+=(parseFloat(r.outKg)||0);});
+  (data.shredding||[]).forEach(r=>{shrIn+=(parseFloat(r.inKg)||0);shrOut+=(parseFloat(r.outKg)||0);});
+  (data.packing||[]).forEach(r=>{pkEa+=(parseInt(r.ea)||0);pkDef+=(parseInt(r.defPouch)||0);});
+  (data.outerpacking||[]).forEach(r=>{outBox+=(parseFloat(r.outBoxes)||0);});
+  if(thawKg>0)  lines.push('방혈: ' + thawBox + '박스 / ' + thawKg.toFixed(0) + 'kg');
+  if(preIn>0)   lines.push('전처리: ' + preIn.toFixed(0) + ' → ' + preOut.toFixed(0) + 'kg (수율'+(preOut/preIn*100).toFixed(1)+'%)');
+  if(ckIn>0)    lines.push('자숙: '  + ckIn.toFixed(0)  + ' → ' + ckOut.toFixed(0)  + 'kg (수율'+(ckOut/ckIn*100).toFixed(1)+'%)');
+  if(shrIn>0)   lines.push('파쇄: '  + shrIn.toFixed(0)  + ' → ' + shrOut.toFixed(0)  + 'kg (수율'+(shrOut/shrIn*100).toFixed(1)+'%)');
+  if(pkEa>0)    lines.push('포장: '  + pkEa.toLocaleString() + 'EA (불량'+pkDef+'개/'+(pkEa>0?(pkDef/pkEa*100).toFixed(2):'0')+'%)');
+  if(outBox>0)  lines.push('외포장: ' + outBox.toFixed(0) + '박스');
+  if(lines.length===1) lines.push('데이터 없음');
+  return lines.join('\n');
+}
+
+// ============================================================
+// 챗봇 전송 — function calling Agent
+// ============================================================
 async function _sendChatMsg() {
   const input = document.getElementById('aiChatInput');
   const sendBtn = document.getElementById('aiChatSend');
   if(!input) return;
   const text = input.value.trim();
-  // 텍스트만 비어있어도 첨부 있으면 전송 허용
   if(!text && !_aiChatAttachments.length) return;
 
-  // 첨부 정보 같이 저장 (UI 표시용)
-  const attachInfo = _aiChatAttachments.map(a => ({
-    name: a.name, kind: a.kind, size: a.size
-  }));
-
-  // UI: 사용자 메시지 즉시 표시
+  const attachInfo = _aiChatAttachments.map(a => ({name:a.name,kind:a.kind,size:a.size}));
   const userText = text || '(파일 첨부)';
-  _aiChatHistory.push({
-    role:'user', text: userText, createdAt: new Date(),
-    attachments: attachInfo
-  });
+  _aiChatHistory.push({role:'user', text:userText, createdAt:new Date(), attachments:attachInfo});
   _renderChatLog();
   input.value = '';
   input.disabled = true;
   sendBtn.disabled = true;
   sendBtn.textContent = '답변 중...';
 
-  // 첨부 보존 (전송용) + UI에서 미리보기 제거
   const attachmentsForSend = _aiChatAttachments.slice();
   _aiChatAttachments = [];
   _aiRenderAttachPreview();
 
-  // 로딩 메시지 표시
-  _aiChatHistory.push({role:'assistant', text:'⏳ 데이터 수집 + 답변 생성 중...', createdAt: new Date(), _pending:true});
+  _aiChatHistory.push({role:'assistant', text:'⏳ 분석 중...', createdAt:new Date(), _pending:true});
   _renderChatLog();
 
   try {
-    // 사용자 메시지 Firestore 저장
     firebase.firestore().collection(_CHAT_COL).add({
-      role:'user', text:text, createdAt: firebase.firestore.FieldValue.serverTimestamp()
-    }).catch(e => console.warn('[chat] save user fail:', e));
+      role:'user', text:text, createdAt:firebase.firestore.FieldValue.serverTimestamp()
+    }).catch(e=>console.warn('[chat] save user fail:',e));
 
-    // AI 호출
     const apiKey = await _aiGetKey();
     if(!apiKey) {
       _aiChatHistory.pop();
-      _aiChatHistory.push({role:'assistant', text:'⚠️ Gemini API 키가 설정되지 않았습니다. 분석 → 설정 → 🤖 AI 설정에서 키를 입력하세요.', createdAt: new Date()});
+      _aiChatHistory.push({role:'assistant', text:'⚠️ Gemini API 키가 설정되지 않았습니다. 분석 → 설정 → 🤖 AI 설정에서 키를 입력하세요.', createdAt:new Date()});
       _renderChatLog();
       return;
     }
+
     const knowledgeBase = await _aiGetKnowledgeBase();
+    const today = (typeof tod==='function') ? tod() : new Date().toISOString().slice(0,10);
 
-    // ★ 회사 데이터 자동 fetch (최근 60일 = 이번달 + 저번달 커버)
-    const dataSummary = await _aiFetchRecentDataSummary(60);
-    
-    // 대화 컨텍스트: 최근 10턴
-    const recent = _aiChatHistory.filter(m => !m._pending).slice(-11, -1);
-    const conversationContext = recent.map(m => 
-      (m.role==='user'?'사용자: ':'AI: ') + m.text
-    ).join('\n\n');
+    const systemPrompt = `당신은 순수본 2공장 스마트팩토리 AI 어시스턴트입니다. 오늘 날짜: ${today}.
+도구(함수)를 사용해 Firestore에서 실제 데이터를 조회하고 정확한 수치로 답변하세요.
 
-    const today = (typeof tod === 'function') ? tod() : new Date().toISOString().slice(0,10);
-    const systemPrompt = `당신은 순수본 2공장의 식품생산관리 + 시스템 운영 AI 어시스턴트입니다. 오늘 날짜는 ${today}입니다.
-아래 도메인 지식과 실제 회사 공정 데이터를 토대로 사용자 질문에 정확하고 구체적으로 답변하세요.
+[지침]
+- 날짜/기간/현황 질문 → 반드시 도구 호출해서 실제 데이터 인용
+- "오늘", "어제", "이번달" 같은 표현은 오늘(${today}) 기준으로 날짜 계산
+- 수율은 항상 원물 대비 누적 수율로 계산
+- 추측 금지 — 데이터 없으면 "해당 날짜 데이터 없음" 명시
+- 마크다운 X, 일반 텍스트, 한국어
+- "모니터링하세요" 같은 추상적 답변 금지, 실제 수치 + 판단 제시
+${knowledgeBase ? '\n[도메인 지식]\n' + knowledgeBase : ''}`;
 
-[답변 가능 영역]
-1. 운영 분석: 수율 / 생산성 / 비가식부 / 불량률 등 — 실제 데이터 인용하여 진단
-2. 사고 진단: "수율이 이상해", "다른 PC에서 안 보여" 같은 증상 → 사고 케이스집(04) 참조하여 비슷한 사례·해결법 제시
-3. 코딩 질문: "thawing.date 어디서 강제 정정?", "직원 마스터 어떻게 저장?" → 코드 맵(05) 참조하여 정확한 파일/함수 위치 안내
-4. 룰 / 데이터 흐름 질문: 공정 원리 / 진단 룰북 / 공장 특수 정보 참조
-
-[일반 지침]
-- 도메인 지식과 실제 데이터를 토대로 정확하게 답변
-- 데이터를 직접 인용하여 수치 근거 제시
-- 모르는 것은 "데이터가 없어 답변 불가" 또는 "코드 직접 확인 필요" 명시 (단, 데이터/코드 맵이 있는데 못 찾았으면 안됨)
-- "모니터링 하세요" 같은 추상적 답변 금지
-- 추측 답변 금지 — 파일명/라인 번호 정확하게
-- 수치 + 정상 범위 비교
-- 상류 공정 영향 가능성 분석
-- 3가지 구체적 액션 제안 (해당 시)
-- 한국어로 답변
-- 마크다운 X, 일반 텍스트
-- "이번달", "저번달" = 오늘 기준 ${today.slice(0,7)}월, 그 전월
-- "최근 N일" 같은 표현은 오늘에서 역산해서 정확한 날짜로 환산해 답변
-
-[사고 진단 흐름 — 운영 이상 증상 시]
-1. 증상 정확히 묘사 (사용자 표현 그대로)
-2. DB 데이터로 실제 값 확인
-3. 물리적으로 가능한지 검토 (수율 100% 초과 등은 즉시 의심)
-4. 분자/분모 추적
-5. 사고 케이스집(04)에서 유사 사례 찾기
-6. 근본 원인 + 즉시 해결 + 향후 예방 동시 제시
-
-[코딩 질문 응답 흐름]
-1. 코드 맵(05)에서 정확한 파일/함수 위치 안내
-2. 관련 룰 (예: thawing.date 룰, wagons 매칭 룰) 함께 설명
-3. 룰 변경 이력은 사고 케이스집(04) 참조
-4. 모르면 "코드 직접 확인 필요" 명시 (라인 번호 추측 금지)
-
-${knowledgeBase ? '[도메인 지식]\n' + knowledgeBase + '\n\n' : ''}
-[실제 회사 공정 데이터 — 최근 60일]
-${dataSummary}
-`;
-
-    // 첨부 파일을 prompt에 포함
-    // - 이미지/PDF: Gemini parts에 inlineData로
-    // - 엑셀/CSV/텍스트: 시스템 프롬프트 뒤에 텍스트로 첨부
+    // 첨부 파일 처리
     let attachmentsText = '';
     const inlineParts = [];
-    for(const a of attachmentsForSend){
-      if(a.kind === 'image'){
-        inlineParts.push({
-          inlineData: { mimeType: a.mimeType, data: a.base64 }
-        });
-      } else if(a.kind === 'spreadsheet'){
-        attachmentsText += `\n\n[첨부 엑셀/CSV: ${a.name}]\n${a.text}\n`;
-      } else if(a.kind === 'text'){
-        attachmentsText += `\n\n[첨부 텍스트 파일: ${a.name}]\n${a.text}\n`;
-      }
+    for(const a of attachmentsForSend) {
+      if(a.kind==='image') inlineParts.push({inlineData:{mimeType:a.mimeType,data:a.base64}});
+      else if(a.kind==='spreadsheet') attachmentsText += '\n\n[첨부 엑셀/CSV: '+a.name+']\n'+a.text;
+      else if(a.kind==='text') attachmentsText += '\n\n[첨부 텍스트: '+a.name+']\n'+a.text;
     }
 
-    const userPromptText = (attachmentsText ? '[첨부 파일 내용]' + attachmentsText + '\n\n' : '')
-      + '[사용자 새 질문]\n' + (text || '(파일을 첨부했습니다. 위 내용을 분석해주세요.)');
+    // 대화 컨텍스트 최근 10턴
+    const recent = _aiChatHistory.filter(m=>!m._pending).slice(-11,-1);
+    const conversationContext = recent.map(m=>(m.role==='user'?'사용자: ':'AI: ')+m.text).join('\n\n');
 
-    const fullPromptText = systemPrompt + '\n\n'
-      + (conversationContext ? '[이전 대화]\n' + conversationContext + '\n\n' : '')
-      + userPromptText;
+    const userMsg = (attachmentsText?'[첨부]\n'+attachmentsText+'\n\n':'')
+      + (conversationContext?'[이전 대화]\n'+conversationContext+'\n\n':'')
+      + '[질문]\n' + (text||(attachmentsForSend.length?'첨부 파일을 분석해주세요.':''));
 
-    // 메시지 parts 구성: 텍스트 + 이미지(있으면)
-    const userParts = [{text: fullPromptText}, ...inlineParts];
-
+    const userParts = [{text: userMsg}, ...inlineParts];
     const apiUrl = 'https://generativelanguage.googleapis.com/v1beta/models/' + _AI_GEMINI_MODEL + ':generateContent?key=' + apiKey;
-    const res = await fetch(apiUrl, {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({
-        contents: [{parts: userParts}],
-        generationConfig: { temperature: 0.4, maxOutputTokens: 3000 }
-      })
+
+    // ── 1차 호출: AI가 도구 선택
+    var contents = [
+      {role:'user', parts:[{text:systemPrompt}]},
+      {role:'model', parts:[{text:'알겠습니다. 필요 시 도구를 호출해 실제 데이터로 답변하겠습니다.'}]},
+      {role:'user', parts: userParts}
+    ];
+
+    const res1 = await fetch(apiUrl, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({contents, tools:_AGENT_TOOLS, generationConfig:{temperature:0.3, maxOutputTokens:3000}})
     });
+    if(!res1.ok) throw new Error('API ' + res1.status + ': ' + (await res1.text()).slice(0,200));
+    const d1 = await res1.json();
+    const parts1 = d1.candidates?.[0]?.content?.parts || [];
 
-    if(!res.ok) {
-      const err = await res.text();
-      throw new Error('API ' + res.status + ': ' + err.slice(0,200));
+    // 도구 호출이 있으면 실행 후 2차 호출
+    const toolCalls = parts1.filter(p => p.functionCall);
+    var aiText;
+
+    if(toolCalls.length > 0) {
+      // 로딩 메시지 갱신
+      var toolNames = toolCalls.map(p=>({
+        get_data_by_date:'데이터 조회',
+        get_open_processes:'진행중 공정 조회',
+        get_monthly_summary:'월간 집계 조회'
+      }[p.functionCall.name]||p.functionCall.name)).join(', ');
+      _aiChatHistory[_aiChatHistory.length-1].text = '⏳ ' + toolNames + ' 중...';
+      _renderChatLog();
+
+      // 도구 실행
+      const toolResults = await Promise.all(toolCalls.map(async p => {
+        const result = await _agentRunTool(p.functionCall.name, p.functionCall.args||{});
+        return {functionResponse:{name:p.functionCall.name, response:{result}}};
+      }));
+
+      // 2차 호출: 도구 결과 + 최종 답변
+      contents.push({role:'model', parts: parts1});
+      contents.push({role:'user', parts: toolResults});
+
+      const res2 = await fetch(apiUrl, {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({contents, tools:_AGENT_TOOLS, generationConfig:{temperature:0.3, maxOutputTokens:3000}})
+      });
+      if(!res2.ok) throw new Error('API2 ' + res2.status + ': ' + (await res2.text()).slice(0,200));
+      const d2 = await res2.json();
+      aiText = d2.candidates?.[0]?.content?.parts?.map(p=>p.text||'').join('') || '(응답 없음)';
+    } else {
+      // 도구 호출 없이 바로 답변 (코딩 질문, 도메인 지식 기반 등)
+      aiText = parts1.map(p=>p.text||'').join('') || '(응답 없음)';
     }
-    const data = await res.json();
-    const aiText = data.candidates?.[0]?.content?.parts?.[0]?.text || '(응답 없음)';
 
-    // pending 제거 후 진짜 답변 추가
     _aiChatHistory.pop();
-    _aiChatHistory.push({role:'assistant', text: aiText.trim(), createdAt: new Date()});
+    _aiChatHistory.push({role:'assistant', text:aiText.trim(), createdAt:new Date()});
     _renderChatLog();
 
-    // Firestore 저장
     firebase.firestore().collection(_CHAT_COL).add({
-      role:'assistant', text: aiText.trim(), createdAt: firebase.firestore.FieldValue.serverTimestamp()
-    }).catch(e => console.warn('[chat] save assistant fail:', e));
+      role:'assistant', text:aiText.trim(), createdAt:firebase.firestore.FieldValue.serverTimestamp()
+    }).catch(e=>console.warn('[chat] save assistant fail:',e));
 
   } catch(e) {
     console.error('[chat] error:', e);
-    _aiChatHistory.pop();  // pending 제거
-    _aiChatHistory.push({role:'assistant', text:'⚠️ 오류: ' + (e.message||'AI 호출 실패'), createdAt: new Date()});
+    _aiChatHistory.pop();
+    _aiChatHistory.push({role:'assistant', text:'⚠️ 오류: '+(e.message||'AI 호출 실패'), createdAt:new Date()});
     _renderChatLog();
   } finally {
     input.disabled = false;
