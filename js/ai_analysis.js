@@ -1237,8 +1237,11 @@ ${knowledgeBase ? '\n[도메인 지식]\n' + knowledgeBase : ''}`;
       }));
 
       // 2차 호출: 도구 결과 + 최종 답변
+      // Gemini function calling 포맷: model turn(functionCall) → user turn(functionResponse)
       contents.push({role:'model', parts: parts1});
-      contents.push({role:'user', parts: toolResults});
+      contents.push({role:'user', parts: toolResults.map(r => ({functionResponse: r.functionResponse}))});
+
+      console.log('[Agent] 2차 호출 contents 마지막:', JSON.stringify(contents.slice(-2)).slice(0,300));
 
       const res2 = await fetch(apiUrlBase, {
         method:'POST', headers:{'Content-Type':'application/json'},
@@ -1249,9 +1252,11 @@ ${knowledgeBase ? '\n[도메인 지식]\n' + knowledgeBase : ''}`;
           generationConfig:{temperature:0.3, maxOutputTokens:8000}
         })
       });
-      if(!res2.ok) throw new Error('API2 ' + res2.status + ': ' + (await res2.text()).slice(0,200));
+      if(!res2.ok) throw new Error('API2 ' + res2.status + ': ' + (await res2.text()).slice(0,400));
       const d2 = await res2.json();
-      aiText = d2.candidates?.[0]?.content?.parts?.map(p=>p.text||'').join('') || '(응답 없음)';
+      console.log('[Agent] 2차 응답:', JSON.stringify(d2).slice(0,300));
+      const cand2 = d2.candidates?.[0];
+      aiText = cand2?.content?.parts?.map(p=>p.text||'').join('') || ('(2차 응답 없음: finishReason=' + (cand2?.finishReason||'?') + ')');
     } else {
       // 도구 호출 없이 바로 답변 (코딩 질문, 도메인 지식 기반 등)
       aiText = parts1.map(p=>p.text||'').join('') || '(응답 없음)';
