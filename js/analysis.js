@@ -668,6 +668,7 @@ async function renderMonthlyReport(pk, from, effectiveTo, ppMonth, thMonth, opDa
 
 // ── 월간 보고서 테이블 렌더 (필터 적용) ─────────────────────────────────────
 function _moRenderRows(selProds) {
+  const ym = window._moYm || tod().slice(0,7);
   const tbody = document.getElementById('mo_report_tbl');
   const tfoot = document.getElementById('mo_report_total');
   if(!tbody || !window._moGD) return;
