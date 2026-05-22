@@ -1224,77 +1224,62 @@ ${knowledgeBase ? '\n[도메인 지식]\n' + knowledgeBase : ''}`;
 
     const userParts = [{text: userMsg}, ...inlineParts];
 
-    // ── 1차 호출: AI가 도구 선택
-    var contents = [
-      {role:'user', parts: userParts}
-    ];
+    // ── Agent 루프: 최대 5회까지 도구 호출 반복 (Gemini가 연속으로 도구 부를 수 있음)
+    var contents = [{role:'user', parts: userParts}];
+    var aiText = '';
+    var loopCount = 0;
+    const MAX_LOOPS = 5;
 
-    const res1 = await fetch(apiUrlBase, {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({
-        system_instruction: {parts:[{text:systemPrompt}]},
-        contents,
-        tools:_AGENT_TOOLS,
-        generationConfig:{temperature:0.3, maxOutputTokens:8000}
-      })
-    });
-    if(!res1.ok) throw new Error('API ' + res1.status + ': ' + (await res1.text()).slice(0,200));
-    const d1 = await res1.json();
-    console.log('[Agent] 1차 응답:', JSON.stringify(d1).slice(0,500));
-    const cand1 = d1.candidates?.[0];
-    const parts1 = cand1?.content?.parts || [];
-    const finishReason1 = cand1?.finishReason || '';
-
-    // finishReason이 SAFETY/OTHER 등이면 fallback
-    if(!parts1.length && finishReason1 && finishReason1 !== 'STOP' && finishReason1 !== 'MAX_TOKENS') {
-      throw new Error('Gemini 응답 차단: ' + finishReason1 + (d1.promptFeedback ? ' / ' + JSON.stringify(d1.promptFeedback) : ''));
-    }
-
-    // 도구 호출이 있으면 실행 후 2차 호출
-    const toolCalls = parts1.filter(p => p.functionCall);
-    var aiText;
-
-    if(toolCalls.length > 0) {
-      // 로딩 메시지 갱신
-      var toolNames = toolCalls.map(p=>({
-        get_data_by_date:'데이터 조회',
-        get_open_processes:'진행중 공정 조회',
-        get_monthly_summary:'월간 집계 조회'
-      }[p.functionCall.name]||p.functionCall.name)).join(', ');
-      _aiChatHistory[_aiChatHistory.length-1].text = '⏳ ' + toolNames + ' 중...';
-      _renderChatLog();
-
-      // 도구 실행
-      const toolResults = await Promise.all(toolCalls.map(async p => {
-        const result = await _agentRunTool(p.functionCall.name, p.functionCall.args||{});
-        return {functionResponse:{name:p.functionCall.name, response:{result}}};
-      }));
-
-      // 2차 호출: 도구 결과 + 최종 답변
-      // Gemini function calling 포맷: model turn(functionCall) → user turn(functionResponse)
-      contents.push({role:'model', parts: parts1});
-      contents.push({role:'user', parts: toolResults.map(r => ({functionResponse: r.functionResponse}))});
-
-      console.log('[Agent] 2차 호출 contents 마지막:', JSON.stringify(contents.slice(-2)).slice(0,300));
-
-      const res2 = await fetch(apiUrlBase, {
+    while(loopCount < MAX_LOOPS) {
+      loopCount++;
+      const res = await fetch(apiUrlBase, {
         method:'POST', headers:{'Content-Type':'application/json'},
         body: JSON.stringify({
           system_instruction: {parts:[{text:systemPrompt}]},
           contents,
-          tools:_AGENT_TOOLS,
+          tools: _AGENT_TOOLS,
           generationConfig:{temperature:0.3, maxOutputTokens:8000}
         })
       });
-      if(!res2.ok) throw new Error('API2 ' + res2.status + ': ' + (await res2.text()).slice(0,400));
-      const d2 = await res2.json();
-      console.log('[Agent] 2차 응답:', JSON.stringify(d2).slice(0,300));
-      const cand2 = d2.candidates?.[0];
-      aiText = cand2?.content?.parts?.map(p=>p.text||'').join('') || ('(2차 응답 없음: finishReason=' + (cand2?.finishReason||'?') + ')');
-    } else {
-      // 도구 호출 없이 바로 답변 (코딩 질문, 도메인 지식 기반 등)
-      aiText = parts1.map(p=>p.text||'').join('') || '(응답 없음)';
+      if(!res.ok) throw new Error('API' + loopCount + ' ' + res.status + ': ' + (await res.text()).slice(0,400));
+      const d = await res.json();
+      console.log('[Agent] ' + loopCount + '차 응답:', JSON.stringify(d).slice(0,400));
+      const cand = d.candidates?.[0];
+      const parts = cand?.content?.parts || [];
+      const finishReason = cand?.finishReason || '';
+
+      if(!parts.length && finishReason && finishReason !== 'STOP' && finishReason !== 'MAX_TOKENS') {
+        throw new Error('Gemini 응답 차단: ' + finishReason);
+      }
+
+      const toolCalls = parts.filter(p => p.functionCall);
+
+      if(toolCalls.length > 0) {
+        // 도구 호출 — 실행 후 다음 루프
+        var toolNames = toolCalls.map(p=>({
+          get_data_by_date:'데이터 조회',
+          get_open_processes:'진행중 공정 조회',
+          get_monthly_summary:'월간 집계 조회'
+        }[p.functionCall.name]||p.functionCall.name)).join(', ');
+        _aiChatHistory[_aiChatHistory.length-1].text = '⏳ ' + toolNames + ' 중... (' + loopCount + '차)';
+        _renderChatLog();
+
+        const toolResults = await Promise.all(toolCalls.map(async p => {
+          const result = await _agentRunTool(p.functionCall.name, p.functionCall.args||{});
+          return {functionResponse:{name:p.functionCall.name, response:{result}}};
+        }));
+
+        contents.push({role:'model', parts});
+        contents.push({role:'user', parts: toolResults.map(r=>({functionResponse:r.functionResponse}))});
+        // 다음 루프로
+      } else {
+        // 텍스트 답변 — 루프 종료
+        aiText = parts.map(p=>p.text||'').join('').trim();
+        break;
+      }
     }
+
+    if(!aiText) aiText = '(응답을 생성하지 못했습니다. 다시 시도해주세요.)';
 
     _aiChatHistory.pop();
     _aiChatHistory.push({role:'assistant', text:aiText.trim(), createdAt:new Date()});
