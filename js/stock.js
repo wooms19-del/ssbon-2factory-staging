@@ -251,13 +251,16 @@ function _renderStockShell(){
   // 일자 선택기 UI (◀ YYYY년 M월 D일(요일) 📅 ▶) — 달력으로 직접 선택 가능
   function _datePicker(ds, tabKey){
     var isToday = (ds === tod());
+    var atMax = (ds >= tod());  // 오늘 이상이면 ▶ 막기
     return '<div style="display:flex;align-items:center;justify-content:center;gap:6px;margin-bottom:14px;padding:8px 0">'
       + '<button onclick="_stockDateShift(\''+tabKey+'\',-1)" style="padding:6px 13px;background:#fff;border:1px solid #d1d5db;border-radius:5px;font-size:14px;cursor:pointer;color:#475569" title="이전 날">◀</button>'
       + '<span style="font-size:15px;font-weight:700;color:#1e293b;min-width:175px;text-align:center">'+_dateLabel(ds)+(isToday?' <span style="font-size:10px;color:#10b981;font-weight:600;margin-left:2px">오늘</span>':'')+'</span>'
       + '<label style="cursor:pointer;padding:6px 10px;background:#fff;border:1px solid #d1d5db;border-radius:5px;font-size:14px;color:#475569;position:relative" title="날짜 선택">📅'
-        + '<input type="date" value="'+ds+'" onchange="_stockDateSet(\''+tabKey+'\',this.value)" style="position:absolute;left:0;top:0;width:100%;height:100%;opacity:0;cursor:pointer">'
+        + '<input type="date" value="'+ds+'" max="'+tod()+'" onchange="_stockDateSet(\''+tabKey+'\',this.value)" style="position:absolute;left:0;top:0;width:100%;height:100%;opacity:0;cursor:pointer">'
       + '</label>'
-      + '<button onclick="_stockDateShift(\''+tabKey+'\',1)" style="padding:6px 13px;background:#fff;border:1px solid #d1d5db;border-radius:5px;font-size:14px;cursor:pointer;color:#475569" title="다음 날">▶</button>'
+      + (atMax
+          ? '<button disabled style="padding:6px 13px;background:#f8fafc;border:1px solid #e5e7eb;border-radius:5px;font-size:14px;color:#cbd5e1;cursor:not-allowed" title="오늘 이후는 볼 수 없음">▶</button>'
+          : '<button onclick="_stockDateShift(\''+tabKey+'\',1)" style="padding:6px 13px;background:#fff;border:1px solid #d1d5db;border-radius:5px;font-size:14px;cursor:pointer;color:#475569" title="다음 날">▶</button>')
       + '<button onclick="_stockDateSet(\''+tabKey+'\',\''+tod()+'\')" style="padding:6px 12px;background:#f1f5f9;border:1px solid #d1d5db;border-radius:5px;font-size:13px;cursor:pointer;color:#475569" title="오늘로">오늘</button>'
       + '</div>';
   }
@@ -499,6 +502,7 @@ async function _stockDateShift(tab, delta){
 
 async function _stockDateSet(tab, ds){
   if(!ds || !/^\d{4}-\d{2}-\d{2}$/.test(ds)) return;
+  if(ds > _stockToday()) ds = _stockToday();  // 오늘 이후는 차단
   if(tab==='f1') _stockDateF1 = ds;
   else _stockDateF2 = ds;
 
