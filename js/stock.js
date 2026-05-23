@@ -244,8 +244,9 @@ function _renderStockShell(){
   }
 
   // === 일자 필터 헬퍼 (그 날짜 하루) ===
+  // 이력: 선택일까지 전부 (그 날짜 이후 미래 입출고는 숨김)
   function _filterByDate(rows, ds){
-    return rows.filter(function(r){ return String(r.date||'').slice(0,10) === ds; });
+    return rows.filter(function(r){ return String(r.date||'').slice(0,10) <= ds; });
   }
 
   // 일자 선택기 UI (◀ YYYY년 M월 D일(요일) 📅 ▶) — 달력으로 직접 선택 가능
