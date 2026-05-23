@@ -33,8 +33,22 @@ function _ymLabel(ym){
   return p[0]+'년 '+parseInt(p[1],10)+'월';
 }
 
-var _stockMonthF2 = _stockThisMonth();
-var _stockMonthF1 = _stockThisMonth();
+// === 일자 단위 헬퍼 ===
+function _dateShift(ds, delta){
+  var p=(ds||'').split('-'); if(p.length<3) return ds;
+  var d=new Date(parseInt(p[0]),parseInt(p[1])-1,parseInt(p[2]));
+  d.setDate(d.getDate()+delta);
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+function _dateLabel(ds){
+  var p=(ds||'').split('-'); if(p.length<3) return ds||'';
+  var d=new Date(parseInt(p[0]),parseInt(p[1])-1,parseInt(p[2]));
+  var w=['일','월','화','수','목','금','토'][d.getDay()];
+  return p[0]+'년 '+parseInt(p[1],10)+'월 '+parseInt(p[2],10)+'일('+w+')';
+}
+
+var _stockDateF2 = null;  // 선택일 (null=오늘, _renderStockShell에서 초기화)
+var _stockDateF1 = null;
 // 캐시된 최소 fetch 시작일 (이 날짜 이전 데이터는 아직 안 가져옴)
 var _stockFetchedFrom = null;
 
@@ -94,32 +108,44 @@ function _renderStockShell(){
   var allTypes = ['설도','우둔','홍두깨'];
   var today = tod();
 
-  // === 2공장 누적 ===
+  // 선택일 초기화 (최초 진입 시 오늘)
+  if(!_stockDateF2) _stockDateF2 = today;
+  if(!_stockDateF1) _stockDateF1 = today;
+  // 현재 서브탭의 선택일 = 누적 기준일
+  var selDate = (_stockSubTab==='f1') ? _stockDateF1 : _stockDateF2;
+
+  // === 2공장 누적 (선택일까지) + 당일 ===
   var f2In = {}, f2Out = {}, f2InProgress = {}, f2FromF1 = {}, f2ToF1 = {};
+  var f2InDay = {}, f2OutDay = {};   // 선택일 하루치
   _stockData.stockIn.forEach(function(r){
     var d = String(r.date||'').slice(0,10);
-    if(d < START_DATE) return;
+    if(d < START_DATE || d > selDate) return;
     var t = String(r.type||'').trim();
     var b = parseInt(r.boxes,10)||0;
     if(!t || !b) return;
     f2In[t] = (f2In[t]||0) + b;
+    if(d === selDate) f2InDay[t] = (f2InDay[t]||0) + b;
   });
   _stockData.thawing.forEach(function(r){
     var od = String(r.date||'').slice(0,10);
     if(od < START_DATE) return;
     if(!r.end) return;
-    if(od > today) return;
+    if(od > selDate) return;
     var types = (r.type||'').split(',').map(function(s){return s.trim();}).filter(Boolean);
     var boxes = parseInt(r.boxes,10)||0;
     if(!types.length) return;
     var per = boxes/types.length;
-    types.forEach(function(t){ f2Out[t] = (f2Out[t]||0) + per; });
+    types.forEach(function(t){
+      f2Out[t] = (f2Out[t]||0) + per;
+      if(od === selDate) f2OutDay[t] = (f2OutDay[t]||0) + per;
+    });
   });
   _stockData.thawing.forEach(function(r){
     var d = String(r.date||'').slice(0,10);
     if(d < START_DATE) return;
-    var isInProg = (!r.end) || (d > today);
+    var isInProg = (!r.end) || (d > selDate);
     if(!isInProg) return;
+    if(d > selDate) return;  // 선택일 이후 해동중은 표시 안 함
     var types = (r.type||'').split(',').map(function(s){return s.trim();}).filter(Boolean);
     var boxes = parseInt(r.boxes,10)||0;
     if(!types.length) return;
@@ -128,20 +154,20 @@ function _renderStockShell(){
   });
   _stockData.transfer.forEach(function(r){
     var d = String(r.date||'').slice(0,10);
-    if(d < START_DATE) return;
+    if(d < START_DATE || d > selDate) return;
     var t = String(r.type||'').trim();
     var b = parseInt(r.boxes,10)||0;
     var dir = r.direction || 'F1toF2';
     if(!t || !b) return;
-    if(dir === 'F1toF2'){ f2FromF1[t] = (f2FromF1[t]||0) + b; }
-    else if(dir === 'F2toF1'){ f2ToF1[t] = (f2ToF1[t]||0) + b; }
+    if(dir === 'F1toF2'){ f2FromF1[t] = (f2FromF1[t]||0) + b; if(d===selDate) f2InDay[t]=(f2InDay[t]||0)+b; }
+    else if(dir === 'F2toF1'){ f2ToF1[t] = (f2ToF1[t]||0) + b; if(d===selDate) f2OutDay[t]=(f2OutDay[t]||0)+b; }
   });
 
-  // === 1공장 누적 ===
+  // === 1공장 누적 (선택일까지) ===
   var f1In = {};
   _stockData.stockIn_f1.forEach(function(r){
     var d = String(r.date||'').slice(0,10);
-    if(d < START_DATE) return;
+    if(d < START_DATE || d > selDate) return;
     var t = String(r.type||'').trim();
     var b = parseInt(r.boxes,10)||0;
     if(!t || !b) return;
@@ -153,6 +179,8 @@ function _renderStockShell(){
     var init = INITIAL[t]||0;
     var ins = f2In[t]||0;
     var outs = f2Out[t]||0;
+    var insDay = Math.round(f2InDay[t]||0);
+    var outsDay = Math.round(f2OutDay[t]||0);
     var inProg = Math.round(f2InProgress[t]||0);
     var fromF1 = f2FromF1[t]||0;
     var toF1 = f2ToF1[t]||0;
@@ -168,7 +196,8 @@ function _renderStockShell(){
       + '<div style="font-size:13px;color:#6b7280;font-weight:600;margin-bottom:6px">'+t+'</div>'
       + '<div style="font-size:22px;font-weight:700;color:'+color+';line-height:1.2">'+rem.toLocaleString()+' <span style="font-size:13px;color:#9ca3af;font-weight:500">박스</span></div>'
       + '<div style="font-size:12px;color:#6b7280;margin-top:4px">약 '+estKg.toLocaleString()+' kg</div>'
-      + '<div style="font-size:11px;color:#9ca3af;margin-top:4px">입고 '+Math.round(ins).toLocaleString()+' · 사용 '+Math.round(outs).toLocaleString()+'</div>'
+      + '<div style="font-size:11px;color:#9ca3af;margin-top:4px">당일 입고 '+insDay.toLocaleString()+' · 사용 '+outsDay.toLocaleString()+'</div>'
+      + '<div style="font-size:10px;color:#cbd5e1;margin-top:2px">누적: 입고 '+Math.round(ins).toLocaleString()+' · 사용 '+Math.round(outs).toLocaleString()+'</div>'
       + '</div>';
 
     var tomorrowCell = hasProg
@@ -214,22 +243,22 @@ function _renderStockShell(){
       + '</td></tr>';
   }
 
-  // === 월 필터 헬퍼 ===
-  function _filterByMonth(rows, ym){
-    return rows.filter(function(r){ return _ymOf(r.date) === ym; });
+  // === 일자 필터 헬퍼 (그 날짜 하루) ===
+  function _filterByDate(rows, ds){
+    return rows.filter(function(r){ return String(r.date||'').slice(0,10) === ds; });
   }
 
-  // 월 선택기 UI (◀ YYYY년 M월 📅 ▶) — id는 탭별로 다르게
-  function _monthPicker(ym, tabKey){
-    var thisYm = _stockThisMonth();
-    var isCur = (ym === thisYm);
-    return '<div style="display:flex;align-items:center;justify-content:center;gap:6px;margin-bottom:10px;padding:6px 0">'
-      + '<button onclick="_stockMonthShift(\''+tabKey+'\',-1)" style="padding:5px 11px;background:#fff;border:1px solid #d1d5db;border-radius:5px;font-size:13px;cursor:pointer;color:#475569" title="이전 달">◀</button>'
-      + '<span style="font-size:14px;font-weight:600;color:#1e293b;min-width:115px;text-align:center">'+_ymLabel(ym)+(isCur?' <span style="font-size:10px;color:#10b981;font-weight:600;margin-left:2px">이번달</span>':'')+'</span>'
-      + '<label style="cursor:pointer;padding:5px 9px;background:#fff;border:1px solid #d1d5db;border-radius:5px;font-size:13px;color:#475569;position:relative" title="월 선택">📅'
-        + '<input type="month" value="'+ym+'" onchange="_stockMonthSet(\''+tabKey+'\',this.value)" style="position:absolute;left:0;top:0;width:100%;height:100%;opacity:0;cursor:pointer">'
+  // 일자 선택기 UI (◀ YYYY년 M월 D일(요일) 📅 ▶) — 달력으로 직접 선택 가능
+  function _datePicker(ds, tabKey){
+    var isToday = (ds === tod());
+    return '<div style="display:flex;align-items:center;justify-content:center;gap:6px;margin-bottom:14px;padding:8px 0">'
+      + '<button onclick="_stockDateShift(\''+tabKey+'\',-1)" style="padding:6px 13px;background:#fff;border:1px solid #d1d5db;border-radius:5px;font-size:14px;cursor:pointer;color:#475569" title="이전 날">◀</button>'
+      + '<span style="font-size:15px;font-weight:700;color:#1e293b;min-width:175px;text-align:center">'+_dateLabel(ds)+(isToday?' <span style="font-size:10px;color:#10b981;font-weight:600;margin-left:2px">오늘</span>':'')+'</span>'
+      + '<label style="cursor:pointer;padding:6px 10px;background:#fff;border:1px solid #d1d5db;border-radius:5px;font-size:14px;color:#475569;position:relative" title="날짜 선택">📅'
+        + '<input type="date" value="'+ds+'" onchange="_stockDateSet(\''+tabKey+'\',this.value)" style="position:absolute;left:0;top:0;width:100%;height:100%;opacity:0;cursor:pointer">'
       + '</label>'
-      + '<button onclick="_stockMonthShift(\''+tabKey+'\',1)" style="padding:5px 11px;background:#fff;border:1px solid #d1d5db;border-radius:5px;font-size:13px;cursor:pointer;color:#475569" title="다음 달">▶</button>'
+      + '<button onclick="_stockDateShift(\''+tabKey+'\',1)" style="padding:6px 13px;background:#fff;border:1px solid #d1d5db;border-radius:5px;font-size:14px;cursor:pointer;color:#475569" title="다음 날">▶</button>'
+      + '<button onclick="_stockDateSet(\''+tabKey+'\',\''+tod()+'\')" style="padding:6px 12px;background:#f1f5f9;border:1px solid #d1d5db;border-radius:5px;font-size:13px;cursor:pointer;color:#475569" title="오늘로">오늘</button>'
       + '</div>';
   }
 
@@ -244,7 +273,7 @@ function _renderStockShell(){
     f2InRows.push({date:r.date||'-',type:r.type||'-',boxes:parseInt(r.boxes,10)||0,note:r.note||'',source:'1공장 ← 이동',fbId:r.fbId||r.id||'',collection:'transfer'});
   });
   // 월 필터
-  f2InRows = _filterByMonth(f2InRows, _stockMonthF2);
+  f2InRows = _filterByDate(f2InRows, _stockDateF2);
   f2InRows.sort(function(a,b){return String(b.date).localeCompare(String(a.date));});
   var f2InHtml = f2InRows.map(function(x){return _row(x.date,x.type,x.boxes,x.note,x.source,x.fbId,x.collection);}).join('');
 
@@ -254,7 +283,7 @@ function _renderStockShell(){
     if(r.direction !== 'F2toF1') return;
     f2OutRows.push({date:r.date||'-',type:r.type||'-',boxes:parseInt(r.boxes,10)||0,note:r.note||'',source:'1공장 → 이동',fbId:r.fbId||r.id||'',collection:'transfer'});
   });
-  f2OutRows = _filterByMonth(f2OutRows, _stockMonthF2);
+  f2OutRows = _filterByDate(f2OutRows, _stockDateF2);
   f2OutRows.sort(function(a,b){return String(b.date).localeCompare(String(a.date));});
   var f2OutHtml = f2OutRows.map(function(x){return _row(x.date,x.type,x.boxes,x.note,x.source,x.fbId,x.collection);}).join('');
 
@@ -267,7 +296,7 @@ function _renderStockShell(){
     if(r.direction !== 'F2toF1') return;
     f1InRows.push({date:r.date||'-',type:r.type||'-',boxes:parseInt(r.boxes,10)||0,note:r.note||'',source:'2공장 ← 이동',fbId:r.fbId||r.id||'',collection:'transfer'});
   });
-  f1InRows = _filterByMonth(f1InRows, _stockMonthF1);
+  f1InRows = _filterByDate(f1InRows, _stockDateF1);
   f1InRows.sort(function(a,b){return String(b.date).localeCompare(String(a.date));});
   var f1InHtml = f1InRows.map(function(x){return _row(x.date,x.type,x.boxes,x.note,x.source,x.fbId,x.collection);}).join('');
 
@@ -276,7 +305,7 @@ function _renderStockShell(){
     if(r.direction !== 'F1toF2') return;
     f1OutRows.push({date:r.date||'-',type:r.type||'-',boxes:parseInt(r.boxes,10)||0,note:r.note||'',source:'2공장 → 이동',fbId:r.fbId||r.id||'',collection:'transfer'});
   });
-  f1OutRows = _filterByMonth(f1OutRows, _stockMonthF1);
+  f1OutRows = _filterByDate(f1OutRows, _stockDateF1);
   f1OutRows.sort(function(a,b){return String(b.date).localeCompare(String(a.date));});
   var f1OutHtml = f1OutRows.map(function(x){return _row(x.date,x.type,x.boxes,x.note,x.source,x.fbId,x.collection);}).join('');
 
@@ -361,25 +390,29 @@ function _renderStockShell(){
   // === 2공장 화면 ===
   var f2Html = '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px">'+allTypes.map(_f2Card).join('')+'</div>'
     + _section('➕ 2공장 입고 추가', f2InputForm)
-    + _monthPicker(_stockMonthF2, 'f2')
     + '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:14px">'
-      + '<div style="flex:1;min-width:340px">' + _section('📥 입고 이력 (외부 + 1공장 이동)', _table(f2InHtml, '이 달 입고 이력 없음')) + '</div>'
-      + '<div style="flex:1;min-width:340px">' + _section('📤 출고 이력 (1공장으로 이동)', _table(f2OutHtml, '이 달 출고 이력 없음')) + '</div>'
+      + '<div style="flex:1;min-width:340px">' + _section('📥 입고 이력 (외부 + 1공장 이동)', _table(f2InHtml, '이 날 입고 이력 없음')) + '</div>'
+      + '<div style="flex:1;min-width:340px">' + _section('📤 출고 이력 (1공장으로 이동)', _table(f2OutHtml, '이 날 출고 이력 없음')) + '</div>'
     + '</div>'
     + _section('🚚 1공장으로 이동', _transferForm('F2toF1'));
 
   // === 1공장 화면 ===
   var f1Html = '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px">'+allTypes.map(_f1Card).join('')+'</div>'
     + _section('➕ 1공장 입고 추가', f1InputForm)
-    + _monthPicker(_stockMonthF1, 'f1')
     + '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:14px">'
-      + '<div style="flex:1;min-width:340px">' + _section('📥 입고 이력 (외부 + 2공장 이동)', _table(f1InHtml, '이 달 입고 이력 없음')) + '</div>'
-      + '<div style="flex:1;min-width:340px">' + _section('📤 출고 이력 (2공장으로 이동)', _table(f1OutHtml, '이 달 출고 이력 없음')) + '</div>'
+      + '<div style="flex:1;min-width:340px">' + _section('📥 입고 이력 (외부 + 2공장 이동)', _table(f1InHtml, '이 날 입고 이력 없음')) + '</div>'
+      + '<div style="flex:1;min-width:340px">' + _section('📤 출고 이력 (2공장으로 이동)', _table(f1OutHtml, '이 날 출고 이력 없음')) + '</div>'
     + '</div>'
     + _section('🚚 2공장으로 이동', _transferForm('F1toF2'));
 
+  // 일자 선택기 — 최상단 (서브탭 아래)
+  var datePickerTop = (_stockSubTab==='f2')
+    ? _datePicker(_stockDateF2, 'f2')
+    : _datePicker(_stockDateF1, 'f1');
+
   pg.innerHTML = '<div style="padding:16px 20px;max-width:1300px;margin:0 auto">'
     + subTabHtml
+    + datePickerTop
     + (_stockSubTab === 'f2' ? f2Html : f1Html)
     + '<div style="text-align:right;padding:8px 0"><button onclick="renderStock()" style="padding:6px 14px;background:#fff;border:1px solid #d1d5db;border-radius:5px;font-size:12px;color:#475569;cursor:pointer">🔄 새로고침</button></div>'
     + '</div>';
@@ -456,22 +489,22 @@ async function stockGenericDelete(collection, fbId){
 }
 
 // ============================================================
-// 월별 필터 핸들러
+// 일자별 필터 핸들러
 // ============================================================
-async function _stockMonthShift(tab, delta){
-  var cur = (tab==='f1') ? _stockMonthF1 : _stockMonthF2;
-  var next = (delta < 0) ? _ymPrev(cur) : _ymNext(cur);
-  await _stockMonthSet(tab, next);
+async function _stockDateShift(tab, delta){
+  var cur = (tab==='f1') ? _stockDateF1 : _stockDateF2;
+  if(!cur) cur = _stockToday();
+  await _stockDateSet(tab, _dateShift(cur, delta));
 }
 
-async function _stockMonthSet(tab, ym){
-  if(!ym || !/^\d{4}-\d{2}$/.test(ym)) return;
-  if(tab==='f1') _stockMonthF1 = ym;
-  else _stockMonthF2 = ym;
+async function _stockDateSet(tab, ds){
+  if(!ds || !/^\d{4}-\d{2}-\d{2}$/.test(ds)) return;
+  if(tab==='f1') _stockDateF1 = ds;
+  else _stockDateF2 = ds;
 
-  // 캐시 시작일보다 과거 월을 선택했으면 fetch 확장
-  if(_stockFetchedFrom && ym < _stockFetchedFrom.slice(0,7)){
-    await _stockFetchOlder(ym + '-01');
+  // 캐시 시작일보다 과거 날짜를 선택했으면 fetch 확장
+  if(_stockFetchedFrom && ds < _stockFetchedFrom){
+    await _stockFetchOlder(ds.slice(0,7) + '-01');
   }
   _renderStockShell();
 }
@@ -503,8 +536,8 @@ async function _stockFetchOlder(newFrom){
   }
 }
 
-window._stockMonthShift = _stockMonthShift;
-window._stockMonthSet = _stockMonthSet;
+window._stockDateShift = _stockDateShift;
+window._stockDateSet = _stockDateSet;
 
 // ============================================================
 // 미등록 GTIN 자동 검사 + 등록 모달 + 부적합 재판정
