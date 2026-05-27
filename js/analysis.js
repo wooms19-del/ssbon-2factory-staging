@@ -75,7 +75,9 @@ async function _moFetchAttendance(from, to){
       Object.entries(records).forEach(([name, rec]) => {
         if(nonProdSet.has(name)) return;  // ★ QC 등 제외
         const tags = (rec && rec.tags) || [];
-        if(Array.isArray(tags) && tags.indexOf('checkin') !== -1) count++;
+        // checkin(출근) 또는 early(조출) 둘 다 '출근한 사람'으로 카운트.
+        // (다른 화면들도 ATT_NEEDS_IN = {checkin,early} 로 동일 취급)
+        if(Array.isArray(tags) && (tags.indexOf('checkin') !== -1 || tags.indexOf('early') !== -1)) count++;
       });
       if(count > 0) result[dates[i]] = count;
     });
@@ -711,7 +713,7 @@ function _moRenderRows(selProds) {
     // 그날 모든 제품이 무육(메추리알 등)이면 부위 표시 안 함
     const _isAllNoMeat = dayRows.length>0 && dayRows.every(r => /메추리알/.test(r.product||''));
 
-    // ★ 제품별 type 결정 (packing record의 type 필드 기준, 복수 타입이면 "우둔+설도" 형태로 합산)
+    // ★ 제품별 type 결정 (packing record의 type 필드 기준, 가장 많이 쓴 type 1개)
     const _rowType = {};  // {product: type}
     dayRows.forEach(r => {
       const types = r.types || {};
@@ -2646,11 +2648,18 @@ function renderDailyFromLocal_(d){
 // 다른 팀(제조원가 등)이 읽기 전용으로 가져갈 수 있도록 계산 완료된 요약을 공유 컬렉션에 떨굼.
 // 과거 날짜 단순 조회 시 불필요한 쓰기를 막기 위해, 오늘 날짜일 때만 저장.
 async function _exportDailySummary(d, procRows, pkRecs){
-  if(d !== tod()) return;               // 오늘 데이터만 export (과거 조회 시 덮어쓰기 방지)
   if(typeof db === 'undefined' || !db) return;
   if(!procRows || !procRows.length) return;
 
-  // 공정별 현황 정리 (이미지의 테이블 그대로)
+  const isToday = (d === tod());
+  // 과거 날짜는 이미 저장돼 있으면 건드리지 않음 (오늘은 항상 최신으로 갱신)
+  if(!isToday){
+    try {
+      const existing = await db.collection('daily_summary').doc(d).get();
+      if(existing.exists) return;   // 이미 있으면 덮어쓰지 않음
+    } catch(e){ /* 조회 실패 시 그냥 저장 진행 */ }
+  }
+
   const processes = procRows.map(p => {
     const origYield = p.origKg>0 ? +(p.out/p.origKg*100).toFixed(1) : null;  // 원육수율
     const procYield = p.in>0 ? +(p.out/p.in*100).toFixed(1) : null;          // 공정수율
@@ -2659,23 +2668,22 @@ async function _exportDailySummary(d, procRows, pkRecs){
     else if((p.name==='전처리'||p.name==='자숙') && p.mh>0 && p.in>0){ productivity = +(p.in/p.mh).toFixed(1); productivityUnit='kg/인시'; }
     else if(p.mh>0 && p.out>0){ productivity = +(p.out/p.mh).toFixed(1); productivityUnit='kg/인시'; }
     return {
-      process: p.name,           // 공정 (전처리/자숙/파쇄/포장)
-      part: p.type || '',        // 부위 (설도/우둔/홍두깨 등)
-      inputKg: +(+p.in).toFixed(2),       // 투입 KG
-      outputKg: p.noMeat ? null : +(+p.out).toFixed(2),  // 산출 KG
-      wasteKg: p.waste>0 ? +(+p.waste).toFixed(2) : 0,   // 비가식부 KG
-      origYieldPct: p.noMeat ? null : origYield,         // 원육수율 %
-      procYieldPct: p.noMeat ? null : procYield,         // 공정수율 %
-      workHours: +(+p.h).toFixed(1),       // 작업시간 h
-      workers: p.workers || 0,             // 인원
-      productivity: productivity,          // 생산성 값
-      productivityUnit: productivityUnit,  // 생산성 단위
-      ea: p.ea || null,                    // 포장 EA (포장 공정만)
-      boxes: p.boxes || null               // 박스 (전처리만)
+      process: p.name,
+      part: p.type || '',
+      inputKg: +(+p.in).toFixed(2),
+      outputKg: p.noMeat ? null : +(+p.out).toFixed(2),
+      wasteKg: p.waste>0 ? +(+p.waste).toFixed(2) : 0,
+      origYieldPct: p.noMeat ? null : origYield,
+      procYieldPct: p.noMeat ? null : procYield,
+      workHours: +(+p.h).toFixed(1),
+      workers: p.workers || 0,
+      productivity: productivity,
+      productivityUnit: productivityUnit,
+      ea: p.ea || null,
+      boxes: p.boxes || null
     };
   });
 
-  // 포장 제품별 EA 합계 (총 생산량)
   let totalEa = 0;
   (pkRecs||[]).forEach(r => { totalEa += parseFloat(r.ea)||0; });
 
@@ -2696,7 +2704,9 @@ async function _exportDailySummary(d, procRows, pkRecs){
 }
 
 var _tlMode = 'integrated';  // 'integrated' | 'byCart'
-var _tlData = null;          // 마지막 데이터 캐시 (pp,ck,sh,pk)// 막대 클릭 = 스티커 고정 토글. 한 번에 한 개만.
+var _tlData = null;          // 마지막 데이터 캐시 (pp,ck,sh,pk)
+
+// 막대 클릭 = 스티커 고정 토글. 한 번에 한 개만.
 function tlPin(barEl){
   if(!barEl) return;
   const wrap = document.getElementById('tlWrap');
@@ -3246,11 +3256,25 @@ function renderPackingChart(dayEntries, opMap, ym) {
     return m[2].toUpperCase()==='KG' ? parseFloat(m[1])*1000 : parseFloat(m[1]);
   }
 
-  const COLORS = ['#1D9E75','#378ADD','#EF9F27','#0EA5E9','#F472B6','#64748B'];
+  // 제품명 → 색상 고정 매핑 (신규 추가돼도 기존 색 안 바뀜)
+  const FIXED_COLOR_MAP = {
+    'FC 장조림 3KG':               '#1D9E75',
+    '메추리알 장조림 180g':         '#378ADD',
+    '미니쇠고기장조림 70g 5입':     '#A855F7',
+    '미니쇠고기장조림 70g 낱개':    '#EF9F27',
+    '시그니처 장조림 130g':         '#0EA5E9',
+    '시그니처 장조림 130g 마트용':  '#F472B6',
+    '코스트코 장조림 170g':         '#64748B',
+    '이번달 일평균':                '#A855F7',
+    '전월 일평균':                  '#84CC16',
+  };
+  const FALLBACK_COLORS = ['#84CC16','#E11D48','#7C3AED','#0891B2','#D97706','#059669'];
   const prodColorMap = {};
-  let colorIdx = 0;
+  let _fallbackIdx = 0;
   function getColor(prod) {
-    if (!prodColorMap[prod]) prodColorMap[prod] = COLORS[colorIdx++ % COLORS.length];
+    if (!prodColorMap[prod]) {
+      prodColorMap[prod] = FIXED_COLOR_MAP[prod] || FALLBACK_COLORS[_fallbackIdx++ % FALLBACK_COLORS.length];
+    }
     return prodColorMap[prod];
   }
 
@@ -3332,14 +3356,11 @@ function renderPackingChart(dayEntries, opMap, ym) {
 
   if(!_allProds.length || dayTotals.every(v => !v)) return;
 
-  // 범례
+  // 범례 — 차트 자체(Chart.js)에 범례가 있으므로 위쪽 정적 범례는 숨김(중복 제거)
   const legendEl = document.getElementById('mo_packing_legend');
   if (legendEl) {
-    legendEl.innerHTML = Object.entries(prodColorMap).map(([name, color]) =>
-      `<span style="display:inline-flex;align-items:center;gap:4px;margin-right:12px;font-size:11px;color:var(--g5)">
-        <span style="width:9px;height:9px;border-radius:2px;background:${color};flex-shrink:0"></span>${name}
-      </span>`
-    ).join('');
+    legendEl.innerHTML = '';
+    legendEl.style.display = 'none';
   }
 
   // 제목 월 업데이트
