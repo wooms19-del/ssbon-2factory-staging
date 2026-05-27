@@ -2603,6 +2603,9 @@ function renderDailyFromLocal_(d){
     </tr>`;
   }).join('') || '<tr><td colspan="10" style="text-align:center;padding:1rem;color:var(--g4)">데이터 없음</td></tr>';
 
+  // ── 외부 연동용 export: 공정별 현황을 daily_summary/{날짜}에 저장 (읽기 전용 공유) ──
+  try { _exportDailySummary(d, procRows, pk); } catch(e){ console.warn('[daily_summary export]', e); }
+
   // 포장 실적
   const pkTbody=document.getElementById('pkTbl');
   if(pkTbody){
@@ -2639,10 +2642,61 @@ function renderDailyFromLocal_(d){
     '<div class="emp">데이터 없음 (전날 원육 검수)</div>';
 }
 
-var _tlMode = 'integrated';  // 'integrated' | 'byCart'
-var _tlData = null;          // 마지막 데이터 캐시 (pp,ck,sh,pk)
+// ── 외부 연동용: 공정별 현황을 daily_summary/{날짜}에 저장 ──
+// 다른 팀(제조원가 등)이 읽기 전용으로 가져갈 수 있도록 계산 완료된 요약을 공유 컬렉션에 떨굼.
+// 과거 날짜 단순 조회 시 불필요한 쓰기를 막기 위해, 오늘 날짜일 때만 저장.
+async function _exportDailySummary(d, procRows, pkRecs){
+  if(d !== tod()) return;               // 오늘 데이터만 export (과거 조회 시 덮어쓰기 방지)
+  if(typeof db === 'undefined' || !db) return;
+  if(!procRows || !procRows.length) return;
 
-// 막대 클릭 = 스티커 고정 토글. 한 번에 한 개만.
+  // 공정별 현황 정리 (이미지의 테이블 그대로)
+  const processes = procRows.map(p => {
+    const origYield = p.origKg>0 ? +(p.out/p.origKg*100).toFixed(1) : null;  // 원육수율
+    const procYield = p.in>0 ? +(p.out/p.in*100).toFixed(1) : null;          // 공정수율
+    let productivity = null, productivityUnit = null;
+    if(p.name==='포장' && p.mh>0 && p.ea>0){ productivity = +(p.ea/p.mh).toFixed(1); productivityUnit='EA/인시'; }
+    else if((p.name==='전처리'||p.name==='자숙') && p.mh>0 && p.in>0){ productivity = +(p.in/p.mh).toFixed(1); productivityUnit='kg/인시'; }
+    else if(p.mh>0 && p.out>0){ productivity = +(p.out/p.mh).toFixed(1); productivityUnit='kg/인시'; }
+    return {
+      process: p.name,           // 공정 (전처리/자숙/파쇄/포장)
+      part: p.type || '',        // 부위 (설도/우둔/홍두깨 등)
+      inputKg: +(+p.in).toFixed(2),       // 투입 KG
+      outputKg: p.noMeat ? null : +(+p.out).toFixed(2),  // 산출 KG
+      wasteKg: p.waste>0 ? +(+p.waste).toFixed(2) : 0,   // 비가식부 KG
+      origYieldPct: p.noMeat ? null : origYield,         // 원육수율 %
+      procYieldPct: p.noMeat ? null : procYield,         // 공정수율 %
+      workHours: +(+p.h).toFixed(1),       // 작업시간 h
+      workers: p.workers || 0,             // 인원
+      productivity: productivity,          // 생산성 값
+      productivityUnit: productivityUnit,  // 생산성 단위
+      ea: p.ea || null,                    // 포장 EA (포장 공정만)
+      boxes: p.boxes || null               // 박스 (전처리만)
+    };
+  });
+
+  // 포장 제품별 EA 합계 (총 생산량)
+  let totalEa = 0;
+  (pkRecs||[]).forEach(r => { totalEa += parseFloat(r.ea)||0; });
+
+  const docData = {
+    date: d,
+    factory: '2공장',
+    updatedAt: new Date().toISOString(),
+    totalEa: totalEa,
+    processes: processes
+  };
+
+  try {
+    await db.collection('daily_summary').doc(d).set(docData);
+    console.log('[daily_summary] export 완료:', d, processes.length+'개 공정');
+  } catch(e){
+    console.warn('[daily_summary] export 실패:', e);
+  }
+}
+
+var _tlMode = 'integrated';  // 'integrated' | 'byCart'
+var _tlData = null;          // 마지막 데이터 캐시 (pp,ck,sh,pk)// 막대 클릭 = 스티커 고정 토글. 한 번에 한 개만.
 function tlPin(barEl){
   if(!barEl) return;
   const wrap = document.getElementById('tlWrap');
