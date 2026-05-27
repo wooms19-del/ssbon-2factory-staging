@@ -10,14 +10,67 @@ const DEFAULT_EMPS = ['김구식','김수영','임혜경','한채현','김정희
   '유혜선','레티장','김진화','드엉반담','르탄프엉','응우옌반동','응우옌민호앙',
   '응우옌반키','르판하이퐁','판투안안'];
 
-const ATT_SL    = {normal:'정상',checkin:'출근',checkout:'퇴근',early:'조출',overtime:'연장','half-am':'반차(오전)','half-pm':'반차(오후)',quarter:'반반차',annual:'연차',absent:'결근'};
-const ATT_ICON  = {normal:'✅',checkin:'🕘',checkout:'🏃',early:'🌅',overtime:'⏰','half-am':'🌓','half-pm':'🌓',quarter:'🌗',annual:'📅',absent:'❌'};
-const ATT_COLOR = {normal:'#2e7d32',checkin:'#1a56db',checkout:'#0277bd',early:'#1565c0',overtime:'#e65100','half-am':'#6a1b9a','half-pm':'#6a1b9a',quarter:'#4a148c',annual:'#ad1457',absent:'#b71c1c'};
+const ATT_SL    = {normal:'정상',checkin:'출근',checkout:'퇴근',early:'조출',overtime:'연장','half-am':'반차(오전)','half-pm':'반차(오후)',quarter:'반반차',annual:'연차',absent:'결근',holiday:'휴무'};
+const ATT_ICON  = {normal:'✅',checkin:'🕘',checkout:'🏃',early:'🌅',overtime:'⏰','half-am':'🌓','half-pm':'🌓',quarter:'🌗',annual:'📅',absent:'❌',holiday:'🏖️'};
+const ATT_COLOR = {normal:'#2e7d32',checkin:'#1a56db',checkout:'#0277bd',early:'#1565c0',overtime:'#e65100','half-am':'#6a1b9a','half-pm':'#6a1b9a',quarter:'#4a148c',annual:'#ad1457',absent:'#b71c1c',holiday:'#0891b2'};
 // 시간 입력 필요 여부
 const ATT_NEEDS_IN  = {checkin:true,early:true};
 const ATT_NEEDS_OUT = {overtime:true};
 
 let _attDate='', _attRecs={}, _attEmps=[], _attSubTab='input', _attSelStatus='';
+
+// ── 공휴일(휴무) 자동 처리 ───────────────────────────────────────
+// _attHolidays: { 'YYYY-MM-DD': '공휴일명' }  Firestore _config/holidays 에 캐싱
+let _attHolidays = null;
+
+async function _loadHolidays(){
+  if(_attHolidays) return _attHolidays;
+  try{
+    if(typeof db==='undefined'||!db){ _attHolidays={}; return _attHolidays; }
+    var doc = await db.collection('_config').doc('holidays').get();
+    var map = (doc.exists && doc.data() && doc.data().map) ? doc.data().map : null;
+    var thisYear = new Date().getFullYear();
+    var hasThisYear = map && Object.keys(map).some(function(d){ return d.indexOf(thisYear+'-')===0; });
+    if(!hasThisYear){
+      map = map || {};
+      var fetched = await _fetchHolidaysFromApi(thisYear);
+      Object.assign(map, fetched);
+      try{ await db.collection('_config').doc('holidays').set({ map: map, updatedAt: new Date().toISOString() }); }
+      catch(e){ console.warn('[holidays] 저장 실패', e); }
+    }
+    _attHolidays = map || {};
+  }catch(e){ console.warn('[holidays] 로드 실패', e); _attHolidays={}; }
+  return _attHolidays;
+}
+
+// 외부 무료 API(date.nager.at, 키 불필요)에서 해당 연도 한국 공휴일 가져옴
+async function _fetchHolidaysFromApi(year){
+  var out = {};
+  try{
+    var res = await fetch('https://date.nager.at/api/v3/PublicHolidays/'+year+'/KR');
+    if(!res.ok) return out;
+    var arr = await res.json();
+    arr.forEach(function(h){ if(h && h.date) out[h.date] = h.localName || h.name || '공휴일'; });
+  }catch(e){ console.warn('[holidays] API 실패', e); }
+  return out;
+}
+
+function _isHoliday(date){ return !!(_attHolidays && _attHolidays[date]); }
+function _holidayName(date){ return (_attHolidays && _attHolidays[date]) || ''; }
+
+// 공휴일이면, 실제 출근한 사람(출퇴근 시간 또는 checkin/early 태그)만 남기고
+// 나머지(결근/연차/무기록)는 전부 '휴무'로 처리.
+function _applyAutoHoliday(date){
+  if(!_isHoliday(date)) return;
+  (_attEmps||[]).forEach(function(e){
+    var r = _attRecs[e.name];
+    var tags = (r && r.tags) || [];
+    var worked = (r && (r.inTime || r.outTime)) || tags.indexOf('checkin')>=0 || tags.indexOf('early')>=0;
+    if(!worked){
+      _attRecs[e.name] = { tags:['holiday'], inTime:'', outTime:'' };
+    }
+  });
+}
 
 async function initAttendance(){
   _attDate=tod();
@@ -50,7 +103,7 @@ async function initAttendance(){
     await _saveAttEmps();
   }
 
-  _loadAttDate(_attDate);
+  await _loadAttDate(_attDate);
 }
 
 // Firestore + localStorage 동시 저장 (디바이스 간 공유 보장)
@@ -72,11 +125,14 @@ async function _loadAttDate(date){
   var lbl=document.getElementById('attDateLabel');
   if(lbl)lbl.textContent=_attFmtLabel(date);
 
+  await _loadHolidays();
+
   // Firebase 우선 - 다른 PC/브라우저에서도 데이터 보존
   try{
     var doc = await firebase.firestore().collection('attendance').doc(date).get();
     if(doc.exists){
       _attRecs = doc.data().records || {};
+      _applyAutoHoliday(date);
       localStorage.setItem(_attDateKey(date), JSON.stringify(_attRecs));
       _renderAttAll();
       return;
@@ -86,6 +142,7 @@ async function _loadAttDate(date){
   // Firebase에 없으면 localStorage 폴백
   var raw=localStorage.getItem(_attDateKey(date));
   _attRecs=raw?JSON.parse(raw):{};
+  _applyAutoHoliday(date);
   _renderAttAll();
 }
 function _attFmtLabel(d){
@@ -100,13 +157,14 @@ function attSave(){
   localStorage.setItem(_attDateKey(_attDate),JSON.stringify(_attRecs));
   try{
     var full={};
-    var totalWorkers=0,totalAbsent=0,totalAnnual=0,totalEarly=0,totalOvertime=0;
+    var totalWorkers=0,totalAbsent=0,totalAnnual=0,totalEarly=0,totalOvertime=0,totalHoliday=0;
     _attEmps.forEach(function(e){
       var r=_attRecs[e.name]||{tags:[],inTime:'09:00',outTime:'18:00'};
       full[e.name]=r;
       var tags=r.tags||[];
       if(tags.indexOf('absent')>=0)totalAbsent++;
       else if(tags.indexOf('annual')>=0)totalAnnual++;
+      else if(tags.indexOf('holiday')>=0)totalHoliday++;
       else totalWorkers++;
       if(tags.indexOf('early')>=0)totalEarly++;
       if(tags.indexOf('overtime')>=0)totalOvertime++;
@@ -118,6 +176,7 @@ function attSave(){
         totalWorkers:totalWorkers,   // 출근자 수 (결근/연차 제외)
         totalAbsent:totalAbsent,     // 결근자 수
         totalAnnual:totalAnnual,     // 연차자 수
+        totalHoliday:totalHoliday,   // 휴무자 수
         totalEarly:totalEarly,       // 조출자 수
         totalOvertime:totalOvertime, // 연장자 수
         totalHeadcount:_attEmps.length // 전체 인원
@@ -164,13 +223,13 @@ function _isAnnual(name){return _hasTag(name,'annual');}
 function _noTime(name){return _isAbsent(name)||_isAnnual(name);}
 // 태그들에서 주 상태 색 계산
 function _mainColor(tags){
-  var pri=['absent','annual','early','overtime','half-am','half-pm','quarter','checkin'];
+  var pri=['absent','holiday','annual','early','overtime','half-am','half-pm','quarter','checkin'];
   for(var i=0;i<pri.length;i++){if(tags.indexOf(pri[i])>=0)return ATT_COLOR[pri[i]];}
   return ATT_COLOR.normal;
 }
 function _mainIcon(tags){
   if(!tags||!tags.length)return ATT_ICON.normal;
-  var pri=['absent','annual','early','half-am','half-pm','quarter','overtime','checkin'];
+  var pri=['absent','holiday','annual','early','half-am','half-pm','quarter','overtime','checkin'];
   for(var i=0;i<pri.length;i++){if(tags.indexOf(pri[i])>=0)return ATT_ICON[pri[i]];}
   return ATT_ICON.normal;
 }
@@ -192,12 +251,13 @@ function _renderAttSummary(){
   var el=document.getElementById('attSummary');if(!el)return;
   var raw=localStorage.getItem(_attDateKey(tod()));if(!raw){el.innerHTML='';return;}
   var recs=JSON.parse(raw);
-  var groups={early:[],annual:[],'half-am':[],'half-pm':[],quarter:[],overtime:[],absent:[]};
-  var totalIn=0,totalAbsent=0;
+  var groups={early:[],annual:[],'half-am':[],'half-pm':[],quarter:[],overtime:[],absent:[],holiday:[]};
+  var totalIn=0,totalAbsent=0,totalHoliday=0;
   _attEmps.forEach(function(e){
     var r=recs[e.name];if(!r)return;
     var tags=r.tags||(r.status&&r.status!=='normal'?[r.status]:[]);
     if(tags.indexOf('absent')>=0){totalAbsent++;groups.absent.push(e.name);}
+    else if(tags.indexOf('holiday')>=0){totalHoliday++;groups.holiday.push(e.name);}
     else{
       totalIn++;
       ['early','half-am','half-pm','quarter','overtime','annual'].forEach(function(k){
@@ -208,6 +268,7 @@ function _renderAttSummary(){
   var html='<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:9px 14px 7px;background:var(--g1);border-radius:10px;margin-bottom:4px">'
     +'<span style="font-size:14px;font-weight:700;color:var(--p)">총 출근 '+totalIn+'명</span>'
     +(totalAbsent?'<span style="font-size:13px;color:#e53935;font-weight:600">결근 '+totalAbsent+'명</span>':'')
+    +(totalHoliday?'<span style="font-size:13px;color:#0891b2;font-weight:600">휴무 '+totalHoliday+'명</span>':'')
     +'</div>';
   [{key:'early',icon:'🌅',label:'조출',t:true},{key:'annual',icon:'📅',label:'연차',t:false},
    {key:'half-am',icon:'🌓',label:'반차(오전)',t:false},{key:'half-pm',icon:'🌓',label:'반차(오후)',t:false},
@@ -235,6 +296,7 @@ function _renderAttInput(){
     {s:'overtime',icon:'⏰',label:'연장',color:'#e65100'},
     {s:'annual',icon:'📅',label:'연차',color:'#ad1457'},
     {s:'absent',icon:'❌',label:'결근',color:'#b71c1c'},
+    {s:'holiday',icon:'🏖️',label:'휴무',color:'#0891b2'},
   ];
   var btnHtml=STATUS_BTNS.map(function(b){
     var active=_attSelStatus===b.s;
@@ -279,6 +341,7 @@ function _renderAttInput(){
     else if(_attSelStatus==='quarter')hint='반반차: 출근 09:00 → 퇴근 11:00 자동';
     else if(_attSelStatus==='annual')hint='연차: 시간 불필요';
     else if(_attSelStatus==='absent')hint='결근: 시간 불필요';
+    else if(_attSelStatus==='holiday')hint='휴무(공휴일 등): 시간 불필요';
 
     var timeInput='';
     if(_attSelStatus==='checkout'){
@@ -329,7 +392,7 @@ function _renderAttInput(){
   var listHtml=_attEmps.map(function(e,i){
     var rec=_getRec(e.name);
     var tags=rec.tags;
-    var noTime=tags.indexOf('absent')>=0||tags.indexOf('annual')>=0;
+    var noTime=tags.indexOf('absent')>=0||tags.indexOf('annual')>=0||tags.indexOf('holiday')>=0;
     var mc=_mainColor(tags);
     var mi=_mainIcon(tags);
     var tl=_tagsLabel(tags);
@@ -400,11 +463,12 @@ function attApplyChecked(apply){
   if(apply){
     var conflicts={
       'early':   ['half-am'],       // 조출 + 반차(오전) 불가
-      'half-am': ['early','half-pm','annual','absent'],  // 반차(오전) + 조출/반차(오후)/연차/결근 불가
-      'half-pm': ['half-am','annual','absent'],
-      'quarter': ['annual','absent'],
-      'annual':  ['half-am','half-pm','quarter','absent','early','overtime'],
-      'absent':  ['half-am','half-pm','quarter','annual','early','overtime'],
+      'half-am': ['early','half-pm','annual','absent','holiday'],  // 반차(오전) + 조출/반차(오후)/연차/결근 불가
+      'half-pm': ['half-am','annual','absent','holiday'],
+      'quarter': ['annual','absent','holiday'],
+      'annual':  ['half-am','half-pm','quarter','absent','early','overtime','holiday'],
+      'absent':  ['half-am','half-pm','quarter','annual','early','overtime','holiday'],
+      'holiday': ['half-am','half-pm','quarter','annual','absent','early','overtime','checkin'],
     };
     var conflictNames=[];
     _attEmps.forEach(function(e,i){
@@ -419,6 +483,7 @@ function attApplyChecked(apply){
       if(_attSelStatus==='early'&&conflictNames.length)msg+='조출 + 반차(오전)은 함께 쓸 수 없습니다.\n(일찍 왔는데 오전에 쉰다는 건 말이 안 됩니다)';
       else if(_attSelStatus==='annual')msg+='연차는 다른 반차/조출과 함께 쓸 수 없습니다.\n(연차면 하루 전체 휴가입니다)';
       else if(_attSelStatus==='absent')msg+='결근은 다른 상태와 함께 쓸 수 없습니다.';
+      else if(_attSelStatus==='holiday')msg+='휴무는 다른 상태와 함께 쓸 수 없습니다.';
       else if(_attSelStatus==='half-am')msg+='반차(오전)은 조출/반차(오후)/연차와 함께 쓸 수 없습니다.';
       else msg+='해당 조합은 사용할 수 없습니다.';
       msg+='\n\n해당 직원: '+conflictNames.join(', ');
@@ -475,10 +540,10 @@ function attApplyChecked(apply){
         else if(tags.indexOf('early')<0) inT='09:00';
         var wh4=_calcWorkHours(tags.concat(['quarter']));
         outT=_attAddH(inT,wh4);
-      }else if(appliedStatus==='annual'||appliedStatus==='absent'){
+      }else if(appliedStatus==='annual'||appliedStatus==='absent'||appliedStatus==='holiday'){
         inT=''; outT='';
         // 다른 시간 관련 태그 제거
-        tags=tags.filter(function(t){return t==='absent'||t==='annual';});
+        tags=tags.filter(function(t){return t==='absent'||t==='annual'||t==='holiday';});
         tags=[appliedStatus];
       }
       _attRecs[e.name]={tags:tags,inTime:inT,outTime:outT};
@@ -578,6 +643,7 @@ async function _attPrefetchWeek(weekStart){
 // prefetch + render 묶음 (호출자가 이 함수를 await로 부름)
 async function _attShowMonthly(){
   if(!_attWeekStart) _attWeekStart=_attGetWeekMon(_attDate||tod());
+  await _loadHolidays();
   await _attPrefetchWeek(_attWeekStart);
   _renderAttMonthly();
 }
@@ -630,14 +696,18 @@ function _renderAttMonthly(){
       var outT=r?(r.outTime||'18:00'):'';
       var isAbsent=tags.indexOf('absent')>=0;
       var isAnnual=tags.indexOf('annual')>=0;
+      var isHoliday=tags.indexOf('holiday')>=0;
+      // 공휴일이면서 실제 출근(시간 또는 checkin/early)을 안 했으면 → 휴무로 간주
+      var workedThisDay = (r && (r.inTime || r.outTime)) || tags.indexOf('checkin')>=0 || tags.indexOf('early')>=0;
+      if(_isHoliday(ds) && !workedThisDay){ isHoliday=true; isAbsent=false; isAnnual=false; }
       var isToday=ds===todayStr;
       var isWknd=dt.getDay()===0||dt.getDay()===6;
       var bg=isToday?'#f0f7ff':isWknd?'var(--g1)':'var(--bg)';
       var escapedDs=ds.replace(/'/g,"\\'");
       var escapedName=emp.name.replace(/'/g,"\\'");
-      if(isAbsent||isAnnual){
-        var label=isAbsent?'결근':'연차';
-        var color=isAbsent?'#e53935':'#ad1457';
+      if(isAbsent||isAnnual||isHoliday){
+        var label=isAbsent?'결근':isHoliday?'휴무':'연차';
+        var color=isAbsent?'#e53935':isHoliday?'#0891b2':'#ad1457';
         html+='<td colspan="2" style="padding:4px;text-align:center;font-size:11px;font-weight:600;color:'+color+';background:'+bg+';border:0.5px solid var(--g2);cursor:pointer" onclick="attWeekCellEdit(\''+escapedDs+'\',\''+escapedName+'\')">'+label+'</td>';
       } else if(!r||isWknd){
         html+='<td style="padding:4px;text-align:center;font-size:11px;color:var(--g3);background:'+bg+';border:0.5px solid var(--g2);cursor:pointer" onclick="attWeekCellEdit(\''+escapedDs+'\',\''+escapedName+'\')">'+(isWknd&&!r?'-':'')+'</td>';
@@ -745,7 +815,7 @@ function _attAddH(t,h){if(!t||t.indexOf(':')<0)return '';var p=t.split(':'),hr=p
 
 // 태그 조합으로 실근무시간 계산
 function _calcWorkHours(tags){
-  if(tags.indexOf('annual')>=0||tags.indexOf('absent')>=0)return 0;
+  if(tags.indexOf('annual')>=0||tags.indexOf('absent')>=0||tags.indexOf('holiday')>=0)return 0;
   var hasHalf=tags.indexOf('half-am')>=0||tags.indexOf('half-pm')>=0;
   var hasQtr=tags.indexOf('quarter')>=0;
   // 반차 있으면 기본 4시간, 없으면 9시간 (점심포함)
@@ -761,7 +831,7 @@ function _calcWorkHours(tags){
 // - 반반차: 위에서 -2시간
 function _calcWorkHoursByTime(inTime, outTime, tags){
   if(!tags) tags=[];
-  if(tags.indexOf('annual')>=0||tags.indexOf('absent')>=0) return 0;
+  if(tags.indexOf('annual')>=0||tags.indexOf('absent')>=0||tags.indexOf('holiday')>=0) return 0;
   function _toMin(t){
     if(!t||t.indexOf(':')<0) return null;
     var p=t.split(':'); var h=parseInt(p[0]); var m=parseInt(p[1]);
@@ -894,11 +964,12 @@ function attDownloadWeekly(){
             var tags=r.tags||[];
             if(tags.indexOf('absent')>=0){mark='absent';}
             else if(tags.indexOf('annual')>=0){mark='annual';}
+            else if(tags.indexOf('holiday')>=0){mark='holiday';}
             else{inT=r.inTime||'';outT=r.outTime||'';}
           }
           if(mark){
-            var lbl=mark==='absent'?'결근':'연차';
-            var bgc=mark==='absent'?'FBE0E0':'EFEFEF';
+            var lbl=mark==='absent'?'결근':mark==='holiday'?'휴무':'연차';
+            var bgc=mark==='absent'?'FBE0E0':mark==='holiday'?'CFFAFE':'EFEFEF';
             setRange(row,base,row,base+7,lbl,{sz:12,bold:true,fill:bgc,bl:d==0?med():thin(),br:d==numDays-1?med():thin(),bt:thin(),bb:bb});
           }else{
             setRange(row,base,row,base+3,inT,{sz:12,bold:true,fill:zebra,bl:d==0?med():thin(),br:thin(),bt:thin(),bb:bb});
