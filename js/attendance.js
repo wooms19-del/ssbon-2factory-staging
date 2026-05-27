@@ -134,14 +134,15 @@ async function _loadAttDate(date){
   _renderAttAll();
 }
 
-// 공휴일이면, 아직 아무 기록 없는 직원을 자동 '휴무'로 채움.
-// 이미 출근/결근/연차 등 찍힌 사람은 건드리지 않음 (나온 사람 기록 보존).
+// 공휴일이면, 실제 출근한 사람(출퇴근 시간 또는 checkin/early 태그)만 남기고
+// 나머지(결근/연차/무기록)는 전부 '휴무'로 처리. (공휴일엔 출근 외엔 다 휴무)
 function _applyAutoHoliday(date){
   if(!_isHoliday(date)) return;
   (_attEmps||[]).forEach(function(e){
     var r = _attRecs[e.name];
-    var hasRec = r && ((r.tags && r.tags.length) || r.inTime || r.outTime || (r.status && r.status!=='normal'));
-    if(!hasRec){
+    var tags = (r && r.tags) || [];
+    var worked = (r && (r.inTime || r.outTime)) || tags.indexOf('checkin')>=0 || tags.indexOf('early')>=0;
+    if(!worked){
       _attRecs[e.name] = { tags:['holiday'], inTime:'', outTime:'' };
     }
   });
@@ -644,6 +645,7 @@ async function _attPrefetchWeek(weekStart){
 // prefetch + render 묶음 (호출자가 이 함수를 await로 부름)
 async function _attShowMonthly(){
   if(!_attWeekStart) _attWeekStart=_attGetWeekMon(_attDate||tod());
+  await _loadHolidays();
   await _attPrefetchWeek(_attWeekStart);
   _renderAttMonthly();
 }
@@ -697,6 +699,9 @@ function _renderAttMonthly(){
       var isAbsent=tags.indexOf('absent')>=0;
       var isAnnual=tags.indexOf('annual')>=0;
       var isHoliday=tags.indexOf('holiday')>=0;
+      // 공휴일이면서 실제 출근(시간 또는 checkin/early)을 안 했으면 → 휴무로 간주
+      var workedThisDay = (r && (r.inTime || r.outTime)) || tags.indexOf('checkin')>=0 || tags.indexOf('early')>=0;
+      if(_isHoliday(ds) && !workedThisDay){ isHoliday=true; isAbsent=false; isAnnual=false; }
       var isToday=ds===todayStr;
       var isWknd=dt.getDay()===0||dt.getDay()===6;
       var bg=isToday?'#f0f7ff':isWknd?'var(--g1)':'var(--bg)';
