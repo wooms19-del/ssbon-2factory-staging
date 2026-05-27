@@ -145,7 +145,7 @@ window._switchAITab = _switchAITab;
 function showTab(mode,tab){
   if(mode==='i') ITAB=tab; else DTAB=tab;
   const nav=mode==='i'?'inav':'dnav';
-  const tabs=mode==='i'?['barcode','thawing','preprocess','cooking','shredding','packing','sauce','outerpacking','attendance']:['daily','monthly','trace','recipe','timetable','timetable_test','production_plan','settings'];
+  const tabs=mode==='i'?['barcode','thawing','preprocess','cooking','shredding','packing','sauce','outerpacking','attendance']:['daily','monthly','trace','recipe','timetable','timetable_test','settings'];
   document.querySelectorAll(`#${nav} .ti`).forEach((el,i)=>el.classList.toggle('on',tabs[i]===tab));
   document.querySelectorAll('.pg').forEach(p=>p.classList.remove('on'));
   const pg=document.getElementById('p-'+tab); if(pg) pg.classList.add('on');
@@ -214,8 +214,6 @@ function showTab(mode,tab){
     if(typeof ttInit==='function') ttInit();
   } else if(tab==='timetable_test'){
     if(typeof tttInit==='function') tttInit();
-  } else if(tab==='production_plan'){
-    if(typeof renderProductionPlan==='function') renderProductionPlan();
   }
 }
 
@@ -257,7 +255,8 @@ function init(){
   // 날짜 클릭 시 날짜 변경 (테스트용)
   document.getElementById('hDate').style.cursor='pointer';
   document.getElementById('hDate').title='클릭하여 날짜 변경';
-  document.getElementById('hDate').onclick=()=>{
+  document.getElementById('hDate').onclick=(ev)=>{
+    if(ev){ ev.preventDefault(); ev.stopPropagation(); }
     const val = prompt('날짜 입력 (예: 2026-04-13). 비우고 확인 시 오늘로 복귀.', tod());
     if(val === null) return;
     if(val === ''){ sessionStorage.removeItem('_testDate'); window._testDate = null; location.reload(); return; }

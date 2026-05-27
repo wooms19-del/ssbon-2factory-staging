@@ -89,11 +89,6 @@ function tttToggleDual() {
   const enabled = document.getElementById('ttt-dual-enabled')?.checked;
   const block = document.getElementById('ttt-dual-block');
   if (block) block.style.display = enabled ? 'flex' : 'none';
-  // 토글 시 잔존 상태 리셋 - 이전 모드의 사용자 선택 초기화
-  window.tttSelectedTankMode = null;
-  // dual용 박스/이미지 잔존 DOM 제거 (있으면)
-  const dualBox = document.getElementById('ttt-dual-result-box');
-  if (dualBox) dualBox.remove();
   tttRender();
 }
 
@@ -501,33 +496,16 @@ async function tttAutoAnalyzeOther() {
       const kg=+r.kg||0,kgIn=+r.kgIn||+r.inputKg||0,wk=+r.workers||0,m=minutesBetween(r.start,r.end);
       if (kg>0&&wk>0&&m>0) { crIn+=kgIn||kg; crOut+=kg; crPH+=wk*(m/60); crN++; }
     });
-    // FP 내포장 생산성 (pPackEa): packing 컬렉션
-    // FC가 아닌 것 + 원육종류 필터 + 기간
-    // 측정: ea / (작업시간 분)
-    let pkEa=0, pkMin=0, pkN=0;
-    packDocs.forEach(d => {
-      const r=d.data(); if (!inRange(r.date)) return;
-      const prod = String(r.product||'');
-      // FC 제외 (3KG 포함된 제품)
-      if (prod.indexOf('3KG') >= 0 || prod.indexOf('3kg') >= 0) return;
-      const type = r.type || '';
-      if (type && !isFpType(type)) return;
-      const ea = +r.ea || 0;
-      const m = minutesBetween(r.start, r.end);
-      if (ea > 0 && m > 0) { pkEa += ea; pkMin += m; pkN++; }
-    });
     const yPre = preRmKg>0 ? Math.round(preKg/preRmKg*1000)/10 : TTT_AUTO_OTHER.yPre.val;
     const pPre = prePH>0 ? Math.round(preRmKg/prePH*10)/10 : TTT_AUTO_OTHER.pPre.val;
     const yCrush = crIn>0 ? Math.round(crOut/crIn*1000)/10 : TTT_AUTO_OTHER.yCrush.val;
     const pCrush = crPH>0 ? Math.round(crOut/crPH*10)/10 : TTT_AUTO_OTHER.pCrush.val;
     const yCook = ckIn>0 ? Math.round(ckOut/ckIn*1000)/10 : TTT_AUTO_OTHER.yCook?.val || 55.0;
-    const pPackEa = pkMin>0 ? Math.round(pkEa/pkMin*10)/10 : TTT_AUTO_OTHER.pPackEa.val;
     TTT_AUTO_OTHER.yPre = { val: yPre, n: preN };
     TTT_AUTO_OTHER.pPre = { val: pPre, n: preN };
     TTT_AUTO_OTHER.yCrush = { val: yCrush, n: crN };
     TTT_AUTO_OTHER.pCrush = { val: pCrush, n: crN };
     TTT_AUTO_OTHER.yCook = { val: yCook, n: ckN };
-    TTT_AUTO_OTHER.pPackEa = { val: pPackEa, n: pkN };
     // summary 표시
     const el = document.getElementById('ttt-fp-auto-summary');
     if (el) el.textContent = `전처리 ${yPre}% · ${pPre}kg/인시 | 파쇄 ${yCrush}% · ${pCrush}kg/인시 | 자숙 ${yCook}% (n=${preN}/${crN})`;
@@ -542,7 +520,8 @@ async function tttAutoAnalyzeOther() {
     fpSetAuto('ttt-fp-p-pre',   pPre,   'ttt-fp-p-pre-auto');
     fpSetAuto('ttt-fp-y-crush', yCrush, 'ttt-fp-y-crush-auto');
     fpSetAuto('ttt-fp-p-crush', pCrush, 'ttt-fp-p-crush-auto');
-    fpSetAuto('ttt-fp-p-pack',  pPackEa,'ttt-fp-p-pack-auto');
+    const fpPackAutoEl = document.getElementById('ttt-fp-p-pack-auto');
+    if (fpPackAutoEl) fpPackAutoEl.textContent = `자동: ${TTT_AUTO_OTHER.pPackEa?.val ?? '—'}`;
     tttRender();
   } catch(e) {
     console.error('[TTM] FP 분석 실패:', e);
@@ -814,31 +793,11 @@ function tttSimulate(inp, tankMode) {
       break;
     }
   }
-  // 내포장 인원 충분히 있으면 듀얼 가능 (제품이 maxLines=2일 때)
-  // 한 라인 = wkPack 명 + 이송 wkTrans 명
-  // 듀얼 = wkPack*2 + wkTrans*2 명 필요
-  const pInfoForLines = inp.productInfo || { maxLines: 1 };
-  const maxLines = pInfoForLines.maxLines || 1;
-  const WK_PER_LINE = inp.wkPack || 6;
-  const WK_TRANS_PER_LINE = inp.wkTrans || 2;
-  const CREW_FOR_1_LINE = WK_PER_LINE + WK_TRANS_PER_LINE;       // 8명
-  const CREW_FOR_2_LINES = WK_PER_LINE * 2 + WK_TRANS_PER_LINE;  // 14명 (이송 공유)
-
   const packWorkersAt = (t) => {
     if (t < packStartMin) return 0;
     return inp.wkPack;
   };
-  // 동적 라인 수: 매 분마다 인원 가용량 기반
-  // inp.wkPackAvailable이 있으면 그 값으로 듀얼 판정 (동시작업 FP)
-  // 없으면 inp.wkPack (단일 모드)
-  const linesAt = (t) => {
-    if (t < packStartMin) return 0;
-    const avail = inp.wkPackAvailable || inp.wkPack || 0;
-    if (maxLines >= 2 && avail >= CREW_FOR_2_LINES) return 2;
-    return 1;
-  };
-  const eaPerMinPerLine = inp.pPackEa;
-  const packSpeedAt = (t) => linesAt(t) * eaPerMinPerLine;
+  const packSpeedAt = (t) => packWorkersAt(t) > 0 ? inp.pPackEa : 0;
 
   // 자체 처리 시간: packStart부터 처리량이 pouches 도달까지 (정지 시간 자동 반영)
   let packSelfEndMin = packStartMin;
@@ -858,34 +817,6 @@ function tttSimulate(inp, tankMode) {
   // 둘 중 늦은 쪽
   const packEndMin = Math.max(packSelfEndMin, lastBatchPackEndMin);
   const packMin = packEndMin - packStartMin;
-
-  // 호기별 가동 구간 (lineSegments)
-  // packStartMin ~ packEndMin 구간 분 단위로 훑으면서 호기 1, 2 가동 구간
-  const lineSegments = { 1: [], 2: [] };
-  let lineState = { 1: null, 2: null };
-  for (let t = packStartMin; t <= packEndMin; t++) {
-    const n = linesAt(t);
-    if (n >= 1) {
-      if (lineState[1] === null) lineState[1] = { start: t };
-    } else {
-      if (lineState[1] !== null) {
-        lineState[1].end = t;
-        lineSegments[1].push(lineState[1]);
-        lineState[1] = null;
-      }
-    }
-    if (n >= 2) {
-      if (lineState[2] === null) lineState[2] = { start: t };
-    } else {
-      if (lineState[2] !== null) {
-        lineState[2].end = t;
-        lineSegments[2].push(lineState[2]);
-        lineState[2] = null;
-      }
-    }
-  }
-  if (lineState[1] !== null) { lineState[1].end = packEndMin; lineSegments[1].push(lineState[1]); }
-  if (lineState[2] !== null) { lineState[2].end = packEndMin; lineSegments[2].push(lineState[2]); }
 
   // 레토르트: 3대 병렬 + 대차 8개, EA 균등 분배 (전체 회차에 고르게)
   //
@@ -979,23 +910,18 @@ function tttSimulate(inp, tankMode) {
     retortStartTimes, retortEndTimes,
     batchEa, batchCarts,
     cookYield,
-    lineSegments, maxLines, eaPerMinPerLine,
-    productInfo: inp.productInfo,
   };
 }
 
 // ── 다중 작업 시뮬 (순차 파이프라인) ───────────────────────
 // 두 번째 제품별 대차/레토르트 사이클 정보
 const TTT_PRODUCT_INFO = {
-  // FC 3KG (홍두깨) — 2호기 1대만 (maxLines=1)
-  'fc':     { name: 'FC 3KG',        eaPerCart: 96,    retortCycleMin: 150, kgPerEa: 1.3,   maxLines: 1, availableLines: [2] },
+  // FC 3KG (홍두깨) — 기본 케이스 (참고용, 단일 시뮬에서 이미 처리)
+  'fc':     { name: 'FC 3KG',        eaPerCart: 96,    retortCycleMin: 150, kgPerEa: 1.35 },
   // 두 번째 후보들 (비-FC)
-  // FP 시그/코스트코/트레이더 → 3·4호기 (maxLines=2, 듀얼 가능)
-  // 미니 → 1호기만 (maxLines=1)
-  'trader': { name: '트레이더스 460g', eaPerCart: 380,  retortCycleMin: 120, kgPerEa: 0.147, maxLines: 2, availableLines: [3, 4] },
-  'costco': { name: '코스트코 170g',   eaPerCart: 800,  retortCycleMin: 120, kgPerEa: 0.054, maxLines: 2, availableLines: [3, 4] },
-  'sig':    { name: '시그니처 130g',   eaPerCart: 1024, retortCycleMin: 120, kgPerEa: 0.025, maxLines: 2, availableLines: [3, 4] },
-  'mini':   { name: '미니 70g 5개입',  eaPerCart: 1280, retortCycleMin: 120, kgPerEa: 0.024, maxLines: 1, availableLines: [1] },
+  'trader': { name: '트레이더스 460g', eaPerCart: 380,  retortCycleMin: 120, kgPerEa: 0.20 },  // 460g + 손실 고려 ~0.20kg 원육/EA
+  'sig':    { name: '시그니처 130g',   eaPerCart: 1024, retortCycleMin: 120, kgPerEa: 0.057 }, // 130g 기준
+  'mini':   { name: '미니 70g 5개입',  eaPerCart: 1280, retortCycleMin: 120, kgPerEa: 0.046 }, // 5개입 350g 기준
 };
 
 // FP 카드 자동값 복원
@@ -1024,12 +950,6 @@ function tttBuildSecondInp(inp, firstSim) {
   const fpWkPre   = parseInt(document.getElementById('ttt-fp-wk-pre')?.value)     || inp.wkPre;
   const fpWkPack  = parseInt(document.getElementById('ttt-fp-wk-pack')?.value)    || inp.wkPack;
 
-  // FP가 듀얼 가능 제품(maxLines=2)이면 inp.wkPackAvailable에 가용 인원 표시
-  // wkPack은 라인당 인원(6명), wkPackAvailable은 듀얼 가동 시 필요 총인원(14명)
-  // tttSimulate의 linesAt이 이 값으로 듀얼 여부 결정
-  const dualPossible = (info.maxLines || 1) >= 2;
-  const wkPackAvailable = dualPossible ? Math.max(fpWkPack, 14) : fpWkPack;
-
   return {
     ...inp,
     meatType: '우둔',
@@ -1039,7 +959,6 @@ function tttBuildSecondInp(inp, firstSim) {
     earlyWorkers: fpWkPre,
     wkPre: fpWkPre,
     wkPack: fpWkPack,
-    wkPackAvailable,
     yPre: fpYPre,
     yCrush: fpYCrush,
     pPre: fpPPre,
@@ -1084,9 +1003,6 @@ function tttBuildOtherFirstInp(inp) {
   const fpPPackEa = parseFloat(document.getElementById('ttt-fp-p-pack')?.value)   || TTT_AUTO_OTHER.pPackEa.val;
   const fpWkPre   = parseInt(document.getElementById('ttt-fp-wk-pre')?.value)     || inp.wkPre;
   const fpWkPack  = parseInt(document.getElementById('ttt-fp-wk-pack')?.value)    || inp.wkPack;
-  // FP 듀얼 가능 제품(maxLines=2)이면 가용 인원 14명 표시 → 듀얼 가동
-  const dualPossible = (info.maxLines || 1) >= 2;
-  const wkPackAvailable = dualPossible ? Math.max(fpWkPack, 14) : fpWkPack;
 
   return {
     ...inp,
@@ -1094,7 +1010,6 @@ function tttBuildOtherFirstInp(inp) {
     meatKg: kg2,
     wkPre: fpWkPre,
     wkPack: fpWkPack,
-    wkPackAvailable,
     earlyWorkers: fpWkPre,
     yPre: fpYPre,
     yCrush: fpYCrush,
@@ -1452,32 +1367,19 @@ function tttRender() {
   bars += `<text x="${xPos(sim.crushEndMin) + 6}" y="${yCursor + BAR_H/2 + 4}" text-anchor="start" font-size="10" fill="#BA7517" font-weight="600">${crushBaseYield.toFixed(1)}% · ${inp.pCrush}kg/인시</text>`;
   yCursor += ROW_H;
 
-  // ── 내포장 (호기별 분할) ──
-  // maxLines=2 제품 + 인원 충분: 호기 2개로 분할
-  // maxLines=1 또는 인원 부족: 호기 1개
-  const availLines = (sim.productInfo && sim.productInfo.availableLines) || [2];
-  const usedMaxLines = sim.maxLines || 1;
-  const eaPerLine = sim.eaPerMinPerLine || inp.pPackEa;
+  // ── 내포장 (단일 막대, 연속 흐름) ──
+  // 시작: packStartMin (13:30 + 파쇄 산출 200kg 이상 조건)
+  // 종료: packEndMin (자체 처리 종료 vs 마지막 산출분 통과, 둘 중 늦은쪽)
+  bars += rowLabel(yCursor, BAR_H, '내포장');
+  bars += segBar(yCursor, BAR_H, sim.packStartMin, sim.packEndMin, '#7F77DD',
+    `${inp.wkPack}명 · ${inp.pPackEa}EA/분`,
+    '내포장',
+    `시각: ${tttFmt(sim.packStartMin)}~${tttFmt(sim.packEndMin)}|인원: ${inp.wkPack}명|속도: ${inp.pPackEa} EA/분 (기계 1대 한도)|총: ${sim.pouches.toLocaleString()} EA|시작 조건: 13:30 + 파쇄 산출 ≥ 200kg|자체 처리 종료: ${tttFmt(sim.packSelfEndMin)}|마지막 산출분 통과: ${tttFmt(sim.lastBatchPackEndMin)} (둘 중 늦은쪽)`);
+  // 막대 끝 라벨: 원육 기준 누적 수율 (내포장)
+  // 원육 → 전처리 → 자숙 → 파쇄 → 내포장(TTT_PACK_YIELD)
   const packBaseYield = (inp.yPre * sim.cookYield * inp.yCrush * TTT_PACK_YIELD) / 1000000;
-
-  for (let lineIdx = 0; lineIdx < usedMaxLines; lineIdx++) {
-    const lineNum = availLines[lineIdx] || (lineIdx + 1);
-    const segs = (sim.lineSegments && sim.lineSegments[lineIdx + 1]) || [];
-    bars += rowLabel(yCursor, BAR_H, `내포장 ${lineNum}호기`);
-    segs.forEach(seg => {
-      const segMin = seg.end - seg.start;
-      const segEa = Math.round(segMin * eaPerLine);
-      bars += segBar(yCursor, BAR_H, seg.start, seg.end, '#7F77DD',
-        `${inp.wkPack||6}명 · ${eaPerLine}EA/분`,
-        `내포장 ${lineNum}호기`,
-        `시각: ${tttFmt(seg.start)}~${tttFmt(seg.end)} (${segMin}분)|속도: ${eaPerLine} EA/분|이 호기 산출: ${segEa.toLocaleString()} EA`);
-    });
-    if (segs.length > 0 && lineIdx === 0) {
-      const lastEnd = segs[segs.length - 1].end;
-      bars += `<text x="${xPos(lastEnd) + 6}" y="${yCursor + BAR_H/2 + 4}" text-anchor="start" font-size="10" fill="#7F77DD" font-weight="600">${packBaseYield.toFixed(1)}%</text>`;
-    }
-    yCursor += ROW_H;
-  }
+  bars += `<text x="${xPos(sim.packEndMin) + 6}" y="${yCursor + BAR_H/2 + 4}" text-anchor="start" font-size="10" fill="#7F77DD" font-weight="600">${packBaseYield.toFixed(1)}%</text>`;
+  yCursor += ROW_H;
 
   // ── 레토르트 (각 회차별 - EA 균등 분배) ──
   for (let i = 0; i < sim.retortCycles; i++) {
@@ -1892,7 +1794,7 @@ function tttRender() {
   if (dualMode && dualResult) {
     const sim2 = dualResult.sim2;
     const inp2 = dualResult.inp2;
-    const orderLabel = dualResult.order === 'fc-first' ? 'FC → FP' : 'FP → FC';
+    const orderLabel = dualResult.order === 'fc-first' ? 'FC → 두 번째' : '두 번째 → FC';
     const productName = (inp2.productInfo && inp2.productInfo.name) || '제품';
     const totalEndMin = Math.max(sim2.retortEndMin, sim.retortEndMin);
     const fcEa = (dualResult.order === 'fc-first') ? sim.pouches : sim2.pouches;
@@ -1920,29 +1822,10 @@ function tttRender() {
     </div>`;
   }
 
-  // dual 모드: ttmRender가 ttt-result를 채움 / 단일 모드: 결과 합성해서 채움
+  // dual 모드: ttmRender가 ttt-result를 채움 / 단일 모드: 위에서 이미 채움
   if (dualMode) {
     document.getElementById('ttt-result').innerHTML = '';
     if (typeof ttmRender === 'function') ttmRender();
-  } else {
-    // 단일 모드 결과 합성
-    const resultEl = document.getElementById('ttt-result');
-    if (resultEl) {
-      // 만들어진 HTML 변수들 모두 합성
-      // conclusion (요약) + planBox (계획) + lunchBg + splitView (타임라인+인원표 grid)
-      //   + procTbl + whyCards + reportBox + dualBox
-      // 주의: timelineSvg, wkTbl은 splitView 안에 이미 들어있음 → 중복 X
-      let html = '';
-      if (typeof conclusion === 'string') html += conclusion;
-      if (typeof planBox === 'string') html += planBox;
-      if (typeof lunchBg === 'string') html += lunchBg;
-      if (typeof splitView === 'string') html += splitView;
-      if (typeof procTbl === 'string') html += procTbl;
-      if (typeof whyCards === 'string') html += whyCards;
-      if (typeof reportBox === 'string') html += reportBox;
-      if (typeof dualBox === 'string') html += dualBox;
-      resultEl.innerHTML = html;
-    }
   }
 }
 
@@ -1980,10 +1863,10 @@ function ttmGetScenario() {
   // FP (두 번째 제품) 입력
   const meatType2 = document.getElementById('ttt-meat2')?.value || 'sig';
   const fpInfo = {
-    sig:    { name: '시그니처 130g', kgPerEa: 0.025, eaPerCart: 1024, packEaMin: 25, maxLines: 2, availableLines: [3, 4] },
-    trader: { name: '트레이더스 460g', kgPerEa: 0.147, eaPerCart: 380,  packEaMin: 16, maxLines: 2, availableLines: [3, 4] },
-    mini:   { name: '미니 70g',     kgPerEa: 0.024, eaPerCart: 1280, packEaMin: 24, maxLines: 1, availableLines: [1] },
-  }[meatType2] || { name: '시그니처 130g', kgPerEa: 0.025, eaPerCart: 1024, packEaMin: 25, maxLines: 2, availableLines: [3, 4] };
+    sig:    { name: '시그니처 130g', kgPerEa: 0.025, eaPerCart: 800,  packEaMin: 22 },
+    trader: { name: '트레이더스 460g', kgPerEa: 0.147, eaPerCart: 2000, packEaMin: 16 },
+    mini:   { name: '미니 70g',     kgPerEa: 0.024, eaPerCart: 700,  packEaMin: 24 },
+  }[meatType2] || { name: '시그니처 130g', kgPerEa: 0.025, eaPerCart: 800, packEaMin: 22 };
 
   const fpKg = parseFloat(document.getElementById('ttt-kg2')?.value) || 200;
   const fcKg = parseFloat(document.getElementById('ttt-kg')?.value) || 1200;
@@ -2015,7 +1898,7 @@ function ttmGetScenario() {
 function ttmDefaultWorkers() {
   return {
     preFp: 7, preFc: 7,
-    crushFp: 10, crushFc: 10,  // 사용자 룰: 파쇄 10명만 있어도 충분
+    crushFp: 13, crushFc: 18,
     packFp: 6, packFc: 6,
     // 수율·생산성 (자동값으로 시작)
     yPreFp: TTT_AUTO_OTHER.yPre.val,  yPreFc: TTT_AUTO.yPre.val,
@@ -2032,17 +1915,7 @@ function ttmSimulate(scen, workers) {
   const r2 = n => Math.round(n);
   const round1 = n => Math.round(n*10)/10;
 
-  // ====================================================================
-  // 공정 흐름 시뮬레이션 (사용자 룰 기반)
-  //
-  // 핵심 원칙:
-  //   1. 인원 슬롯은 시뮬 자체에서 결정 (인원표는 그대로 표시)
-  //   2. 슬롯 = 인원표 슬롯과 동일 (05/07/09/11:30/12:30/13:30/17/끝)
-  //   3. 슬롯 안 호기 수 고정 (분 단위 깜빡임 방지)
-  //   4. 정원 절대 초과 X
-  // ====================================================================
-
-  // === 1. FP 공정 시간 계산 ===
+  // === FP 공정 시간 계산 (workers의 수율·생산성 사용) ===
   const fpYpre = workers.yPreFp;
   const fpYcrush = workers.yCrushFp;
   const fpPpre = workers.pPreFp;
@@ -2059,8 +1932,9 @@ function ttmSimulate(scen, workers) {
 
   const fpPreMin = Math.ceil(fpPreIn / (fpPpre * workers.preFp) * 60);
   const fpCrushMin = Math.ceil(fpCrushIn / (fpPcrush * workers.crushFp) * 60);
+  const fpPackMin = Math.ceil(fpEa / (fpPpackEaMin * workers.packFp / 6));
 
-  // === 2. FC 공정 시간 계산 ===
+  // === FC 공정 시간 계산 (workers 값 사용) ===
   const fcYpre = workers.yPreFc;
   const fcYcrush = workers.yCrushFc;
   const fcPpre = workers.pPreFc;
@@ -2074,95 +1948,80 @@ function ttmSimulate(scen, workers) {
   const fcCrushOut = fcCrushIn * fcYcrush / 100;
   const fcPackIn = fcCrushOut;
   const fcEa = Math.floor(fcPackIn / scen.fc.kgPerEa);
+
   const fcPreMin = Math.ceil(fcPreIn / (fcPpre * workers.preFc) * 60);
   const fcCrushMin = Math.ceil(fcCrushIn / (fcPcrush * workers.crushFc) * 60);
-  const fcPackMin = Math.ceil(fcEa / fcPpackEaMin);
+  const fcPackMin = Math.ceil(fcEa / (fcPpackEaMin * workers.packFc / 6));
 
-  // === 3. 타임라인 배치 ===
+  // === 타임라인 배치 (order에 따라 FC 먼저 / FP 먼저) ===
   const t0 = scen.startMin;
   const fcFirst = scen.order === 'fc-first';
-
-  // 전처리 — FP 먼저면 t0~ FP끝, 그 후 FC. FC 먼저면 반대.
   const fpPre = fcFirst
     ? { s: t0 + fcPreMin, e: t0 + fcPreMin + fpPreMin }
     : { s: t0,            e: t0 + fpPreMin };
   const fcPre = fcFirst
     ? { s: t0,        e: t0 + fcPreMin }
     : { s: fpPre.e,   e: fpPre.e + fcPreMin };
-
-  // FP 자숙 — 단일 회차 (시그/마트 가압 150분)
   const fpCook = { s: fpPre.e, e: fpPre.e + (TTM_FIXED.fpCookMin + TTM_FIXED.cookWagonMin), tank: 5 };
 
-  // === 4. FC 자숙 탱크 분배 ===
+  // === FC 자숙 탱크 분배 (기존 A/B/E 방식, 순차 투입) ===
   const fcTankKg = 800;
   const fcCookCycles = Math.max(1, Math.ceil(fcCookIn / fcTankKg));
+  // 탱크 분배: B(N등분 균등)를 기본으로 — ttmSimulate는 단순화, 전체 비교는 ttmRender에서
   const fcTankKgs = Array(fcCookCycles).fill(fcCookIn / fcCookCycles);
 
-  // 각 탱크 순차 투입 시각 (전처리 속도 기반)
-  const fcKgPerMin = fcPreIn / fcPreMin;
-  const fcCook = [];
-  let fcCookLineEnd = fcPre.s;
+  // 각 탱크 순차 투입 시각: 전처리 속도 기반
+  // FC 전처리 시작~종료 = fcPre.s ~ fcPre.e
+  // 전처리 인원: 초기 earlyWorkers(외국인) → joinMin 이후 wkPre
+  const fcPreStart = fcPre.s;
+  const fcJoinMin = tttToMin(scen.joinTime);
+  const fcEarlyWorkers = scen.earlyWorkers;
+  const fcPhase1Kg = fcPpre * fcEarlyWorkers * (Math.max(0, fcJoinMin - fcPreStart) / 60);
+  const fcTankInTimes = [];
+  let fcCumOut = 0;
   for (let i = 0; i < fcCookCycles; i++) {
-    const tankReadyKg = (i + 1) * (fcCookIn / fcCookCycles);
-    const tankReadyKgIn = tankReadyKg / (fcYpre / 100);
-    const investAt = Math.max(fcPre.s, fcPre.s + Math.ceil(tankReadyKgIn / fcKgPerMin));
-    const investStart = Math.max(investAt, fcCookLineEnd);
-    const cookEnd = investStart + TTM_FIXED.fcCookMin + TTM_FIXED.cookWagonMin;
-    fcCook.push({ s: investStart, e: cookEnd, tank: i + 1, kg: r2(fcTankKgs[i]) });
-    fcCookLineEnd = investStart; // 다음 탱크는 이전과 동시 가능 (4탱크 운영)
-  }
-
-  // === 5. FP 파쇄 (점심 시간 회피 - 점심엔 인원 부족으로 정지) ===
-  // 점심 시간(11:30~13:30) 동안 파쇄 멈춤. 그만큼 종료 늦어짐.
-  const LUNCH_S = 11*60+30;
-  const LUNCH_E = 13*60+30;
-  const addWithLunchSkip = (start, duration) => {
-    // start부터 duration 분만큼 작업. 점심 시간 만나면 그만큼 미룸.
-    let elapsed = 0;
-    let t = start;
-    while (elapsed < duration) {
-      // 현재 시점이 점심 시간이면 점심 끝까지 건너뛰기
-      if (t >= LUNCH_S && t < LUNCH_E) {
-        t = LUNCH_E;
-        continue;
-      }
-      // 점심 시간 들어가기 전까지 작업
-      const nextLunch = (t < LUNCH_S) ? LUNCH_S : Infinity;
-      const remaining = duration - elapsed;
-      const canDo = Math.min(remaining, nextLunch - t);
-      elapsed += canDo;
-      t += canDo;
+    fcCumOut += fcTankKgs[i];
+    const targetInKg = fcCumOut / (fcYpre / 100);
+    let tankInMin;
+    if (targetInKg <= fcPhase1Kg) {
+      tankInMin = fcPreStart + Math.round(targetInKg / (fcPpre * fcEarlyWorkers) * 60);
+    } else {
+      const extraKg = targetInKg - fcPhase1Kg;
+      tankInMin = fcJoinMin + Math.round(extraKg / (fcPpre * workers.preFc) * 60);
     }
-    return t;
-  };
-  const fpCrushEnd = addWithLunchSkip(fpCook.e, fpCrushMin);
-  const fpCrush = { s: fpCook.e, e: fpCrushEnd };
+    if (i === fcCookCycles - 1) tankInMin = Math.min(tankInMin, fcPre.e);
+    fcTankInTimes.push(tankInMin);
+  }
+  const fcCookFullMin = TTM_FIXED.fcCookMin + TTM_FIXED.cookWagonMin;
+  const fcTankOutTimes = fcTankInTimes.map(t => t + fcCookFullMin);
 
-  // === 6. FC 파쇄 (회차별, FP 파쇄 후, 점심 시간 회피) ===
+  // FC 자숙 cook 배열 (순차 시작 시각 반영)
+  const fcCook = fcTankKgs.map((kg, i) => ({
+    s: fcTankInTimes[i], e: fcTankOutTimes[i], tank: i + 1, kg: r2(kg)
+  }));
+  const fpCookFullMin = TTM_FIXED.fpCookMin + TTM_FIXED.cookWagonMin;
+  // FP 파쇄 (FP 자숙 끝나면)
+  const fpCrush = { s: fpCook.e, e: fpCook.e + fpCrushMin };
+
+  // FC 파쇄: 탱크별로 순차 처리 (앞 탱크 자숙 끝나면 바로 그 탱크분 파쇄 시작)
+  // 단, FP 파쇄가 끝나야 라인 사용 가능 (파쇄 라인 1개 공유)
   const fcCrushes = [];
-  let fcCrushLineEnd = fpCrush.e;
+  let fcCrushLineEnd = fpCrush.e; // 파쇄 라인 가용 시각
   for (let i = 0; i < fcCook.length; i++) {
     const tankEnd = fcCook[i].e;
-    // 자숙 yield + 파쇄 yield 적용 (사용자 콘솔 로그로 확인됨)
-    const tankKg = fcTankKgs[i] * (scen.fc.yCook / 100) * (fcYcrush / 100);
+    const tankKg = fcTankKgs[i] * (fcYcrush / 100); // 이 탱크분 파쇄 산출량
     const tankCrushMin = Math.ceil(tankKg / (fcPcrush * workers.crushFc) * 60);
     const crushStart = Math.max(tankEnd, fcCrushLineEnd);
-    const crushEnd = addWithLunchSkip(crushStart, tankCrushMin);
+    const crushEnd = crushStart + tankCrushMin;
     fcCrushes.push({ s: crushStart, e: crushEnd, tank: i + 1, kg: r2(tankKg) });
     fcCrushLineEnd = crushEnd;
   }
+  // FC 파쇄 전체 (호환용)
   const fcCrushStart = fcCrushes[0].s;
-  const fcCrushEnd = fcCrushes[fcCrushes.length - 1].e;
-  const fcCrush = { s: fcCrushStart, e: fcCrushEnd };
-
-  // === 7. 슬롯 정의 (인원표와 동일) ===
-  const slotBoundaries = [
-    t0, 7*60, 9*60, 11*60+30, 12*60+30, 13*60+30, 17*60, 28*60
-  ];
-  const LUNCH_START = 11*60+30;
-  const LUNCH_END = 13*60+30;
-
-  // === 8. FP 내포장 시작 시점 ===
+  const fcCrush = { s: fcCrushStart, e: fcCrushes[fcCrushes.length - 1].e };
+  // FP 내포장 시작:
+  // - 원육 400kg 이하: 파쇄 완전히 끝난 후
+  // - 원육 400kg 초과: 파쇄 산출 200kg 누적 시점
   let fpPackStart;
   if (scen.fp.kg <= 400) {
     fpPackStart = fpCrush.e;
@@ -2171,260 +2030,84 @@ function ttmSimulate(scen, workers) {
     const fp200kgMin = Math.ceil(200 / fpCrushRateKgMin);
     fpPackStart = fpCrush.s + fp200kgMin;
   }
+  const fpPack = { s: fpPackStart, e: fpPackStart + fpPackMin };
 
-  // === 9. FP 내포장 시뮬 - 슬롯별 동적 호기 ===
-  // 가용 인원 계산 함수 (각 시점 t)
-  const totalWorkers = parseInt(document.getElementById('ttt-total')?.value) || 28;
-  const earlyWorkers = parseInt(document.getElementById('ttt-early')?.value) || 7;
-  const mgrCount = parseInt(document.getElementById('ttt-mgr')?.value) || 2;
-  const mgrTime = tttToMin(document.getElementById('ttt-mgr-time')?.value || '07:00');
-  const joinTime = tttToMin(document.getElementById('ttt-join')?.value || '09:00');
-
-  const fpMaxLines = scen.fp.info.maxLines || 1;
-  const fpAvailLines = scen.fp.info.availableLines || [3, 4];
-
-  // 가용 인원 = 출근 - 자숙 - 식사 - 관리 - 전처리/파쇄
-  // 단, 점심 시간엔 전처리/파쇄 안 함
-  const availAt = (t) => {
-    let onsite;
-    if (t < mgrTime) onsite = earlyWorkers;
-    else if (t < joinTime) onsite = earlyWorkers + mgrCount;
-    else onsite = totalWorkers;
-    let occupied = 1; // 관리
-    if (t >= fpCook.s && t < fpCook.e) occupied += 2;
-    fcCook.forEach(c => { if (t >= c.s && t < c.e) occupied += 2; });
-    const isLunch = t >= LUNCH_START && t < LUNCH_END;
-    if (isLunch) {
-      occupied += 14;
-    } else {
-      if (t >= fpPre.s && t < fpPre.e) occupied += workers.preFp;
-      if (t >= fcPre.s && t < fcPre.e) occupied += workers.preFc;
-      if (t >= fpCrush.s && t < fpCrush.e) occupied += workers.crushFp;
-      fcCrushes.forEach(c => { if (t >= c.s && t < c.e) occupied += workers.crushFc; });
-    }
-    return Math.max(0, onsite - occupied);
-  };
-
-  const CREW_1_LINE = workers.packFp + 2;            // 6 + 이송 2 = 8
-  const CREW_2_LINES = workers.packFp * 2 + 2;        // 6×2 + 이송 2 = 14
-  const fpLineSegments = { 1: [], 2: [] };
-  let fpProcessed = 0;
-  let fpPackEnd = fpPackStart;
-
-  // 슬롯별 호기 시뮬 1차
-  for (let si = 0; si < slotBoundaries.length - 1; si++) {
-    const slotStart = Math.max(slotBoundaries[si], fpPackStart);
-    const slotEnd = slotBoundaries[si + 1];
-    if (slotStart >= slotEnd) continue;
-    if (fpProcessed >= fpEa) break;
-    const slotMid = (slotStart + slotEnd) / 2;
-    const avail = availAt(slotMid);
-    const isLunch = slotMid >= LUNCH_START && slotMid < LUNCH_END;
-    let lines = 0;
-    if (isLunch) lines = (avail >= CREW_1_LINE) ? 1 : 0;
-    else if (fpMaxLines >= 2 && avail >= CREW_2_LINES) lines = 2;
-    else if (avail >= CREW_1_LINE) lines = 1;
-    if (lines === 0) continue;
-    const slotEffectiveEnd = Math.min(slotEnd, slotStart + Math.ceil((fpEa - fpProcessed) / (fpPpackEaMin * lines)));
-    const minutesUsed = slotEffectiveEnd - slotStart;
-    fpProcessed += fpPpackEaMin * lines * minutesUsed;
-    fpPackEnd = slotEffectiveEnd;
-    if (lines >= 1) fpLineSegments[1].push({ start: slotStart, end: slotEffectiveEnd });
-    if (lines >= 2) fpLineSegments[2].push({ start: slotStart, end: slotEffectiveEnd });
+  // FC 내포장: FP 내포장 끝난 후 + FC 파쇄 200kg 누적 시점 시작
+  // 단, 내포장 종료는 반드시 fcCrush.e(마지막 파쇄 완료) 이후여야 함
+  let fcPackReadyMin;
+  if (scen.fc.kg <= 400) {
+    fcPackReadyMin = fcCrush.e;
+  } else {
+    const fcCrushRateKgMin = fcCrushOut / fcCrushMin;
+    const fc200kgMin = Math.ceil(200 / fcCrushRateKgMin);
+    fcPackReadyMin = fcCrush.s + fc200kgMin;
   }
-
-  // 호기 2 짧은 슬롯 제거 (60분 미만)
-  const FP_DUAL_SLOT_MIN = 60;
-  fpLineSegments[2] = fpLineSegments[2].filter(seg => (seg.end - seg.start) >= FP_DUAL_SLOT_MIN);
-
-  // 호기 2 총 가동 60분 미만이면 모두 취소 + 1호기만 재시뮬
-  const line2TotalMin = fpLineSegments[2].reduce((s, seg) => s + (seg.end - seg.start), 0);
-  if (line2TotalMin === 0 || line2TotalMin < FP_DUAL_SLOT_MIN) {
-    fpLineSegments[2] = [];
-    fpLineSegments[1] = [];
-    fpProcessed = 0;
-    fpPackEnd = fpPackStart;
-    for (let si = 0; si < slotBoundaries.length - 1; si++) {
-      const slotStart = Math.max(slotBoundaries[si], fpPackStart);
-      const slotEnd = slotBoundaries[si + 1];
-      if (slotStart >= slotEnd) continue;
-      if (fpProcessed >= fpEa) break;
-      const slotMid = (slotStart + slotEnd) / 2;
-      const avail = availAt(slotMid);
-      if (avail < CREW_1_LINE) continue;
-      const slotEffectiveEnd = Math.min(slotEnd, slotStart + Math.ceil((fpEa - fpProcessed) / fpPpackEaMin));
-      const minutesUsed = slotEffectiveEnd - slotStart;
-      fpProcessed += fpPpackEaMin * minutesUsed;
-      fpPackEnd = slotEffectiveEnd;
-      fpLineSegments[1].push({ start: slotStart, end: slotEffectiveEnd });
-    }
-  }
-  const fpPack = { s: fpPackStart, e: fpPackEnd, segments: fpLineSegments };
-
-  // === 10. FC 내포장 - 잔량 통과 모델 ===
-  // 시작 조건: 파쇄 속도 >= 내포장 소비 속도 → 파쇄 시작 즉시 가능 (멈추지 않고 쭉)
-  // 파쇄(10kg/분) > 내포장(5.1kg/분) → 항상 즉시 가능
-  const fcCrushKgPerMin = fcCrushMin > 0 ? (fcCrushOut / fcCrushMin) : 0;
-  const fcPackKgPerMin = fcPpackEaMin * scen.fc.kgPerEa;
-  const fcPackReadyMin = (fcCrushKgPerMin >= fcPackKgPerMin)
-    ? fcCrushStart   // 파쇄 시작 즉시 내포장 가능
-    : fcCrushEnd;    // 파쇄가 느리면 끝나고 시작
   const fcPackStart = Math.max(fcPackReadyMin, fpPack.e);
   const fcPackEndRaw = fcPackStart + fcPackMin;
-  // 잔량 = fcEa - (파쇄 끝까지 가동 시간 × 속도)
-  const fcPackMinDuringCrush = Math.max(0, fcCrushEnd - fcPackStart);
-  const fcEaProcessedDuringCrush = Math.min(fcEa, fcPackMinDuringCrush * fcPpackEaMin);
-  const fcRemainEa = Math.max(0, fcEa - fcEaProcessedDuringCrush);
-  const fcRemainPackMin = Math.ceil(fcRemainEa / fcPpackEaMin);
-  const fcLastBatchEnd = fcCrushEnd + fcRemainPackMin;
-  const fcPackEnd = Math.max(fcPackEndRaw, fcLastBatchEnd);
+  // 파쇄가 내포장보다 늦게 끝나면 내포장 종료를 파쇄 완료 시점으로 늦춤
+  const fcPackEnd = Math.max(fcPackEndRaw, fcCrush.e);
   const fcPack = { s: fcPackStart, e: fcPackEnd };
 
-
-  // === 11. 레토르트 회차 분배 ===
-  // 룰:
-  //   - 레토르트는 인원 불필요 (자동) → 점심 시간도 가동 OK
-  //   - 카트 4대차 채워지면 즉시 송출 (호기 비면 바로)
-  //   - 내포장 라인 멈춤 60분+ → 누적 카트 송출 (부분 OK)
-  //   - FP 라인 1, 2 각각 독립 트랙 (합산 X)
-  //   - FC는 카트 4대차 채워질 때마다 순차 송출
-  const RETORT_GAP_MIN = 60;
+  // === 레토르트 회차 분배 ===
+  // FP: eaPerCart, 4대차/회차 → 회차 수
+  const fpCarts = fpEa / scen.fp.info.eaPerCart;
+  const fpCycles = Math.ceil(fpCarts / TTM_FIXED.retortCartsPerCycle);
+  const fpCycleList = [];
+  for (let i = 0; i < fpCycles; i++) {
+    const cartsThis = Math.min(TTM_FIXED.retortCartsPerCycle, fpCarts - i * TTM_FIXED.retortCartsPerCycle);
+    fpCycleList.push({ carts: round1(cartsThis), ea: r2(Math.min(fpEa - i * TTM_FIXED.retortCartsPerCycle * scen.fp.info.eaPerCart, TTM_FIXED.retortCartsPerCycle * scen.fp.info.eaPerCart)) });
+  }
+  // 각 회차 시작: 4대차 채워지는 시각 (대차당 EA ÷ 분당 EA = 분/대차)
+  const fpCartMin = scen.fp.info.eaPerCart / (fpPpackEaMin * workers.packFp / 6);
+  // FP 회차 1: 4대차 모이면 시작 (또는 마지막 회차면 내포장 끝)
+  // 단순화: 회차 i 시작 = max(내포장 시작 + (i*4 대차 분) , 호 비는 시각)
+  // 호 배정 B룰: 회차마다 비어있는 호 (1호 → 2호 → 3호 → 1호 ...)
+  const retortBusy = [0, 0, 0]; // 1호, 2호, 3호 각각 비는 시각
   const fpRetort = [];
+  for (let i = 0; i < fpCycleList.length; i++) {
+    const fillTime = fpPack.s + Math.ceil(fpCartMin * (i+1) * TTM_FIXED.retortCartsPerCycle);
+    const lastCycle = (i === fpCycleList.length - 1);
+    const startReady = lastCycle ? fpPack.e : Math.min(fillTime, fpPack.e);
+    // 가장 빨리 비는 호
+    let host = 0;
+    for (let h = 1; h < 3; h++) if (retortBusy[h] < retortBusy[host]) host = h;
+    const start = Math.max(startReady, retortBusy[host]);
+    const end = start + TTM_FIXED.retortCycleMin;
+    retortBusy[host] = end;
+    fpRetort.push({ s: start, e: end, host: host+1, carts: fpCycleList[i].carts, ea: fpCycleList[i].ea });
+  }
+
+  // FC 회차
+  const fcCarts = fcEa / scen.fc.eaPerCart;
+  const fcCycles = Math.ceil(fcCarts / TTM_FIXED.retortCartsPerCycle);
+  const fcCycleList = [];
+  for (let i = 0; i < fcCycles; i++) {
+    const cartsThis = Math.min(TTM_FIXED.retortCartsPerCycle, fcCarts - i * TTM_FIXED.retortCartsPerCycle);
+    fcCycleList.push({ carts: round1(cartsThis), ea: r2(Math.min(fcEa - i * TTM_FIXED.retortCartsPerCycle * scen.fc.eaPerCart, TTM_FIXED.retortCartsPerCycle * scen.fc.eaPerCart)) });
+  }
+  const fcCartMin = scen.fc.eaPerCart / (fcPpackEaMin * workers.packFc / 6);
   const fcRetort = [];
-  const retortBusy = [0, 0, 0];
-
-  const sendToRetort = (readyTime, ea, eaPerCart, cycleMin, targetList) => {
-    let remaining = ea;
-    let t = readyTime;
-    while (remaining > 0) {
-      const cycleEa = Math.min(remaining, TTM_FIXED.retortCartsPerCycle * eaPerCart);
-      const cartsThis = round1(cycleEa / eaPerCart);
-      let host = 0;
-      for (let h = 1; h < 3; h++) if (retortBusy[h] < retortBusy[host]) host = h;
-      const start = Math.max(t, retortBusy[host]);
-      const end = start + cycleMin;
-      retortBusy[host] = end;
-      targetList.push({ s: start, e: end, host: host+1, carts: cartsThis, ea: r2(cycleEa) });
-      remaining -= cycleEa;
-    }
-  };
-
-  // FP 레토르트 — 라인별 독립 처리
-  for (const line of [1, 2]) {
-    const lineSegs = fpLineSegments[line];
-    if (lineSegs.length === 0) continue;
-    let accumEa = 0;
-    for (let i = 0; i < lineSegs.length; i++) {
-      const seg = lineSegs[i];
-      accumEa += fpPpackEaMin * (seg.end - seg.start);
-      const nextSeg = lineSegs[i + 1];
-      const isLastSeg = !nextSeg;
-      const gap = nextSeg ? (nextSeg.start - seg.end) : 0;
-      // 4대차 채워지면 즉시 송출
-      while (accumEa >= TTM_FIXED.retortCartsPerCycle * scen.fp.info.eaPerCart) {
-        const cycleEa = TTM_FIXED.retortCartsPerCycle * scen.fp.info.eaPerCart;
-        sendToRetort(seg.end, cycleEa, scen.fp.info.eaPerCart, TTM_FIXED.retortCycleMin, fpRetort);
-        accumEa -= cycleEa;
-      }
-      // 마지막 세그먼트 or 60분+ 멈춤 → 잔량 송출 (부분 OK)
-      if ((isLastSeg || gap >= RETORT_GAP_MIN) && accumEa > 0) {
-        sendToRetort(seg.end, accumEa, scen.fp.info.eaPerCart, TTM_FIXED.retortCycleMin, fpRetort);
-        accumEa = 0;
-      }
-    }
+  for (let i = 0; i < fcCycleList.length; i++) {
+    const fillTime = fcPack.s + Math.ceil(fcCartMin * (i+1) * TTM_FIXED.retortCartsPerCycle);
+    const lastCycle = (i === fcCycleList.length - 1);
+    const startReady = lastCycle ? fcPack.e : Math.min(fillTime, fcPack.e);
+    let host = 0;
+    for (let h = 1; h < 3; h++) if (retortBusy[h] < retortBusy[host]) host = h;
+    const start = Math.max(startReady, retortBusy[host]);
+    const end = start + TTM_FIXED.retortCycleMin;
+    retortBusy[host] = end;
+    fcRetort.push({ s: start, e: end, host: host+1, carts: fcCycleList[i].carts, ea: fcCycleList[i].ea });
   }
 
-  // FC 레토르트 — 내포장 가동 중 4대차 채워지면 순차 송출
-  {
-    const fcEaPerCart = scen.fc.eaPerCart;
-    const fcCartFillTime = fcEaPerCart / fcPpackEaMin; // 1대차 채우는 시간
-    const fcFullCycleEa = TTM_FIXED.retortCartsPerCycle * fcEaPerCart;
-    const fcFullCycleTime = fcCartFillTime * TTM_FIXED.retortCartsPerCycle;
-    let remaining = fcEa;
-    let packTime = fcPack.s;
-    while (remaining > 0) {
-      const cycleEa = Math.min(remaining, fcFullCycleEa);
-      const fillMinutes = (cycleEa / fcEa) * fcPackMin;
-      const readyTime = packTime + fillMinutes;
-      sendToRetort(readyTime, cycleEa, fcEaPerCart, TTM_FIXED.retortCycleMin, fcRetort);
-      remaining -= cycleEa;
-      packTime += fillMinutes;
-    }
-  }
-
-  // === 12. 슬롯별 인원 배치 (시뮬에서 결정) ===
-  // 시뮬과 인원표가 자동 일치
-  // overlap 50%: 슬롯의 절반 이상 가동되면 가동 표시 (짧은 가동 누락 방지)
-  const overlap = (s, e, ps, pe) => Math.max(0, Math.min(pe, e) - Math.max(ps, s)) >= (e - s) * 0.5;
-  const workerSlots = [];
-  for (let si = 0; si < slotBoundaries.length - 1; si++) {
-    const s = Math.max(slotBoundaries[si], t0);
-    const e = Math.min(slotBoundaries[si + 1], Math.max(...retortBusy, fpPack.e, fcPack.e));
-    if (e <= s) continue;
-    const mid = (s + e) / 2;
-    let onsite;
-    if (mid < mgrTime) onsite = earlyWorkers;
-    else if (mid < joinTime) onsite = earlyWorkers + mgrCount;
-    else onsite = totalWorkers;
-    const mgr = mid >= mgrTime ? mgrCount : 0;
-    const isLunch = mid >= LUNCH_START && mid < LUNCH_END;
-    const lunch = isLunch ? 14 : 0;
-    let mgrActual = isLunch ? 1 : mgr;
-
-    // 자숙 인원 = 항상 2명 고정 (자숙 담당자 2명이 전체 탱크 관리)
-    let cook = 0;
-    const cookActive = overlap(s, e, fpCook.s, fpCook.e) || fcCook.some(c => overlap(s, e, c.s, c.e));
-    if (cookActive) cook = 2;
-
-    // 가동 검사 (슬롯과 50% 이상 겹침)
-    let pre = 0, crush = 0, pack = 0, trans = 0;
-    if (!isLunch) {
-      if (overlap(s, e, fpPre.s, fpPre.e)) pre += workers.preFp;
-      if (overlap(s, e, fcPre.s, fcPre.e)) pre += workers.preFc;
-    }
-    // 파쇄 - 라인 1개 공유 - 점심 시간엔 인원 부족으로 무조건 0
-    const fpCrushActive = !isLunch && overlap(s, e, fpCrush.s, fpCrush.e);
-    const fcCrushActive = !isLunch && fcCrushes.some(c => overlap(s, e, c.s, c.e));
-    if (fpCrushActive || fcCrushActive) crush = 10;
-    // 내포장 - 슬롯별 호기 세그먼트로
-    let fpLines = 0;
-    fpLineSegments[1].forEach(seg => { if (overlap(s, e, seg.start, seg.end)) fpLines = Math.max(fpLines, 1); });
-    fpLineSegments[2].forEach(seg => { if (overlap(s, e, seg.start, seg.end)) fpLines = Math.max(fpLines, 2); });
-    if (fpLines > 0) { pack += workers.packFp * fpLines; trans += 2; }
-    if (overlap(s, e, fcPack.s, fcPack.e)) { pack += workers.packFc; trans += 2; }
-
-    // 인원 분배:
-    //  1. 자숙 + 관리 + 점심 + 내포장 + 이송 + 파쇄(10 고정) = 점유
-    //  2. 남는 인원 → 외포장 또는 세팅
-    const occupied = pre + crush + pack + trans + mgrActual + lunch + cook;
-    let slack = Math.max(0, onsite - occupied);
-    let outer = 0, setting = 0;
-    // 세팅 시간대 (09:00~11:30 + 파쇄/내포장 가동 전)
-    if (mid >= joinTime && mid < 11*60+30 && crush === 0 && pack === 0) {
-      setting = Math.min(3, slack);
-      slack -= setting;
-    }
-    outer = slack;
-
-    workerSlots.push({
-      s, e, mid, onsite,
-      pre, crush, pack, trans, outer, setting, lunch, mgr: mgrActual, cook,
-      total: pre + crush + pack + trans + outer + setting + lunch + mgrActual + cook,
-      fpLines,
-    });
-  }
-
-  // === 13. 종합 ===
+  // 전체 종료 시각
   const endMin = Math.max(...retortBusy, fpPack.e, fcPack.e);
 
   return {
-    fp: { pre: fpPre, cook: fpCook, crush: fpCrush, pack: fpPack, retort: fpRetort, kg: fpPreIn, ea: fpEa, packIn: fpPackIn, availLines: fpAvailLines, lineSegments: fpLineSegments },
+    fp: { pre: fpPre, cook: fpCook, crush: fpCrush, pack: fpPack, retort: fpRetort, kg: fpPreIn, ea: fpEa, packIn: fpPackIn },
     fc: { pre: fcPre, cook: fcCook, crush: fcCrush, crushes: fcCrushes, pack: fcPack, retort: fcRetort, kg: fcPreIn, ea: fcEa, packIn: fcPackIn, tanks: fcTankKgs },
-    workerSlots,
     endMin,
   };
 }
-
 
 // ============================================================
 // 행 분리 SVG 렌더 (한 행 = 한 작업 단위)
@@ -2530,26 +2213,17 @@ function ttmRenderTimeline(scen, workers, sim) {
     yCursor += ROW_H;
   });
 
-  // FP 내포장 (호기별 세그먼트 분할 - 점심 시간 단일 가동 반영)
-  const fpAvail = sim.fp.availLines || [3, 4];
-  const fpSegs = sim.fp.pack.segments || { 1: [{ start: sim.fp.pack.s, end: sim.fp.pack.e }], 2: [] };
-  const fpMaxLinesUsed = fpSegs[2].length > 0 ? 2 : 1;
-  for (let li = 0; li < fpMaxLinesUsed; li++) {
-    const lineNum = fpAvail[li] || (li + 1);
-    const segs = fpSegs[li + 1] || [];
-    bars += label(yCursor, `내포장 ${lineNum}호기`);
-    segs.forEach(seg => {
-      bars += bar(yCursor, seg.start, seg.end, '#9B59B6',
-        `6명`,
-        `${fpName}`,
-        `${fpName} 내포장 ${lineNum}호기`,
-        [`시각: ${fmt(seg.start)}~${fmt(seg.end)}`, `인원: 6명`]);
-    });
-    yCursor += ROW_H;
-  }
+  // FP 내포장
+  bars += label(yCursor, '내포장');
+  bars += bar(yCursor, sim.fp.pack.s, sim.fp.pack.e, '#9B59B6',
+    `${workers.packFp}명 · ${sim.fp.ea.toLocaleString()}EA`,
+    `${sim.fp.ea.toLocaleString()}EA`,
+    `${fpName} 내포장`,
+    [`시각: ${fmt(sim.fp.pack.s)}~${fmt(sim.fp.pack.e)}`, `인원: ${workers.packFp}명 + 이송2`, `산출: ${sim.fp.ea.toLocaleString()}EA`]);
+  yCursor += ROW_H;
 
-  // FC 내포장 (2호기 고정)
-  bars += label(yCursor, '내포장 2호기');
+  // FC 내포장
+  bars += label(yCursor, '내포장 1');
   bars += bar(yCursor, sim.fc.pack.s, sim.fc.pack.e, '#534AB7',
     `${workers.packFc}명 · ${sim.fc.ea.toLocaleString()}EA`,
     `${sim.fc.ea.toLocaleString()}EA`,
@@ -2625,17 +2299,83 @@ function ttmRenderWorkerSlots(scen, workers, sim) {
   const earlyFpCrush = sim.fp.crush.s < 8*60+30;
   const earlyFcCrush = (sim.fc.crushes?.[0]?.s ?? sim.fc.crush.s) < 8*60+30;
 
-  // 시뮬에서 결정된 인원 슬롯 사용 (인원표 = 시뮬 자동 일치)
-  const slots = (sim.workerSlots || []).map(ws => ({
-    label: `${fmt(ws.s)}~${fmt(ws.e)}`,
-    pre: ws.pre, cook: ws.cook || 0, crush: ws.crush, pack: ws.pack, trans: ws.trans,
-    outer: ws.outer, setting: ws.setting, lunch: ws.lunch, mgr: ws.mgr,
-    idle: 0, total: ws.total, onsite: ws.onsite,
-  }));
+  // 고정 슬롯 (원본 타임테이블 탭과 동일)
+  const fixedSlots = [
+    { s: sim.fp.pre.s, e: 7*60,      },
+    { s: 7*60,         e: 9*60,      },
+    { s: 9*60,         e: 11*60+30,  },
+    { s: 11*60+30,     e: 12*60+30,  },
+    { s: 12*60+30,     e: 13*60+30,  },
+    { s: 13*60+30,     e: 17*60,     },
+    { s: 17*60,        e: sim.endMin },
+  ].filter(sl => sl.s < sl.e && sl.s < sim.endMin);
 
-  const wkColors = ['#185FA5','#0F6E56','#BA7517','#7F77DD','#534AB7','#1D9E75','#EF9F27','#888780','#5F5E5A','#B4B2A9'];
-  const heads = ['전처리','자숙','파쇄','내포장','이송','외포장','세팅','점심','관리','유휴'];
-  const keys  = ['pre','cook','crush','pack','trans','outer','setting','lunch','mgr','idle'];
+  const ov = (s1,e1,s2,e2) => s1 < e2 && e1 > s2;
+
+  const half1 = Math.ceil(totalWorkers / 2);
+  const half2 = totalWorkers - half1;
+
+  const slots = [];
+  for (const sl of fixedSlots) {
+    const s = sl.s, e = Math.min(sl.e, sim.endMin);
+    if (e <= s) continue;
+    const mid = (s+e)/2;
+
+    let onsite;
+    if (mid < mgrTimeMin) onsite = earlyWorkers;
+    else if (mid < joinTimeMin) onsite = earlyWorkers + mgrMin;
+    else onsite = totalWorkers;
+
+    const mgr = mid >= mgrTimeMin ? mgrMin : 0;
+    const act = (ps,pe) => mid >= ps && mid < pe;
+    const pre = (act(sim.fp.pre.s,sim.fp.pre.e) ? workers.preFp : 0)
+              + (act(sim.fc.pre.s,sim.fc.pre.e) ? workers.preFc : 0);
+    let crush = act(sim.fp.crush.s,sim.fp.crush.e) ? workers.crushFp : 0;
+    (sim.fc.crushes||[sim.fc.crush]).forEach(c => { if(act(c.s,c.e)) crush += workers.crushFc; });
+    let pack=0, trans=0;
+    if (act(sim.fp.pack.s,sim.fp.pack.e)) { pack+=workers.packFp; trans+=2; }
+    if (act(sim.fc.pack.s,sim.fc.pack.e)) { pack+=workers.packFc; trans+=2; }
+
+    const isLunch1 = mid >= 11*60+30 && mid < 12*60+30;
+    const isLunch2 = mid >= 12*60+30 && mid < 13*60+30;
+    let lunch=0, outer=0, setting=0;
+    let mgrActual = mgr;
+
+    if (isLunch1 || isLunch2) {
+      mgrActual = 1; // 점심시간 관리자 1명만 (나머지 1명 식사)
+      // 점심: 절반 식사, 나머지 절반 일함
+      lunch = isLunch1 ? half1 : half2;
+      const workingHalf = onsite - lunch;
+      // 내포장+이송+관리(1명) 고정, 남은 자리 파쇄
+      const fixedWork = pack + trans + mgrActual;
+      crush = Math.max(0, Math.min(crush, workingHalf - fixedWork));
+      outer = Math.max(0, workingHalf - fixedWork - crush);
+    } else {
+      // 비점심: 남는 인원 → 외포장/세팅 (유휴 없음)
+      const occupied = pre + crush + pack + trans + mgr;
+      const slack = Math.max(0, onsite - occupied);
+      if (mid >= joinTimeMin && mid < 11*60+30 && crush === 0 && pack === 0) {
+        setting = Math.min(3, slack);
+        outer   = Math.max(0, slack - setting);
+      } else {
+        outer = slack; // 유휴 대신 외포장
+      }
+    }
+
+    // 인원 초과 시 파쇄에서 삭감
+    let total = pre+crush+pack+trans+outer+setting+lunch+mgrActual;
+    if (total > onsite) {
+      const over = total - onsite;
+      crush = Math.max(0, crush - over);
+      total = pre+crush+pack+trans+outer+setting+lunch+mgrActual;
+    }
+
+    slots.push({ label:`${fmt(s)}~${fmt(e)}`, pre, crush, pack, trans, outer, setting, lunch, mgr:mgrActual, idle:0, total, onsite });
+  }
+
+  const wkColors = ['#185FA5','#BA7517','#7F77DD','#534AB7','#1D9E75','#EF9F27','#888780','#5F5E5A','#B4B2A9'];
+  const heads = ['전처리','파쇄','내포장','이송','외포장','세팅','점심','관리','유휴'];
+  const keys  = ['pre','crush','pack','trans','outer','setting','lunch','mgr','idle'];
 
   const rows = slots.map((r, idx) => {
     const stripe = idx%2===1 ? 'background:#f7f9fc' : '';
@@ -2643,7 +2383,8 @@ function ttmRenderWorkerSlots(scen, workers, sim) {
     const sumMark = isFull
       ? `<span style="color:#0F6E56">${r.total} ✓</span>`
       : `<span style="color:#A32D2D">${r.total}/${r.onsite}</span>`;
-    const rowH = `height:${(100/Math.max(1,slots.length)).toFixed(2)}%`;
+    // 모든 행 동일 높이 = 100% / 행수 (tbody 안에서)
+    const rowH = `height:${(100/slots.length).toFixed(2)}%`;
     return `<tr style="${stripe};${rowH}">
       <td style="padding:6px 4px;border:1px solid #ddd;font-weight:600;font-size:11px;text-align:center;white-space:nowrap;vertical-align:middle">${r.label}</td>
       ${keys.map((k,ci) => {
@@ -2820,14 +2561,6 @@ function ttmRender() {
   try {
     const scen = ttmGetScenario();
     const workers = ttmGetCurrentWorkers();
-    // FP 듀얼 가능 제품(maxLines=2)이고 packFp가 12 미만이면 자동 12명 (듀얼 가동)
-    const fpMaxLines = scen.fp.info.maxLines || 1;
-    const fpInputEl = document.getElementById('ttt-fp-wk-pack');
-    const userEditedFp = fpInputEl && fpInputEl.dataset.userEdited === 'true';
-    // FP 듀얼 가동은 사용자가 명시적으로 12명 이상 입력했을 때만
-    // (기본은 1대로 충분히 길게 - 사용자 룰)
-    // 이전: 자동 12명 강제 → 정원 초과 발생, 듀얼 강박
-    // 이전 자동 듀얼 강제 코드 제거됨
     const sim = ttmSimulate(scen, workers);
     const html = `
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;margin-top:14px">

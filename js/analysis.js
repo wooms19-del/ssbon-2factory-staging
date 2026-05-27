@@ -74,10 +74,14 @@ async function _moFetchAttendance(from, to){
       let count = 0;
       Object.entries(records).forEach(([name, rec]) => {
         if(nonProdSet.has(name)) return;  // ★ QC 등 제외
-        const tags = (rec && rec.tags) || [];
-        // checkin(출근) 또는 early(조출) 둘 다 '출근한 사람'으로 카운트.
-        // (다른 화면들도 ATT_NEEDS_IN = {checkin,early} 로 동일 취급)
-        if(Array.isArray(tags) && (tags.indexOf('checkin') !== -1 || tags.indexOf('early') !== -1)) count++;
+        if(!rec) return;
+        const tags = rec.tags || [];
+        // 결근/연차/휴무는 출근 아님 → 제외
+        if(tags.indexOf('absent') !== -1 || tags.indexOf('annual') !== -1 || tags.indexOf('holiday') !== -1) return;
+        // 출근 판정: 출근 계열 태그(checkin/early)가 있거나, 태그 없이 출퇴근 시간이 찍힌 정상 출근.
+        const hasInTag = tags.indexOf('checkin') !== -1 || tags.indexOf('early') !== -1;
+        const hasTime  = !!(rec.inTime || rec.outTime);
+        if(hasInTag || hasTime) count++;
       });
       if(count > 0) result[dates[i]] = count;
     });

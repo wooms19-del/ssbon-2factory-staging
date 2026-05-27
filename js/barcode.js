@@ -117,7 +117,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
   });
 });
 
-function procBC(code){
+async function procBC(code){
   const type=detT(code);
   if(!type){ setBcAl('❌ 인식 불가: '+code.slice(0,12),'d'); return; }
 
@@ -143,7 +143,13 @@ function procBC(code){
   else if(t1==='trace'&&t2==='import'){tCode=prev.code; iCode=code;}
   else{ setBcAl('❌ 수입코드+이력코드 조합이 아닙니다','d'); return; }
 
-  const imp=parseImp(iCode), tr=parseTr(tCode), judge=judgeBC(imp,tr);
+  // GTIN 판단표(gtinMap)가 Firestore에서 아직 안 온 상태면 등록된 GTIN도
+  // '확인필요'로 잘못 찍혀 부적합 저장됨. 판정 직전에 sync 한 번 보장.
+  let imp=parseImp(iCode);
+  if((!imp.part||imp.part==='확인필요') && typeof syncGtinMapFromFirestore==='function'){
+    try{ await syncGtinMapFromFirestore(); imp=parseImp(iCode); }catch(e){ console.warn('[procBC] gtinMap sync 실패',e); }
+  }
+  const tr=parseTr(tCode), judge=judgeBC(imp,tr);
   const now=new Date();
   const st=String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0')+':'+String(now.getSeconds()).padStart(2,'0');
   const rfEnd=calcRfEnd(st);

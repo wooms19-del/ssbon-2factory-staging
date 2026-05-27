@@ -141,11 +141,14 @@ function _renderStockShell(){
     });
   });
   _stockData.thawing.forEach(function(r){
+    // date 필드는 '종료 예정일'(다음날)로 저장됨 → 해동중 판정은 시작일 기준이어야 함.
+    // 시작일이 선택일 이하이고 아직 종료 안 됐으면(미종료) 해동중으로 표시.
+    var startDay = String(r.start||'').slice(0,10);
     var d = String(r.date||'').slice(0,10);
-    if(d < START_DATE) return;
-    var isInProg = (!r.end) || (d > selDate);
-    if(!isInProg) return;
-    if(d > selDate) return;  // 선택일 이후 해동중은 표시 안 함
+    var refDay = startDay || d;  // start 없으면 date 폴백
+    if(refDay < START_DATE) return;
+    if(r.end) return;            // 이미 종료된 건 제외
+    if(refDay > selDate) return; // 아직 시작 안 한(미래 시작) 건 제외
     var types = (r.type||'').split(',').map(function(s){return s.trim();}).filter(Boolean);
     var boxes = parseInt(r.boxes,10)||0;
     if(!types.length) return;
@@ -579,9 +582,21 @@ async function _openGtinRegisterModal(){
   if(typeof findUnknownGtins !== 'function'){
     alert('GTIN 관리 기능 미로드'); return;
   }
+  // 1) 이미 등록된 GTIN인데 부적합으로 남은 건 먼저 재판정해서 정상화
+  //    (스캔 당시 gtinMap 미로드로 부적합 저장된 케이스 — 등록 불필요, 정정만 하면 됨)
+  if(typeof rejudgeBarcodes === 'function'){
+    try{
+      var rj = await rejudgeBarcodes();
+      if(rj && rj.fixed){
+        if(typeof renderStock === 'function' && document.getElementById('p-stock')) renderStock();
+        if(typeof renderBC === 'function' && document.getElementById('bcList')) renderBC();
+      }
+    }catch(e){ console.warn('[정리] 재판정 실패', e); }
+  }
+  // 2) 그래도 남은 진짜 미등록 GTIN만 등록 모달로
   var unknown = await findUnknownGtins();
   if(!unknown.length){
-    alert('미등록 GTIN이 없습니다.'); return;
+    alert('정리 완료 — 등록이 필요한 새 GTIN은 없습니다.'); return;
   }
   // 모달 생성
   var modal = document.createElement('div');

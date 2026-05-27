@@ -241,7 +241,6 @@
     if(_mpRaw){
       _mpData     = _mpProcess(_mpRaw[0],_mpRaw[1],_mpRaw[2],_mpRaw[3],_mpRaw[4],_mpRaw[5]);
       _mpPrevData = _mpProcess(_mpRaw[6],_mpRaw[7],_mpRaw[8],_mpRaw[9],_mpRaw[10],_mpRaw[11]);
-      window._mpData = _mpData;
     }
     _mpRenderShell();
     if(_mpData) _mpRender();
@@ -346,27 +345,7 @@
         window._mpPendingDates = pendingDates;  // 디버그용
         _mpData     = _mpProcess(R[0],R[1],R[2],R[3],R[4],R[5], pendingDates);
         _mpPrevData = _mpProcess(R[6],R[7],R[8],R[9],R[10],R[11], null);  // 작년 비교는 그대로
-        window._mpData = _mpData;  // 월간 생산 일보에서 접근용
-        window._mpProcess = _mpProcess;  // 월간 생산 일보에서 직접 생성용
         _mpRender();
-        // 월간 생산 일보가 대기 중이면 재렌더 트리거
-        if(typeof window._moGD !== 'undefined' && window._moGD) {
-          if(typeof _moRenderRows === 'function') {
-            // _moGD의 rmByDateProd 업데이트 후 재렌더
-            var rdp2 = {};
-            var mainKeys2 = new Set();
-            (_mpData.rows||[]).filter(function(r){ return !r.isSubTotal && r.date && r.product && r._isMainRow !== false; }).forEach(function(r){
-              var k = r.date+'|'+r.product;
-              rdp2[k] = (rdp2[k]||0) + (r.rmKg||0);
-              mainKeys2.add(k);
-            });
-            (_mpData.rows||[]).filter(function(r){ return !r.isSubTotal && r.date && r.product && r._isPartRow === true; }).forEach(function(r){
-              var k = r.date+'|'+r.product;
-              if(!mainKeys2.has(k)) rdp2[k] = (rdp2[k]||0) + (r.rmKg||0);
-            });
-            window._moGD.rmByDateProd = Object.keys(rdp2).length ? rdp2 : null;
-          }
-        }
       } catch(e){
         console.error('[mp] reload error', e);
         var st=document.getElementById('mpStatus');
@@ -1102,21 +1081,17 @@
         list.sort(function(a,b){
           return String(a.date||'').localeCompare(String(b.date||''));
         });
-        // ★ 제품별 모드: 메인 행 + 부위별 보조 행(_isPartRow) 모두 표시
-        // 우둔+설도 혼합 날짜는 _isPartRow만 있으므로 둘 다 포함
-        var displayList = list.filter(function(r){
-          return r._isMainRow !== false || r._isPartRow === true;
-        });
+        // ★ 일자별 메인 행만 표시 (부위별 보조 행은 숨김)
+        var displayList = list.filter(function(r){ return r._isMainRow !== false; });
         displayList.forEach(function(r){
           // ★ 제품별 모드에서는 일자/부위 rowspan 효과 끄기 — 모든 행에 td 출력
           r.dateRowIdx = 0;
           r._grpSize = 1;
           r._grpFirst = true;
-          r._isMainRow = true; // 서브토탈 합산 대상으로 승격
           newRows.push(r);
         });
-        // ★ 서브토탈 계산 — displayList 기준 합산
-        var sumList = displayList;
+        // ★ 서브토탈 계산 — 메인 행만 합산 (부위별 보조 행 제외, 이중 집계 방지)
+        var sumList = list.filter(function(r){ return r._isMainRow !== false; });
         var sub = {
           product: prod,
           type: '',
@@ -1945,8 +1920,6 @@
   window.mpToggleGrp    = mpToggleGrp;
   window.mpSetGroupMode = mpSetGroupMode;
   window.mpToggleFilter = mpToggleFilter;
-  window._mpReload      = _mpReload;
-  window._mpProcess     = _mpProcess;  // 월간 생산 일보에서 즉시 사용 가능하도록
 
   ['setMode','setModeSchedule','setModeAtt'].forEach(function(fn){
     var orig = window[fn];

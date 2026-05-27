@@ -107,13 +107,9 @@ function ttGetInputs() {
   // 파쇄 점심후 (12:30~13:30, 이송 합류 전) = autoCrushPeak - 4 (전처리조 4명 뒤늦게 합류)
   // 단순 가정: 풀가동에서 4명 빼면 점심후 (운영 모델)
   const autoCrushBeforePeak = Math.max(0, autoCrushPeak - 4);
-  const productKey = getStr('tt-product', 'fc');
-  const productInfo = TT_PRODUCT_INFO[productKey] || TT_PRODUCT_INFO['fc'];
   return {
     meatType: getStr('tt-meat', '홍두깨'),
     meatKg: get('tt-kg', 1600),
-    productKey: productKey,
-    productInfo: productInfo,
     startTime: getStr('tt-start', '05:00'),
     earlyWorkers: get('tt-early', 7),
     mgrTime: getStr('tt-mgr-time', '07:00'),
@@ -147,9 +143,7 @@ function ttGetInputs() {
 async function ttAutoAnalyze() {
   const period = document.getElementById('tt-period')?.value || 'all';
   const meatType = document.getElementById('tt-meat')?.value || '홍두깨';
-  const productKey = document.getElementById('tt-product')?.value || 'fc';
-  const productInfo = TT_PRODUCT_INFO[productKey] || TT_PRODUCT_INFO['fc'];
-  const isFC = (productKey === 'fc');  // 제품 기준 (원육 X)
+  const isFC = (meatType === '홍두깨');
   const todayStr = (typeof tod === 'function') ? tod() : (new Date()).toISOString().slice(0,10);
   // fromDate 계산 (로컬 시간 기준, tod() 사용)
   const [ty,tm,td] = todayStr.split('-').map(Number);
@@ -165,12 +159,6 @@ async function ttAutoAnalyze() {
   }
   else if (period === 'last30') {
     const d = new Date(todayLocal); d.setDate(d.getDate() - 30); fromDate = fmt(d);
-  }
-  else if (period === 'custom') {
-    const cf = document.getElementById('tt-custom-from')?.value;
-    const ct = document.getElementById('tt-custom-to')?.value;
-    if (cf) fromDate = cf;
-    if (ct) toDate = ct;
   }
 
   try {
@@ -305,7 +293,7 @@ async function ttAutoAnalyze() {
       }
     });
 
-    // ── 내포장: 선택한 제품에 정확히 매칭 ──
+    // ── 내포장: FC vs 비-FC 이분법 ──
     let pkEa=0, pkMin=0, pkN=0;
     packDocs.forEach(d => {
       const r = d.data();
@@ -313,8 +301,8 @@ async function ttAutoAnalyze() {
       const ea = +r.ea||0, m = minutesBetween(r.start, r.end);
       if (ea <= 0 || m <= 0) return;
       const prod = (r.product||'').toString();
-      // 선택한 제품 이름과 정확히 일치할 때만 카운트
-      if (prod !== productInfo.productName) return;
+      const isFCProd = /FC/i.test(prod);
+      if (isFC !== isFCProd) return; // FC면 FC제품만, 비-FC면 비-FC제품만
       pkEa += ea; pkMin += m; pkN++;
     });
 
@@ -490,26 +478,6 @@ function ttResetField(id, autoKey) {
 
 // 분석 기간 / 원육 종류 변경 시 → 자동 분석 재실행
 async function ttPeriodChange() {
-  // 사용자 지정 기간 날짜 입력 토글
-  const period = document.getElementById('tt-period')?.value || 'all';
-  const cfWrap = document.getElementById('tt-custom-from-wrap');
-  const ctWrap = document.getElementById('tt-custom-to-wrap');
-  if (cfWrap) cfWrap.style.display = (period === 'custom') ? 'flex' : 'none';
-  if (ctWrap) ctWrap.style.display = (period === 'custom') ? 'flex' : 'none';
-  // custom 선택 시 기본값 채우기 (한 번만)
-  if (period === 'custom') {
-    const cf = document.getElementById('tt-custom-from');
-    const ct = document.getElementById('tt-custom-to');
-    if (cf && !cf.value) {
-      const today = (typeof tod === 'function') ? tod() : (new Date()).toISOString().slice(0,10);
-      const [ty,tm,td] = today.split('-').map(Number);
-      const d30 = new Date(ty, tm-1, td); d30.setDate(d30.getDate() - 30);
-      cf.value = d30.getFullYear()+'-'+String(d30.getMonth()+1).padStart(2,'0')+'-'+String(d30.getDate()).padStart(2,'0');
-    }
-    if (ct && !ct.value) {
-      ct.value = (typeof tod === 'function') ? tod() : (new Date()).toISOString().slice(0,10);
-    }
-  }
   // 사용자 수정한 입력 초기화
   ['tt-y-pre','tt-y-crush','tt-p-pre','tt-p-crush','tt-p-pack'].forEach(id => {
     const el = document.getElementById(id);
@@ -540,35 +508,13 @@ function ttSimulate(inp, tankMode) {
   const pouches = Math.floor(packOut / kgPerEaUsed);
 
   // 전처리 시간
-  // Phase 1: startMin ~ joinMin (외국인 earlyWorkers명)
-  // Phase 2: joinMin ~ ... (전체 wkPre명)
-  // 실제 처리량이 입력량보다 작으면 입력량만큼만 처리하고 끝
-  const phase1MaxKg = inp.pPre * inp.earlyWorkers * Math.max(0, (joinMin - startMin) / 60);
-  let phase1Min, phase1Kg, phase2Min, preEndMin;
-  if (preIn <= phase1MaxKg) {
-    // Phase 1 안에서 모두 처리 완료
-    phase1Kg = preIn;
-    phase1Min = Math.round(preIn / (inp.pPre * inp.earlyWorkers) * 60);
-    phase2Min = 0;
-    preEndMin = startMin + phase1Min;
-  } else {
-    // Phase 1 풀가동, 잔량은 Phase 2에서
-    phase1Min = Math.max(0, joinMin - startMin);
-    phase1Kg = phase1MaxKg;
-    const remainingKg = preIn - phase1Kg;
-    phase2Min = remainingKg / (inp.pPre * inp.wkPre) * 60;
-    preEndMin = joinMin + Math.round(phase2Min);
-  }
+  const phase1Min = Math.max(0, joinMin - startMin);
+  const phase1Kg = inp.pPre * inp.earlyWorkers * (phase1Min / 60);
+  const remainingKg = Math.max(0, preIn - phase1Kg);
+  const phase2Min = remainingKg / (inp.pPre * inp.wkPre) * 60;
+  const preEndMin = joinMin + Math.round(phase2Min);
   const preHours = (preEndMin - startMin) / 60;
 
-  // 자숙 시간 — 제품별 가압/비가압
-  // 가압: 150분 (탱크 1·2번만 가용, 2대)
-  // 비가압: 240분 (탱크 3·4·5·6번, 4대)
-  // FC 3KG → 비가압 4대만 사용
-  // 나머지 → 가압 2대 우선, 회차 더 필요시 비가압 4대로 보충
-  const pressureAllowed = !!(inp.productInfo && inp.productInfo.pressureAllowed);
-  const cookMinutes_pressure = 150;
-  const cookMinutes_normal = 240;
   // 자숙 탱크 분배 (tankMode별)
   const cookCycles = Math.max(1, Math.ceil(cookIn / TT_FIXED.tankKg));
   let tankKgs;  // 각 탱크 자숙 산출 량 (= 자숙 투입 - 자숙수율 손실 후)... 정확히는 자숙 투입량
@@ -616,21 +562,7 @@ function ttSimulate(inp, tankMode) {
     if (i === cookCycles - 1 && tankInMin > preEndMin) tankInMin = preEndMin;
     tankInTimes.push(tankInMin);
   }
-  // 각 회차에 가압/비가압 할당 + 자숙 시간 차등 적용
-  // 가압 가능 제품: 처음 2회차까지 가압 탱크 사용, 나머지는 비가압
-  // 비가압 제품(FC): 모두 비가압
-  const tankAssign = [];  // 각 회차의 {type, durMin}
-  if (pressureAllowed) {
-    for (let i = 0; i < cookCycles; i++) {
-      if (i < 2) tankAssign.push({ type: 'pressure', durMin: cookMinutes_pressure });
-      else tankAssign.push({ type: 'normal', durMin: cookMinutes_normal });
-    }
-  } else {
-    for (let i = 0; i < cookCycles; i++) {
-      tankAssign.push({ type: 'normal', durMin: cookMinutes_normal });
-    }
-  }
-  const tankOutTimes = tankInTimes.map((t, i) => t + tankAssign[i].durMin);
+  const tankOutTimes = tankInTimes.map(t => t + TT_FIXED.cookHours * 60);
   const wagonEndTimes = tankOutTimes.map(t => t + TT_FIXED.wagonMin);
 
   // 파쇄: 자숙 1호 와건 종료부터 시작
@@ -720,92 +652,33 @@ function ttSimulate(inp, tankMode) {
   const crushHours = (crushEndMin - crushStartMin) / 60;
   // ── 내포장 시뮬: 동적 ──
   //
-  // 룰:
-  //  (1) 시작 시각 = 파쇄 산출 ≥ 1대차 분량 + 가용 인원 ≥ 호기 1대 운영 인원(6명+이송2명=8명)
-  //  (2) 호기 가동:
-  //      - maxLines=1 제품 (FC, 미니): 호기 1대만 가동, 인원 ≥ 8명일 때만
-  //      - maxLines=2 제품 (시그/코스트코/트레이더): 가용 인원 따라
-  //         8명 ≤ 가용 < 14명 → 호기 1대
-  //         14명 ≤ 가용 → 호기 2대 (속도 2배)
-  //      가용 인원은 시간대별로 동적, 호기는 매 분 결정
-  //  (3) 13:30 하드코딩 제거 — 조건 만족하면 더 일찍 시작 가능
-  const productInfo = inp.productInfo || TT_PRODUCT_INFO['fc'];
-  const maxLines = productInfo.maxLines || 1;
-  // 1대 운영 시 필요 인원 = 호기 6명 + 이송 2명 = 8명
-  // 2대 운영 시 필요 인원 = 호기 6명×2 + 이송 2명×2 = 16명 (실측: 14명도 가능 - 이송 공유)
-  // 단순화: 1대=8명, 2대=14명 임계값
-  const CREW_FOR_1_LINE = 8;
-  const CREW_FOR_2_LINES = 14;
-  // 한 대차 분량 (kg) — 시작 트리거
-  const packCartKg = productInfo.eaPerCart * (productInfo.kgPerEa || kgPerEaUsed);
-  const PACK_START_MIN_KG = Math.max(50, Math.floor(packCartKg * 0.8));  // 80% 쌓이면 시작 가능
-
-  // 가용 인원 = 시간대별 (전처리·자숙 점유 차감 후 내포장에 줄 수 있는 인원)
-  // 전처리 끝났으면 → 전처리 인원이 내포장으로 흡수 가능
-  // 자숙은 2명/회차 점유 (이미 차감되어 있음)
-  // 매 분마다 내포장에 줄 수 있는 가용 인원
-  // 핵심 룰: 파쇄와 내포장은 동시 가동 가능
-  //   - 인원 충분하면 파쇄(wkCrush명) + 내포장(8명+) 동시
-  //   - 인원 부족하면 파쇄 인원 줄여서 내포장에 양보 (파쇄 속도↓)
-  //   - 즉 파쇄 인원 점유는 '최소 인원'만 고정, 나머지는 내포장으로 양보 가능
-  // 자숙은 회차당 2명 고정 점유 (양보 불가)
-  const PACK_FOR_1_LINE_BASE = 8;  // 내포장 1대 가동 최소 인원 (호기 6 + 이송 2)
-  const CRUSH_MIN_KEEP = 4;  // 파쇄 최소 유지 인원 (이만큼만 점유, 나머지는 내포장 양보)
-  const packCrewAt = (t) => {
-    // 출근
-    let onsite = 0;
-    if (t >= startMin) onsite += inp.earlyWorkers;
-    const mgrMin = ttToMin(inp.mgrTime);
-    if (t >= mgrMin) onsite += inp.mgrWorkers;
-    if (t >= joinMin) onsite += (inp.wkPre || 0);
-    // 점유
-    let occupied = 0;
-    // 자숙 (가동 중 회차 × 2명) — 양보 불가
-    for (let i = 0; i < cookCycles; i++) {
-      if (t >= tankInTimes[i] && t < tankOutTimes[i]) occupied += 2;
-    }
-    // 관리 (항상 1명)
-    occupied += 1;
-    // 전처리 가동 중 — 양보 불가
-    if (t < preEndMin && t >= startMin) {
-      const wPre = (t >= joinMin) ? inp.wkPre : inp.earlyWorkers;
-      occupied += wPre;
-    }
-    // 파쇄 가동 중 — 최소 유지 인원만 점유 (나머지는 내포장에 양보 가능)
-    if (t >= crushStartMin && t < crushEndMin) {
-      occupied += Math.min(inp.wkCrush || 0, CRUSH_MIN_KEEP);
-    }
-    return Math.max(0, onsite - occupied);
-  };
-
-  // 시작 시각 결정 — 분 단위 탐색
+  // 점심 1차에 전처리조가 파쇄 합류 → 파쇄 산출도 그만큼 누적
+  // 내포장은 그 산출이 충분히 누적된 뒤 시작 가능
+  // 단순화: 전처리 끝났으면 → 12:30부터 시작 가능 (파쇄가 1시간 가동했으니까)
+  //         전처리 안 끝났으면 → 13:30부터 (모드 A 동일)
+  // ── 내포장 시작 시점 ──
+  // 규칙: 13:30 시점에 파쇄 산출 ≥ 200kg이면 13:30 시작
+  //       부족하면 → 200kg 도달할 때까지 대기
+  const PACK_START_BASE = 13*60 + 30;
+  const PACK_START_MIN_KG = 200;  // 산출 누적 200kg 이상
+  // crushStartMin부터 분당 누적 (crushWorkersAt × pCrush × yCrush)
   let crushAccumOut = 0;
-  let packStartMin = crushStartMin + 60;  // 기본 fallback: 파쇄 시작 + 1시간
+  let packStartMin = PACK_START_BASE;
+  let kgAtBase = 0;
   for (let t = crushStartMin; t < 28*60; t++) {
     const w = crushWorkersAt(t);
     if (w > 0) crushAccumOut += inp.pCrush * w / 60 * (inp.yCrush / 100);
-    if (crushAccumOut >= PACK_START_MIN_KG) {
-      // 산출 충분 → 인원도 충분한가?
-      const crew = packCrewAt(t + 1);
-      if (crew >= CREW_FOR_1_LINE) {
-        packStartMin = t + 1;
-        break;
-      }
+    if (t + 1 === PACK_START_BASE) kgAtBase = crushAccumOut;
+    if (t + 1 >= PACK_START_BASE && crushAccumOut >= PACK_START_MIN_KG) {
+      packStartMin = t + 1;
+      break;
     }
   }
-
-  // 호기 가동 수 (동적): 매 분 가용 인원 기반
-  const linesAt = (t) => {
+  const packWorkersAt = (t) => {
     if (t < packStartMin) return 0;
-    const crew = packCrewAt(t);
-    if (maxLines >= 2 && crew >= CREW_FOR_2_LINES) return 2;
-    if (crew >= CREW_FOR_1_LINE) return 1;
-    return 0;
+    return inp.wkPack;
   };
-  // 분당 EA (호기 1대 기준)
-  const eaPerMinPerLine = inp.pPackEa || 25;
-  const packSpeedAt = (t) => linesAt(t) * eaPerMinPerLine;
-  const packWorkersAt = (t) => linesAt(t) * (inp.wkPack || 6) + (linesAt(t) > 0 ? (inp.wkTrans || 2) : 0);
+  const packSpeedAt = (t) => packWorkersAt(t) > 0 ? inp.pPackEa : 0;
 
   // 자체 처리 시간: packStart부터 처리량이 pouches 도달까지 (정지 시간 자동 반영)
   let packSelfEndMin = packStartMin;
@@ -815,7 +688,7 @@ function ttSimulate(inp, tankMode) {
     packSelfEndMin = t + 1;
   }
   // 마지막 파쇄 산출분이 내포장 라인 통과 (파쇄 종료 후)
-  const lastTankPackEa = Math.round(lastTankOutKg * (inp.yCrush / 100) / kgPerEaUsed);
+  const lastTankPackEa = Math.round(lastTankOutKg * (inp.yCrush / 100) / TT_PACK_KG_PER_POUCH);
   let lastBatchPackEndMin = crushEndMin;
   let lastBatchProcessed = 0;
   for (let t = crushEndMin; t < 28*60 && lastBatchProcessed < lastTankPackEa; t++) {
@@ -823,107 +696,69 @@ function ttSimulate(inp, tankMode) {
     lastBatchPackEndMin = t + 1;
   }
   // 둘 중 늦은 쪽
-  const packEndMinTmp = Math.max(packSelfEndMin, lastBatchPackEndMin);
-  const packEndMin = packEndMinTmp;
+  const packEndMin = Math.max(packSelfEndMin, lastBatchPackEndMin);
   const packMin = packEndMin - packStartMin;
 
-  // 호기별 가동 구간 만들기 (각 호기가 언제 켜졌다 꺼졌는지)
-  // packStartMin ~ packEndMin 구간을 분 단위로 훑으면서 호기 1, 2의 가동 구간 생성
-  const lineSegments = { 1: [], 2: [] }; // [{start, end}]
-  let lineState = { 1: null, 2: null }; // 진행 중 세그먼트
-  for (let t = packStartMin; t <= packEndMin; t++) {
-    const n = linesAt(t);
-    // 호기 1 (= 첫 번째 호기, 항상 켜짐)
-    if (n >= 1) {
-      if (lineState[1] === null) lineState[1] = { start: t };
-    } else {
-      if (lineState[1] !== null) {
-        lineState[1].end = t;
-        lineSegments[1].push(lineState[1]);
-        lineState[1] = null;
-      }
-    }
-    // 호기 2 (= 두 번째 호기, 2대 가동 시만)
-    if (n >= 2) {
-      if (lineState[2] === null) lineState[2] = { start: t };
-    } else {
-      if (lineState[2] !== null) {
-        lineState[2].end = t;
-        lineSegments[2].push(lineState[2]);
-        lineState[2] = null;
-      }
-    }
-  }
-  // 진행 중이던 세그먼트 종료
-  if (lineState[1] !== null) { lineState[1].end = packEndMin; lineSegments[1].push(lineState[1]); }
-  if (lineState[2] !== null) { lineState[2].end = packEndMin; lineSegments[2].push(lineState[2]); }
-
-  // 레토르트: 3대 병렬 + 대차 8개
+  // 레토르트: 3대 병렬 + 대차 8개, EA 균등 분배 (전체 회차에 고르게)
   //
-  // 진짜 운영 룰:
-  //  - 회차당 4대차 풀로 채움 (시그 = 4 × 1024 = 4096 EA)
-  //  - 3대 병렬 → 1·2·3회차 거의 동시 가동 가능
-  //  - 회차 사이 간격 = 산출 EA가 다음 회차 분량 쌓일 때까지만 대기
-  //  - 마지막 회차는 부족한 분량으로 처리 가능 (단, 회차 시간은 동일)
+  // 룰:
+  //  - 회차 수 = ceil(pouches / 384) (대차 4개 한도, 최소 회차 수)
+  //  - 회차당 EA = 균등 분배 (예: 796 EA / 3회차 = 265, 265, 266)
+  //  - 회차당 대차 = ceil(EA / 96)
+  //  - 가동 시점 = 그 회차 EA 누적 + 대차 가용 + 설비 가용
+  //  - 마지막 회차 = max(누적 시점, 내포장 종료)
+  //
+  // 효과: 4대차 가득 모을 필요 없음 → 회차 빨리 시작 → 전체 종료 빠름
+  // 제품별 상수 (단일 모드는 FC, 다중 모드의 비-FC 시뮬은 productInfo로 갈아끼움)
   const pInfo = inp.productInfo || { eaPerCart: 96, retortCycleMin: TT_FIXED.retortCycleMin };
   const EA_PER_CART = pInfo.eaPerCart;
   const RETORT_CYCLE_MIN = pInfo.retortCycleMin;
   const MAX_CARTS_PER_BATCH = 4;
   const MAX_EA_PER_BATCH = EA_PER_CART * MAX_CARTS_PER_BATCH;
-  const retortCycles = Math.max(1, Math.ceil(pouches / MAX_EA_PER_BATCH));
+  const retortCycles = Math.ceil(pouches / MAX_EA_PER_BATCH);
+  const eaPerMin = inp.pPackEa;
   const NUM_RETORTS = 3;
   const TOTAL_CARTS = 8;
 
-  // 회차당 EA — FP는 풀로 채워서 가동 (균등 분배 아님)
-  // 시그130g 4대차 풀 = 4096 EA, 26500 EA / 4096 = 6.5 → 6회차 풀 + 잔량 1회차
+  // EA 균등 분배 (정수 단위, 마지막에 잔여 합산)
+  const eaPerBatch = Math.floor(pouches / retortCycles);
+  const eaRemainder = pouches - eaPerBatch * retortCycles;
   const batchEa = [];
-  let remainEa = pouches;
   for (let i = 0; i < retortCycles; i++) {
-    if (i < retortCycles - 1) {
-      batchEa.push(MAX_EA_PER_BATCH);
-      remainEa -= MAX_EA_PER_BATCH;
-    } else {
-      // 마지막 회차 = 남은 EA
-      batchEa.push(Math.max(0, remainEa));
-    }
+    // 잔여 EA를 마지막 회차에 합산
+    batchEa.push(i === retortCycles - 1 ? eaPerBatch + eaRemainder : eaPerBatch);
   }
+  // 회차당 대차 수 = ceil(EA / 96), 최대 4
   const batchCarts = batchEa.map(ea => Math.min(MAX_CARTS_PER_BATCH, Math.ceil(ea / EA_PER_CART)));
 
-  // 회차별 시작 시각 결정 — 산출 시점 + 설비 가용
   const retortStartTimes = [];
   const retortEndTimes = [];
-  const retortFreeAt = [packStartMin, packStartMin, packStartMin]; // 3대 가용 시각
-
-  // 분당 산출 EA (호기 가동 평균 — 단순화: pPackEa × 평균 호기수)
-  // 호기 동적이라 정확치 안 되지만 보수적으로 추정
-  const avgEaPerMin = (maxLines >= 2 ? 1.5 : 1) * (inp.pPackEa || 25);  // 1.5는 평균 호기수 추정
+  const retortFreeAt = [0, 0, 0];
 
   for (let i = 0; i < retortCycles; i++) {
-    // 이 회차에 필요한 누적 EA
+    const isLast = i === retortCycles - 1;
+    // i회차 누적 EA = 0~i까지 합
     const cumEa = batchEa.slice(0, i + 1).reduce((a, b) => a + b, 0);
-    // 산출 충족 시점 (내포장 시작 + cumEa / avgEaPerMin)
-    let accumulateMin = packStartMin + Math.round(cumEa / avgEaPerMin);
-    // 마지막 회차 = 내포장 종료 이후만 가능 (남은 EA 다 나와야 시작)
-    if (i === retortCycles - 1) {
-      accumulateMin = Math.max(accumulateMin, packEndMin);
-    }
+    let accumulateMin = packStartMin + Math.round(cumEa / eaPerMin);
+    if (isLast) accumulateMin = Math.max(accumulateMin, packEndMin);
+    else if (accumulateMin > packEndMin) accumulateMin = packEndMin;
 
-    // 가용 설비 (3대 중 가장 빨리 끝나는 것)
     const earliestRetort = retortFreeAt.indexOf(Math.min(...retortFreeAt));
     const retortAvailMin = retortFreeAt[earliestRetort];
 
-    // 대차 가용성 체크
+    // 대차 가용 (현재 진행 중 대차 빼고)
     const cartsAvailableAt = (t) => {
       let inUse = 0;
       for (let k = 0; k < retortStartTimes.length; k++) {
         if (retortStartTimes[k] <= t && t < retortEndTimes[k]) {
-          inUse += batchCarts[k];
+          inUse += batchCarts[k];  // 그 회차의 실제 대차 수
         }
       }
       return TOTAL_CARTS - inUse;
     };
 
     let candidateStart = Math.max(retortAvailMin, accumulateMin);
+    // 이 회차에 필요한 대차 수만큼 가용까지 대기
     while (cartsAvailableAt(candidateStart) < batchCarts[i]) {
       const ongoing = retortEndTimes.filter((e, k) => retortStartTimes[k] <= candidateStart && candidateStart < e);
       if (ongoing.length === 0) break;
@@ -947,9 +782,6 @@ function ttSimulate(inp, tankMode) {
     startMin, preEndMin, joinMin,
     phase1Min, phase1Kg,
     tankInTimes, tankOutTimes, wagonEndTimes,
-    tankAssign, pressureAllowed,
-    maxLines, productInfo,
-    lineSegments, eaPerMinPerLine,
     tankCrushTimes,
     crushStartMin, crushEndMin,
     crushSelfEndMin, lastTankCrushEndMin, lastTankOutKg,
@@ -963,38 +795,14 @@ function ttSimulate(inp, tankMode) {
 }
 
 // ── 다중 작업 시뮬 (순차 파이프라인) ───────────────────────
-// 제품별 가공 정보 (단일 시뮬에서도 사용)
-// productName: 정확한 packing 컬렉션의 product 필드값과 일치해야 함 (DB 매칭용)
-// availableLines: 사용 가능한 내포장 호기 (1, 2, 3, 4)
-// maxLines: 최대 동시 가동 가능 호기 수
-// kgPerEa: 1EA당 파쇄육 무게 (kg) — 파쇄 산출량 / EA 환산용
-//   - 시그 130g: 0.025 (제품 130g 중 파쇄육 25g)
-//   - 코스트코 170g: 0.054
-//   - 미니 70g: 0.024
-//   - 트레이더 460g: 0.147
-//   - FC 3KG: 1.3
+// 두 번째 제품별 대차/레토르트 사이클 정보
 const TT_PRODUCT_INFO = {
-  'fc':         { name: 'FC 장조림 3KG',              productName: 'FC 장조림 3KG',
-                  eaPerCart: 96,   retortCycleMin: 150, kgPerEa: 1.3,   pressureAllowed: false,
-                  availableLines: [2],     maxLines: 1 },
-  'sig':        { name: '시그니처 장조림 130g',         productName: '시그니처 장조림 130g',
-                  eaPerCart: 1024, retortCycleMin: 120, kgPerEa: 0.025, pressureAllowed: true,
-                  availableLines: [3, 4],  maxLines: 2 },
-  'sig_mart':   { name: '시그니처 장조림 130g 마트용',   productName: '시그니처 장조림 130g 마트용',
-                  eaPerCart: 1024, retortCycleMin: 120, kgPerEa: 0.025, pressureAllowed: true,
-                  availableLines: [3, 4],  maxLines: 2 },
-  'costco':     { name: '코스트코 장조림 170g',         productName: '코스트코 장조림 170g',
-                  eaPerCart: 1024, retortCycleMin: 120, kgPerEa: 0.054, pressureAllowed: true,
-                  availableLines: [3, 4],  maxLines: 2 },
-  'trader':     { name: '트레이더스 장조림 460g',       productName: '트레이더스 장조림 460g',
-                  eaPerCart: 380,  retortCycleMin: 120, kgPerEa: 0.147, pressureAllowed: true,
-                  availableLines: [3, 4],  maxLines: 2 },
-  'mini5':      { name: '미니쇠고기장조림 70g 5입',     productName: '미니쇠고기장조림 70g 5입',
-                  eaPerCart: 1280, retortCycleMin: 120, kgPerEa: 0.024, pressureAllowed: true,
-                  availableLines: [1],     maxLines: 1 },
-  'mini_each':  { name: '미니쇠고기장조림 70g 낱개',    productName: '미니쇠고기장조림 70g 낱개',
-                  eaPerCart: 1280, retortCycleMin: 120, kgPerEa: 0.024, pressureAllowed: true,
-                  availableLines: [1],     maxLines: 1 }
+  // FC 3KG (홍두깨) — 기본 케이스 (참고용, 단일 시뮬에서 이미 처리)
+  'fc':     { name: 'FC 3KG',        eaPerCart: 96,    retortCycleMin: 150, kgPerEa: 1.35 },
+  // 두 번째 후보들 (비-FC)
+  'trader': { name: '트레이더스 460g', eaPerCart: 380,  retortCycleMin: 120, kgPerEa: 0.20 },  // 460g + 손실 고려 ~0.20kg 원육/EA
+  'sig':    { name: '시그니처 130g',   eaPerCart: 1024, retortCycleMin: 120, kgPerEa: 0.057 }, // 130g 기준
+  'mini':   { name: '미니 70g 5개입',  eaPerCart: 1280, retortCycleMin: 120, kgPerEa: 0.046 }, // 5개입 350g 기준
 };
 
 // 두 번째 제품용 inp 구성 (단일 ttSimulate가 그대로 받을 수 있게)
@@ -1326,14 +1134,12 @@ function ttRender() {
   // ── 전처리 (2분할: Phase1 / Phase2) ──
   bars += rowLabel(yCursor, BAR_H, '전처리');
   // Phase 1: startMin ~ joinMin (외국인)
-  // 실제 처리량 = min(이론 최대, 실제 처리해야 할 양)
   if (sim.joinMin > sim.startMin) {
-    const p1KgMax = Math.round(sim.phase1Kg);  // 이론 최대
-    const p1Kg = Math.min(p1KgMax, Math.round(sim.preIn));  // 실제 = min(이론, 입력량)
+    const p1Kg = Math.round(sim.phase1Kg);
     bars += segBar(yCursor, BAR_H, sim.startMin, Math.min(sim.joinMin, sim.preEndMin), '#185FA5',
       `${inp.earlyWorkers}명 · ${p1Kg.toLocaleString()}kg`,
       `전처리 Phase 1`,
-      `시각: ${ttFmt(sim.startMin)}~${ttFmt(Math.min(sim.joinMin, sim.preEndMin))}|인원: 외국인 ${inp.earlyWorkers}명|실제 처리량: ${p1Kg.toLocaleString()} kg (전체 ${Math.round(sim.preIn).toLocaleString()}kg 중)|이론 최대: ${p1KgMax.toLocaleString()}kg (${inp.pPre}×${inp.earlyWorkers}×${(sim.phase1Min/60).toFixed(1)}h)`,
+      `시각: ${ttFmt(sim.startMin)}~${ttFmt(Math.min(sim.joinMin, sim.preEndMin))}|인원: 외국인 ${inp.earlyWorkers}명|처리량: ${p1Kg.toLocaleString()} kg|계산: ${inp.pPre} × ${inp.earlyWorkers} × ${(sim.phase1Min/60).toFixed(1)}h = ${p1Kg.toLocaleString()}kg`,
       {fillOpacity: 0.7});
   }
   // Phase 2: joinMin ~ preEndMin (한국인 합류)
@@ -1351,16 +1157,13 @@ function ttRender() {
   // ── 자숙 (각 호별 + 와건) ──
   sim.tankInTimes.forEach((t, i) => {
     const isLast = i === sim.tankInTimes.length - 1;
-    const assign = sim.tankAssign[i] || { type: 'normal', durMin: 240 };
-    const typeLabel = assign.type === 'pressure' ? '가압' : '비가압';
-    const tankNum = assign.type === 'pressure' ? (i + 1) : (3 + (i - (sim.pressureAllowed ? 2 : 0)));
     const lastTankKg = sim.tankKgs[i];
     const tankOutKg = lastTankKg * sim.cookYield / 100;
-    bars += rowLabel(yCursor, BAR_H, `자숙 ${i+1}호 (${typeLabel})`);
-    bars += segBar(yCursor, BAR_H, t, sim.tankOutTimes[i], assign.type === 'pressure' ? '#0F6E56' : '#16a085',
+    bars += rowLabel(yCursor, BAR_H, `자숙 ${i+1}호`);
+    bars += segBar(yCursor, BAR_H, t, sim.tankOutTimes[i], '#0F6E56',
       `${Math.round(lastTankKg)}kg → ${Math.round(tankOutKg)}kg`,
-      `자숙 ${i+1}호 (${typeLabel})`,
-      `투입: ${ttFmt(t)}|자숙 종료: ${ttFmt(sim.tankOutTimes[i])}|와건 종료: ${ttFmt(sim.wagonEndTimes[i])}|탱크: ${tankNum}번 (${typeLabel})|투입량: ${Math.round(lastTankKg)}kg|산출: ${Math.round(tankOutKg)}kg (수율 ${sim.cookYield}%)|사이클: ${assign.durMin}분 + 와건 30분`);
+      `자숙 ${i+1}호`,
+      `투입: ${ttFmt(t)}|자숙 종료: ${ttFmt(sim.tankOutTimes[i])}|와건 종료: ${ttFmt(sim.wagonEndTimes[i])}|용량: ${Math.round(lastTankKg)}kg|산출: ${Math.round(tankOutKg)}kg (수율 ${sim.cookYield}%)|사이클: 4h + 와건 30분`);
     // 와건 (자숙 종료 ~ 와건 종료)
     bars += segBar(yCursor, BAR_H, sim.tankOutTimes[i], sim.wagonEndTimes[i], '#D85A30',
       ``,
@@ -1428,36 +1231,18 @@ function ttRender() {
   yCursor += ROW_H;
 
   // ── 내포장 (단일 막대, 연속 흐름) ──
-  // ── 내포장 (호기별 분할) ──
-  // maxLines=2 제품: 3·4호기 (또는 1·2호기) → 가동된 호기마다 각자 막대
-  // maxLines=1 제품: 호기 1대만
-  const productInfo_render = inp.productInfo || TT_PRODUCT_INFO['fc'];
-  const availableLines = productInfo_render.availableLines || [1];
-  const eaPerLine = sim.eaPerMinPerLine || inp.pPackEa || 25;
-
-  // 호기별 막대 그리기
-  for (let lineIdx = 0; lineIdx < availableLines.length; lineIdx++) {
-    const lineNum = availableLines[lineIdx]; // 3, 4 (또는 1, 2)
-    const segs = (sim.lineSegments && sim.lineSegments[lineIdx + 1]) || [];
-    bars += rowLabel(yCursor, BAR_H, `내포장 ${lineNum}호기`);
-    segs.forEach(seg => {
-      const segMin = seg.end - seg.start;
-      const segEa = Math.round(segMin * eaPerLine);
-      bars += segBar(yCursor, BAR_H, seg.start, seg.end, '#7F77DD',
-        `${inp.wkPack||6}명 · ${eaPerLine}EA/분`,
-        `내포장 ${lineNum}호기`,
-        `시각: ${ttFmt(seg.start)}~${ttFmt(seg.end)} (${segMin}분)|인원: ${inp.wkPack||6}명 + 이송 ${inp.wkTrans||2}명|속도: ${eaPerLine} EA/분|이 호기 산출: ${segEa.toLocaleString()} EA`);
-    });
-    // 막대 끝 라벨
-    if (segs.length > 0) {
-      const lastEnd = segs[segs.length - 1].end;
-      const packBaseYield = (inp.yPre * sim.cookYield * inp.yCrush * TT_PACK_YIELD) / 1000000;
-      if (lineIdx === 0) {
-        bars += `<text x="${xPos(lastEnd) + 6}" y="${yCursor + BAR_H/2 + 4}" text-anchor="start" font-size="10" fill="#7F77DD" font-weight="600">${packBaseYield.toFixed(1)}%</text>`;
-      }
-    }
-    yCursor += ROW_H;
-  }
+  // 시작: packStartMin (13:30 + 파쇄 산출 200kg 이상 조건)
+  // 종료: packEndMin (자체 처리 종료 vs 마지막 산출분 통과, 둘 중 늦은쪽)
+  bars += rowLabel(yCursor, BAR_H, '내포장');
+  bars += segBar(yCursor, BAR_H, sim.packStartMin, sim.packEndMin, '#7F77DD',
+    `${inp.wkPack}명 · ${inp.pPackEa}EA/분`,
+    '내포장',
+    `시각: ${ttFmt(sim.packStartMin)}~${ttFmt(sim.packEndMin)}|인원: ${inp.wkPack}명|속도: ${inp.pPackEa} EA/분 (기계 1대 한도)|총: ${sim.pouches.toLocaleString()} EA|시작 조건: 13:30 + 파쇄 산출 ≥ 200kg|자체 처리 종료: ${ttFmt(sim.packSelfEndMin)}|마지막 산출분 통과: ${ttFmt(sim.lastBatchPackEndMin)} (둘 중 늦은쪽)`);
+  // 막대 끝 라벨: 원육 기준 누적 수율 (내포장)
+  // 원육 → 전처리 → 자숙 → 파쇄 → 내포장(TT_PACK_YIELD)
+  const packBaseYield = (inp.yPre * sim.cookYield * inp.yCrush * TT_PACK_YIELD) / 1000000;
+  bars += `<text x="${xPos(sim.packEndMin) + 6}" y="${yCursor + BAR_H/2 + 4}" text-anchor="start" font-size="10" fill="#7F77DD" font-weight="600">${packBaseYield.toFixed(1)}%</text>`;
+  yCursor += ROW_H;
 
   // ── 레토르트 (각 회차별 - EA 균등 분배) ──
   for (let i = 0; i < sim.retortCycles; i++) {
@@ -1671,8 +1456,7 @@ function ttRender() {
   // ── 공정별 "왜 저 시간인지" 설명 카드 ──────────────────
   const lastTankKg = TT_FIXED.tankKg * sim.cookYield / 100;
   const lastTankCrushMin = Math.round(lastTankKg / (inp.pCrush * inp.wkPackPeak / 60));
-  const kgPerEaForRender = (inp.productInfo && inp.productInfo.kgPerEa) ? inp.productInfo.kgPerEa : TT_PACK_KG_PER_POUCH;
-  const lastPackEa = Math.round(lastTankKg * inp.yCrush / 100 / kgPerEaForRender);
+  const lastPackEa = Math.round(lastTankKg * inp.yCrush / 100 / TT_PACK_KG_PER_POUCH);
   const lastBatchPackMin = Math.round(lastPackEa / inp.pPackEa);
 
   // 인원 변화에 따라 시간이 어떻게 영향받는지 안내 (레토르트는 인원 무관)

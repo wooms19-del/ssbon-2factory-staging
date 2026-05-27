@@ -83,7 +83,6 @@
     <div class="ti" onclick="showTab('d','recipe')">레시피</div>
     <div class="ti" onclick="showTab('d','timetable')">타임테이블</div>
     <div class="ti" onclick="showTab('d','timetable_test')">타임테이블 (테스트)</div>
-    <div class="ti" onclick="showTab('d','production_plan')" style="background:#fef3c7;color:#92400e;font-weight:600">📅 생산 계획 <span style="background:#fbbf24;color:#000;border-radius:3px;padding:1px 6px;font-size:10px;font-weight:700;margin-left:3px">NEW</span></div>
     <div class="ti" onclick="showTab('d','settings')">설정</div>
   </div>
 </div>
@@ -98,7 +97,7 @@
 </div>
 
 <div class="main" id="mscroll">
-<div class="inner">
+<div class="inner" style="max-width:1080px;margin:0 auto">
 
 <!-- ===== 해동기 (바코드 스캔) ===== -->
 <div class="pg" id="p-schedule" style="padding:0"></div>
@@ -335,16 +334,6 @@
     <div style="overflow-x:auto;padding:0">
       <table id="attWeekTable" style="width:100%;border-collapse:collapse;font-size:12px"></table>
     </div>
-    <!-- 날짜 범위 다운로드 -->
-    <div style="border-top:var(--br);padding:12px 14px">
-      <div style="font-size:12px;font-weight:600;color:var(--g5);margin-bottom:8px">📥 날짜 범위 다운로드 (서명표+공수표)</div>
-      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-        <input type="date" id="attDlFrom" style="padding:6px 8px;border-radius:6px;border:1px solid var(--g3);font-size:13px">
-        <span style="color:var(--g5);font-size:13px">~</span>
-        <input type="date" id="attDlTo" style="padding:6px 8px;border-radius:6px;border:1px solid var(--g3);font-size:13px">
-        <button class="btn bp" style="padding:6px 14px;font-size:13px" onclick="attDownloadRange()">다운로드</button>
-      </div>
-    </div>
   </div>
 
   <!-- 직원 관리 탭 -->
@@ -495,7 +484,6 @@
         <button type="button" onclick="setTlMode('integrated')" id="tlModeIntegrated" class="btn bo bsm" style="font-size:11px;padding:3px 9px">통합</button>
         <button type="button" onclick="setTlMode('byCart')" id="tlModeByCart" class="btn bo bsm" style="font-size:11px;padding:3px 9px">카트별</button>
         <button type="button" onclick="exportTimeline()" class="dnbtn" title="타임라인 엑셀 다운로드" style="font-size:11px;padding:3px 9px;background:#fff7e6;border:1px solid #ffb366;color:#e67e22;font-weight:600;border-radius:4px;margin-left:6px">📥 엑셀</button>
-        <button type="button" onclick="exportLotTrace()" title="로트 추적표 다운로드" style="font-size:11px;padding:3px 9px;background:#f0fdf4;border:1px solid #86efac;color:#15803d;font-weight:600;border-radius:4px;margin-left:4px">🔗 로트추적표</button>
       </div>
     </div>
     <div class="tlw" id="tlWrap"><div class="emp">데이터 없음</div></div>
@@ -679,9 +667,6 @@
     </div>
     <div id="trRes"></div>
   </div>
-  <div class="card" id="trTimelineCard" style="display:none;margin-top:12px">
-    <div id="trTimeline"></div>
-  </div>
   <!-- 세부 내용 카드 (클릭 시 표시) -->
   <div class="card" id="trDetail" style="display:none">
     <div class="ct" id="trDetailTitle"></div>
@@ -708,38 +693,15 @@
             <option value="month">이번 달</option>
             <option value="week">최근 7일</option>
             <option value="today">오늘</option>
-            <option value="custom">사용자 지정</option>
           </select>
         </label>
 
-        <label id="tt-custom-from-wrap" style="display:none;flex-direction:column;gap:3px">
-          <span>시작</span>
-          <input type="date" id="tt-custom-from" onchange="ttPeriodChange()" style="height:30px;font-size:12px;padding:0 6px;border:0.5px solid var(--color-border-secondary);border-radius:6px">
-        </label>
-        <label id="tt-custom-to-wrap" style="display:none;flex-direction:column;gap:3px">
-          <span>종료</span>
-          <input type="date" id="tt-custom-to" onchange="ttPeriodChange()" style="height:30px;font-size:12px;padding:0 6px;border:0.5px solid var(--color-border-secondary);border-radius:6px">
-        </label>
-
         <label style="display:flex;flex-direction:column;gap:3px">
-          <span>🥩 원육 종류</span>
+          <span>📦 제품 분류</span>
           <select id="tt-meat" onchange="ttPeriodChange()" style="height:30px;font-size:12px;padding:0 8px;border:0.5px solid var(--color-border-secondary);border-radius:6px;background:var(--color-background-primary)">
-            <option value="홍두깨">홍두깨</option>
-            <option value="우둔">우둔</option>
-            <option value="설도">설도</option>
-          </select>
-        </label>
-
-        <label style="display:flex;flex-direction:column;gap:3px">
-          <span>📦 가공 제품</span>
-          <select id="tt-product" onchange="ttPeriodChange()" style="height:30px;font-size:12px;padding:0 8px;border:0.5px solid var(--color-border-secondary);border-radius:6px;background:var(--color-background-primary)">
-            <option value="fc">FC 장조림 3KG</option>
-            <option value="sig">시그니처 장조림 130g</option>
-            <option value="sig_mart">시그니처 장조림 130g 마트용</option>
-            <option value="costco">코스트코 장조림 170g</option>
-            <option value="trader">트레이더스 장조림 460g</option>
-            <option value="mini5">미니쇠고기장조림 70g 5입</option>
-            <option value="mini_each">미니쇠고기장조림 70g 낱개</option>
+            <option value="홍두깨">FC 제품 (홍두깨)</option>
+            <option value="우둔">비-FC (우둔)</option>
+            <option value="설도">비-FC (설도)</option>
           </select>
         </label>
 
@@ -793,7 +755,7 @@
             <select id="tt-meat2" onchange="ttRender()" style="height:30px;font-size:12px;padding:0 8px;border:0.5px solid var(--color-border-secondary);border-radius:6px;background:var(--color-background-primary)">
               <option value="trader">트레이더스 460g (380EA/대차, 120분)</option>
               <option value="sig">시그니처 130g (1,024EA/대차, 120분)</option>
-              <option value="mini5">미니 70g 5개입 (1,280EA/대차, 120분)</option>
+              <option value="mini">미니 70g 5개입 (1,280EA/대차, 120분)</option>
             </select>
           </label>
           <label style="display:flex;flex-direction:column;gap:3px">
@@ -803,8 +765,8 @@
           <label style="display:flex;flex-direction:column;gap:3px">
             <span>⏱ 순서</span>
             <select id="tt-order" onchange="ttRender()" style="height:30px;font-size:12px;padding:0 8px;border:0.5px solid var(--color-border-secondary);border-radius:6px;background:var(--color-background-primary)">
-              <option value="fc-first">FC → FP</option>
-              <option value="other-first">FP → FC</option>
+              <option value="fc-first">FC 먼저 → 두 번째</option>
+              <option value="other-first">두 번째 먼저 → FC</option>
             </select>
           </label>
           <label style="display:flex;flex-direction:column;gap:3px">
@@ -1003,18 +965,11 @@
           <!-- FP (시그 등) 입력 -->
           <div style="flex-basis:100%;font-size:12px;font-weight:600;color:#7F77DD;margin-bottom:2px">📦 FP (두 번째 제품)</div>
           <label style="display:flex;flex-direction:column;gap:3px">
-            <span>분석 기간</span>
-            <select id="ttt-period2" onchange="tttAutoAnalyzeOther()" style="height:30px;font-size:12px;padding:0 8px;border:0.5px solid var(--color-border-secondary);border-radius:6px;background:var(--color-background-primary)">
-              <option value="7">최근 7일</option>
-              <option value="30" selected>최근 30일</option>
-              <option value="90">최근 90일</option>
-            </select>
-          </label>
-          <label style="display:flex;flex-direction:column;gap:3px">
             <span>원육 종류</span>
             <select id="ttt-meattype2" onchange="tttAutoAnalyzeOther()" style="height:30px;font-size:12px;padding:0 8px;border:0.5px solid var(--color-border-secondary);border-radius:6px;background:var(--color-background-primary)">
               <option value="우둔">우둔</option>
               <option value="설도">설도</option>
+              <option value="코코">코코</option>
               <option value="기타">기타</option>
             </select>
           </label>
@@ -1030,6 +985,14 @@
             <span>원육량 (kg)</span>
             <input type="number" id="ttt-kg2" value="500" min="0" max="6000" step="50" oninput="tttRender()" style="width:90px;height:30px;font-size:13px;padding:0 8px;border:0.5px solid var(--color-border-secondary);border-radius:6px">
           </label>
+          <label style="display:flex;flex-direction:column;gap:3px">
+            <span>분석 기간</span>
+            <select id="ttt-period2" onchange="tttAutoAnalyzeOther()" style="height:30px;font-size:12px;padding:0 8px;border:0.5px solid var(--color-border-secondary);border-radius:6px;background:var(--color-background-primary)">
+              <option value="7">최근 7일</option>
+              <option value="30" selected>최근 30일</option>
+              <option value="90">최근 90일</option>
+            </select>
+          </label>
           <div style="display:flex;flex-direction:column;gap:3px;font-size:11px;color:var(--color-text-tertiary)">
             <span>FP 자동값 (DB 평균)</span>
             <span id="ttt-fp-auto-summary">—</span>
@@ -1038,12 +1001,16 @@
           <label style="display:flex;flex-direction:column;gap:3px">
             <span>⏱ 순서</span>
             <select id="ttt-order" onchange="tttRender()" style="height:30px;font-size:12px;padding:0 8px;border:0.5px solid var(--color-border-secondary);border-radius:6px;background:var(--color-background-primary)">
-              <option value="other-first" selected>FP → FC</option>
-              <option value="fc-first">FC → FP</option>
+              <option value="fc-first">FC 먼저 → FP</option>
+              <option value="other-first">FP 먼저 → FC</option>
             </select>
           </label>
+          <label style="display:flex;flex-direction:column;gap:3px">
+            <span>내포장 라인 수</span>
+            <input type="number" id="ttt-pk-lines" value="2" min="1" max="2" step="1" oninput="tttRender()" style="width:60px;height:30px;font-size:13px;padding:0 8px;border:0.5px solid var(--color-border-secondary);border-radius:6px">
+          </label>
           <div style="font-size:10.5px;color:var(--color-text-tertiary);line-height:1.5;flex-basis:100%;margin-top:2px">
-            ※ 내포장 호기 자동 결정 (인원 가용 시 듀얼). 한 라인당 이송 2명 자동 차감. 가압탱크(5·6호) 비-FC 자숙(150분) 우선 점유.
+            ※ 한 라인당 이송 작업자 2명 자동 차감. 가압탱크(5·6호) 비-FC 자숙(150분) 우선 점유.
           </div>
 
           <!-- FP 공정별 인원·생산성·수율 카드 -->
@@ -1056,7 +1023,7 @@
                 <div style="font-size:12px;font-weight:600;color:#185FA5;margin-bottom:8px">🔵 전처리 (FP)</div>
                 <div style="display:flex;flex-direction:column;gap:8px">
                   <label style="font-size:11px;color:var(--color-text-secondary)">인원
-                    <input type="number" id="ttt-fp-wk-pre" value="7" min="1" max="20" oninput="tttRender()" style="width:100%;height:28px;font-size:12px;padding:0 8px;border:0.5px solid var(--color-border-secondary);border-radius:5px">
+                    <input type="number" id="ttt-fp-wk-pre" value="10" min="1" max="20" oninput="tttRender()" style="width:100%;height:28px;font-size:12px;padding:0 8px;border:0.5px solid var(--color-border-secondary);border-radius:5px">
                   </label>
                   <label style="font-size:11px;color:var(--color-text-secondary)">공정수율 (%)
                     <div style="display:flex;gap:4px;align-items:center">
@@ -1134,7 +1101,7 @@
           <div style="font-size:12px;font-weight:600;color:#185FA5;margin-bottom:8px">🔵 전처리</div>
           <div style="display:flex;flex-direction:column;gap:8px">
             <label style="font-size:11px;color:var(--color-text-secondary)">인원
-              <input type="number" id="ttt-wk-pre" value="7" min="1" max="20" oninput="tttRender()" style="width:100%;height:28px;font-size:12px;padding:0 8px;border:0.5px solid var(--color-border-secondary);border-radius:5px">
+              <input type="number" id="ttt-wk-pre" value="10" min="1" max="20" oninput="tttRender()" style="width:100%;height:28px;font-size:12px;padding:0 8px;border:0.5px solid var(--color-border-secondary);border-radius:5px">
             </label>
             <label style="font-size:11px;color:var(--color-text-secondary)">공정수율 (%)
               <div style="display:flex;gap:4px;align-items:center">
@@ -1295,9 +1262,6 @@
     </div>
   </div>
 </div>
-
-<!-- ===== 생산 계획 시뮬레이션 (NEW) ===== -->
-<div class="pg" id="p-production_plan"></div>
 
 <div class="pg" id="p-settings">
   <div class="card">
@@ -1600,34 +1564,33 @@
 <!-- Kakao JavaScript SDK -->
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.7.4/kakao.min.js" integrity="sha384-DKYJZ8NLiK8MN4/C5P2dtSmLQ4KwPaoqAfyA/DfmEc1VDxu4yyC7wy6K1Hs90nka" crossorigin="anonymous"></script>
 <script>if(window.Kakao){Kakao.init('3c36e1a3bb9ea2d4445a5cd30dd906c1');}</script>
-<script src="js/common.js?v=1779413330"></script>
+<script src="js/common.js?v=1779413772"></script>
 <script src="js/alt_calc.js?v=1779183534"></script>
-<script src="js/monthly_production.js?v=1779329700"></script>
+<script src="js/monthly_production.js?v=1779158282"></script>
 <script src="js/performance.js?v=1779181174"></script>
-<script src="js/barcode.js?v=1779151475"></script>
-<script src="js/thawing.js?v=1778659000"></script>
+<script src="js/barcode.js?v=1779843539"></script>
+<script src="js/thawing.js?v=1779780183"></script>
 <script src="js/preprocess_v2.js?v=1778596509"></script>
 <script src="js/process_save.js?v=1778594572"></script>
 <script src="js/cooking_v2.js?v=1778596916"></script>
 <script src="js/shredding_v2.js?v=1778634366"></script>
 <script src="js/packing.js?v=1778660000"></script>
 <script src="js/csv_upload.js?v=1778129561"></script>
-<script src="js/daily_report.js?v=1779271000"></script>
-<script src="js/analysis.js?v=1779849186"></script>
-<script src="js/ai_analysis.js?v=1779439272"></script>
+<script src="js/daily_report.js?v=1778546951"></script>
+<script src="js/analysis.js?v=1779849399"></script>
+<script src="js/ai_analysis.js?v=1779236127"></script>
 <script src="js/dashboard.js?v=1778129561"></script>
-<script src="js/trace.js?v=1779325000"></script>
+<script src="js/trace.js?v=1778809200"></script>
 <script src="js/outerpacking.js?v=1779179921"></script>
 <script src="js/settings.js?v=1778129561"></script>
 <script src="js/kakao.js?v=1778129561"></script>
-<script src="js/app.js?v=1779408600"></script>
+<script src="js/app.js?v=1779780469"></script>
 <script src="js/schedule.js?v=1779409601"></script>
-<script src="js/attendance.js?v=1779850010"></script>
+<script src="js/attendance.js?v=1779848907"></script>
 <script src="js/timepicker.js?v=1778129561"></script>
 <script src="js/globals.js?v=1778599476"></script>
-<script src="js/stock.js?v=1779496595"></script>
-<script src="js/timetable.js?v=1779184888"></script>
-<script src="js/timetable_test.js?v=1779241896"></script>
-<script src="js/production_plan.js?v=1779091914"></script>
+<script src="js/stock.js?v=1779847175"></script>
+<script src="js/timetable.js?v=1778495630"></script>
+<script src="js/timetable_test.js?v=1778560911"></script>
 </body>
 </html>

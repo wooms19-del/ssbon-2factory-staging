@@ -112,11 +112,13 @@ async function renderThawWaiting(){
 
   const byPart={};
   waiting.forEach(b=>{
-    if(!byPart[b.part]) byPart[b.part]={kg:0,count:0,ystCount:0,barcodes:[]};
+    if(!byPart[b.part]) byPart[b.part]={kg:0,count:0,ystCount:0,ystKg:0,todCount:0,todKg:0,barcodes:[]};
     const bKg=parseFloat(b.weightKg)||0;
     byPart[b.part].kg+=bKg;
     byPart[b.part].count++;
-    if(String(b.date||'').slice(0,10)===yesterday) byPart[b.part].ystCount++;
+    const bd=String(b.date||'').slice(0,10);
+    if(bd===yesterday){ byPart[b.part].ystCount++; byPart[b.part].ystKg+=bKg; }
+    else { byPart[b.part].todCount++; byPart[b.part].todKg+=bKg; }
     byPart[b.part].barcodes.push(b);
   });
 
@@ -130,13 +132,22 @@ async function renderThawWaiting(){
 
   const totalKg=r2(Object.values(byPart).reduce((s,v)=>s+v.kg,0));
   const totalYst=Object.values(byPart).reduce((s,v)=>s+v.ystCount,0);
+  const totalYstKg=r2(Object.values(byPart).reduce((s,v)=>s+v.ystKg,0));
+  const totalTodKg=r2(Object.values(byPart).reduce((s,v)=>s+v.todKg,0));
   el.innerHTML=Object.entries(byPart).map(([part,v])=>`
-    <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--g2)">
-      <span style="font-size:14px;font-weight:600">${part}</span>
-      <span style="font-size:14px;color:var(--g5)">${v.count}박스 · <b style="color:var(--p)">${r2(v.kg).toFixed(2)}kg</b>${v.ystCount>0?` <span style="font-size:11px;color:var(--g4)">(전일이월 ${v.ystCount}박스)</span>`:''}</span>
+    <div style="padding:10px 0;border-bottom:1px solid var(--g2)">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <span style="font-size:14px;font-weight:600">${part}</span>
+        <span style="font-size:14px;color:var(--g5)">${v.count}박스 · <b style="color:var(--p)">${r2(v.kg).toFixed(2)}kg</b></span>
+      </div>
+      ${v.ystCount>0?`
+      <div style="display:flex;gap:14px;margin-top:6px;font-size:12px">
+        <span style="color:#d97706">↩ 어제(이월): ${v.ystCount}박스 · ${r2(v.ystKg).toFixed(2)}kg</span>
+        <span style="color:#1d4ed8">📅 오늘: ${v.todCount}박스 · ${r2(v.todKg).toFixed(2)}kg</span>
+      </div>`:''}
     </div>`).join('')+
     `<div style="display:flex;justify-content:space-between;padding:10px 0;font-weight:700">
-      <span>합계${totalYst>0?` <span style="font-size:11px;color:var(--g4);font-weight:400">(전일이월 ${totalYst}박스 포함)</span>`:''}</span><span style="color:var(--p);font-size:16px">${totalKg.toFixed(2)}kg</span>
+      <span>합계${totalYst>0?` <span style="font-size:11px;color:#d97706;font-weight:400">(어제이월 ${totalYst}박스 ${totalYstKg.toFixed(2)}kg + 오늘 ${totalTodKg.toFixed(2)}kg)</span>`:''}</span><span style="color:var(--p);font-size:16px">${totalKg.toFixed(2)}kg</span>
     </div>`;
 
   document.getElementById('twPartChecks').innerHTML=
