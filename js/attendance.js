@@ -19,6 +19,47 @@ const ATT_NEEDS_OUT = {overtime:true};
 
 let _attDate='', _attRecs={}, _attEmps=[], _attSubTab='input', _attSelStatus='';
 
+// ── 공휴일(휴무) 자동 처리 ───────────────────────────────────────
+// _attHolidays: { 'YYYY-MM-DD': '공휴일명' }  Firestore _config/holidays 에 캐싱
+let _attHolidays = null;
+
+// Firestore에서 공휴일 목록 로드 (없으면 외부 API로 채운 뒤 저장). 디바이스 공유.
+async function _loadHolidays(){
+  if(_attHolidays) return _attHolidays;
+  try{
+    if(typeof db==='undefined'||!db){ _attHolidays={}; return _attHolidays; }
+    var doc = await db.collection('_config').doc('holidays').get();
+    var map = (doc.exists && doc.data() && doc.data().map) ? doc.data().map : null;
+    var thisYear = new Date().getFullYear();
+    // 올해 데이터가 비어있으면 API에서 가져와 채움
+    var hasThisYear = map && Object.keys(map).some(function(d){ return d.indexOf(thisYear+'-')===0; });
+    if(!hasThisYear){
+      map = map || {};
+      var fetched = await _fetchHolidaysFromApi(thisYear);
+      Object.assign(map, fetched);
+      try{ await db.collection('_config').doc('holidays').set({ map: map, updatedAt: new Date().toISOString() }); }
+      catch(e){ console.warn('[holidays] 저장 실패', e); }
+    }
+    _attHolidays = map || {};
+  }catch(e){ console.warn('[holidays] 로드 실패', e); _attHolidays={}; }
+  return _attHolidays;
+}
+
+// 외부 무료 API(date.nager.at, 키 불필요)에서 해당 연도 한국 공휴일 가져옴
+async function _fetchHolidaysFromApi(year){
+  var out = {};
+  try{
+    var res = await fetch('https://date.nager.at/api/v3/PublicHolidays/'+year+'/KR');
+    if(!res.ok) return out;
+    var arr = await res.json();
+    arr.forEach(function(h){ if(h && h.date) out[h.date] = h.localName || h.name || '공휴일'; });
+  }catch(e){ console.warn('[holidays] API 실패', e); }
+  return out;
+}
+
+function _isHoliday(date){ return !!(_attHolidays && _attHolidays[date]); }
+function _holidayName(date){ return (_attHolidays && _attHolidays[date]) || ''; }
+
 async function initAttendance(){
   _attDate=tod();
   // 1) Firestore 마스터 우선 — 디바이스 간 공유
@@ -50,7 +91,7 @@ async function initAttendance(){
     await _saveAttEmps();
   }
 
-  _loadAttDate(_attDate);
+  await _loadAttDate(_attDate);
 }
 
 // Firestore + localStorage 동시 저장 (디바이스 간 공유 보장)
@@ -72,11 +113,14 @@ async function _loadAttDate(date){
   var lbl=document.getElementById('attDateLabel');
   if(lbl)lbl.textContent=_attFmtLabel(date);
 
+  await _loadHolidays();
+
   // Firebase 우선 - 다른 PC/브라우저에서도 데이터 보존
   try{
     var doc = await firebase.firestore().collection('attendance').doc(date).get();
     if(doc.exists){
       _attRecs = doc.data().records || {};
+      _applyAutoHoliday(date);
       localStorage.setItem(_attDateKey(date), JSON.stringify(_attRecs));
       _renderAttAll();
       return;
@@ -86,7 +130,21 @@ async function _loadAttDate(date){
   // Firebase에 없으면 localStorage 폴백
   var raw=localStorage.getItem(_attDateKey(date));
   _attRecs=raw?JSON.parse(raw):{};
+  _applyAutoHoliday(date);
   _renderAttAll();
+}
+
+// 공휴일이면, 아직 아무 기록 없는 직원을 자동 '휴무'로 채움.
+// 이미 출근/결근/연차 등 찍힌 사람은 건드리지 않음 (나온 사람 기록 보존).
+function _applyAutoHoliday(date){
+  if(!_isHoliday(date)) return;
+  (_attEmps||[]).forEach(function(e){
+    var r = _attRecs[e.name];
+    var hasRec = r && ((r.tags && r.tags.length) || r.inTime || r.outTime || (r.status && r.status!=='normal'));
+    if(!hasRec){
+      _attRecs[e.name] = { tags:['holiday'], inTime:'', outTime:'' };
+    }
+  });
 }
 function _attFmtLabel(d){
   var days=['일','월','화','수','목','금','토'];
