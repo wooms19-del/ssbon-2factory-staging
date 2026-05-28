@@ -34,10 +34,8 @@ function setModePerf(){
 }
 window.setModePerf = setModePerf;
 
-// ── inner 폭 원복 (다른 탭으로 빠져나갈 때) ────────────────────
+// ── 탭 빠져나갈 때 자동 갱신 타이머 정리 ──────────────────────
 function _perfRestoreInner(){
-  var inner = document.querySelector('.main .inner') || document.querySelector('.inner');
-  if(inner){ inner.style.maxWidth=''; inner.style.padding=''; }
   if(_perfTimer){ clearInterval(_perfTimer); _perfTimer=null; }
 }
 
@@ -93,11 +91,9 @@ function _perfRenderShell(){
   var ym=_perfYm||_perfTodayYm();
   var y=ym.slice(0,4), mIdx=parseInt(ym.slice(5))-1;
   var lbl=y+'년 '+_perfMonths()[mIdx];
-  // 부모 .inner의 max-width 제거 (실적관리 활성 시) - 한페이지 꽉 차게
-  var inner = document.querySelector('.main .inner') || document.querySelector('.inner');
-  if(inner){ inner.style.maxWidth='none'; inner.style.padding='4px 6px'; }
   pg.innerHTML =
     '<style>'+
+      '#p-performance{width:100vw;max-width:100vw;margin-left:calc(-50vw + 50%);padding:4px 6px;box-sizing:border-box}'+
       '#p-performance .pf-card{padding:8px;background:var(--c);border:var(--br);border-radius:6px;margin-bottom:6px}'+
       '#p-performance table.perf-tbl{width:100%;border-collapse:collapse;font-size:.85rem;table-layout:auto}'+
       '#p-performance table.perf-tbl thead th{background:#1F4E79;color:#fff;font-weight:600;text-align:center;padding:6px 4px;border:1px solid #999;white-space:nowrap;position:sticky;top:0;z-index:2;line-height:1.25}'+
@@ -413,14 +409,24 @@ function _perfBuildRows(th, pp, ck, sh, pk, op, sc){
       var src = (t==='_') ? _dataAll(dt) : _dataByType(dt, t);
       // 부위 명시했으나 그 부위 데이터 0이면 → 그날 전체 fallback
       if(t!=='_' && src.rmKg===0 && src.ppKg===0) src = _dataAll(dt);
-      // ★ eaDisp 기준 분배 (월단위 화면과 동일)
-      var totalMeat = group.reduce(function(s,p){return s + p.eaDisp * (_prodKgea(p.product)||0.05);}, 0);
+      // ★ noMeat(메추리알 등)는 원육 공정 흐름 밖 — 공정 kg 분배에서 제외(0)
+      function _isNoMeat(name){
+        var p = (typeof L!=='undefined' && L && L.products) ? L.products.find(function(x){return x.name===name;}) : null;
+        return !!(p && p.noMeat);
+      }
+      // ★ eaDisp 기준 분배 (월단위 화면과 동일) — noMeat 제품은 분모/분자에서 제외
+      var totalMeat = group.reduce(function(s,p){return s + (_isNoMeat(p.product)?0:p.eaDisp * (_prodKgea(p.product)||0.05));}, 0);
       group.forEach(function(p){
+        if(_isNoMeat(p.product)){
+          allocMap[dt+'|'+p.product] = {rmKg:0, ppKg:0, ckKg:0, shKg:0};
+          return;
+        }
         var kgea = _prodKgea(p.product);
         var ratio;
-        if(group.length===1) ratio = 1;
+        var meatCount = group.filter(function(g){return !_isNoMeat(g.product);}).length;
+        if(meatCount===1) ratio = 1;
         else if(totalMeat>0) ratio = (p.eaDisp * (kgea||0.05)) / totalMeat;
-        else ratio = 1/group.length;
+        else ratio = 1/Math.max(meatCount,1);
         allocMap[dt+'|'+p.product] = {
           rmKg: src.rmKg * ratio,
           ppKg: src.ppKg * ratio,

@@ -370,6 +370,6 @@ async function saveCkEnd(id){
   else { toast('저장 실패 - 로컬에만 저장됨','d'); }
 
   renderCkPending();
-  renderPL('cooking');
+  renderPL('cooking');   // ★ fbSave 완료 후 렌더해야 fbId가 수정 버튼에 정확히 반영
   if(typeof sh2Render==='function') sh2Render();
 }

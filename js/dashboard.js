@@ -92,7 +92,7 @@ async function renderDashboard(fromDate, toDate){
   const pkKg=r2(pk.reduce((s,r)=>{const p=L.products.find(x=>x.name===r.product);return s+(p?(parseFloat(r.ea)||0)*p.kgea:0);},0));
   const totalMH=r2(sumMH(pp)+sumMH(ck)+sumMH(sh)+sumMH(pk));
   const yld=rmKg>0?r2(pkKg/rmKg*100):0;
-  const defRate=totalEA>0?r2(defEA/totalEA*100):0;
+  const defRate=(totalEA+defEA)>0?r2(defEA/(totalEA+defEA)*100):0;
   const eaMH=totalMH>0?r2(totalEA/totalMH):0;
 
   // KPI
@@ -334,7 +334,7 @@ function renderDbProdTable(pk,rmKg){
   tbody.innerHTML=Object.entries(byProd).map(([prod,v])=>{
     totEA+=v.ea;totDef+=v.defect;totMH+=v.mh;totKg+=v.kg;
     const yld=rmKg>0?r2(v.kg/rmKg*100).toFixed(2)+'%':'—';
-    const defR=v.ea>0?r2(v.defect/v.ea*100).toFixed(2)+'%':'—';
+    const defR=(v.ea+v.defect)>0?r2(v.defect/(v.ea+v.defect)*100).toFixed(2)+'%':'—';
     const eaMH=v.mh>0?r2(v.ea/v.mh).toFixed(1):'—';
     const ach=target>0?r2(v.ea/target*100).toFixed(1)+'%':'—';
     return `<tr><td style="text-align:left">${prod}</td>
@@ -342,7 +342,7 @@ function renderDbProdTable(pk,rmKg){
       <td style="text-align:center;font-weight:600;color:var(--p)">${v.ea.toLocaleString()}</td>
       <td style="text-align:center;color:var(--p)">${ach}</td>
       <td style="text-align:center;color:var(--w)">${yld}</td>
-      <td style="text-align:center;color:${v.ea>0&&r2(v.defect/v.ea*100)>2?'var(--d)':'var(--s)'}">${defR}</td>
+      <td style="text-align:center;color:${(v.ea+v.defect)>0&&r2(v.defect/(v.ea+v.defect)*100)>2?'var(--d)':'var(--s)'}">${defR}</td>
       <td style="text-align:center">${eaMH}</td></tr>`;
   }).join('')||'<tr><td colspan="7" style="text-align:center;color:var(--g4);padding:1rem">데이터 없음</td></tr>';
   if(tfoot) tfoot.innerHTML=`<tr style="font-weight:600;border-top:1px solid var(--g2)">
@@ -552,7 +552,7 @@ async function renderProduct(){
 
   const labels=Object.keys(byProd);
   const eaData=labels.map(k=>byProd[k].ea);
-  const defData=labels.map(k=>byProd[k].ea>0?r2(byProd[k].defect/byProd[k].ea*100):0);
+  const defData=labels.map(k=>(byProd[k].ea+byProd[k].defect)>0?r2(byProd[k].defect/(byProd[k].ea+byProd[k].defect)*100):0);
 
   const c1=document.getElementById('c_pe');
   const c2=document.getElementById('c_pd');
@@ -560,7 +560,7 @@ async function renderProduct(){
   if(c2){if(_prodDefChart)_prodDefChart.destroy();_prodDefChart=new Chart(c2,{type:'bar',data:{labels,datasets:[{label:'불량률%',data:defData,backgroundColor:'rgba(224,36,36,.7)'}]},options:{responsive:true,maintainAspectRatio:false}});}
 
   const tbl=document.getElementById('pdTbl');
-  if(tbl) tbl.innerHTML=labels.map(k=>`<tr><td>${k}</td><td class="tr">${byProd[k].ea.toLocaleString()}</td><td class="tr">${byProd[k].ea>0?r2(byProd[k].defect/byProd[k].ea*100)+'%':'-'}</td><td class="tr">${byProd[k].days.size}일</td></tr>`).join('') || '<tr><td colspan="4" class="emp">데이터 없음</td></tr>';
+  if(tbl) tbl.innerHTML=labels.map(k=>`<tr><td>${k}</td><td class="tr">${byProd[k].ea.toLocaleString()}</td><td class="tr">${(byProd[k].ea+byProd[k].defect)>0?r2(byProd[k].defect/(byProd[k].ea+byProd[k].defect)*100)+'%':'-'}</td><td class="tr">${byProd[k].days.size}일</td></tr>`).join('') || '<tr><td colspan="4" class="emp">데이터 없음</td></tr>';
 }
 
 // ============================================================

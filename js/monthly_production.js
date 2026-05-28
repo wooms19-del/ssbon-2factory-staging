@@ -890,9 +890,13 @@
             r.shPersonHours = _r2(shItem.personHours);
             r.shWorkers = shItem.hours>0 ? r1(shItem.personHours/shItem.hours) : 0;
             r._grpMeatKg = grpMeatKg;
-            // ★ 생산성 포장/전체 병합 표시용 — 첫 행에 그룹 포장 인시 합 세팅
-            // (자기 행 pkPersonHours만 쓰면 시그니처만의 시간으로 나뉘어 과대 표시됨)
-            r.pkPersonHours = _r2(grpPkPH);
+            // ★ 생산성은 그룹 합 인시(_grpPkPH)로 계산, 표시용 pkPersonHours는 자기 행 값 유지
+            // (옛: r.pkPersonHours=grpPkPH로 덮어 같은 type 다제품 인시가 이중 계상됨)
+            r._grpRmTotal = rmTotal;
+            r._grpPpPH = ppItem.personHours;
+            r._grpCkPH = ckItem.personHours;
+            r._grpShPH = shItem.personHours;
+            r._grpPkPH = grpPkPH;
           } else {
             __PART_KEYS.forEach(function(k){ r[k] = 0; });
           }
@@ -943,8 +947,8 @@
       sum.shPersonHours += r.shPersonHours||0;
       sum.pkEa += r.pkEa||0; sum.pkHours += r.pkHours||0; sum.pkWorkers += r.pkWorkers||0;
       sum.pkPersonHours += r.pkPersonHours||0;
-      sum.meatKg += (r.pkEa||0) * (r.kgea||0);
-      sum.prodKg += (r.pkEa||0) * (r.kgTot||0);
+      sum.meatKg += (r.meatKg != null && r.meatKg !== 0) ? r.meatKg : (r.pkEa||0) * (r.kgea||0);
+      sum.prodKg += (r.prodKg != null && r.prodKg !== 0) ? r.prodKg : (r.pkEa||0) * (r.kgTot||0);
       sum.pouchUsed += r.pouchUsed||0;
       sum.sauceKgUsed += r.sauceKgUsed||0;
       sum.subKgUsed += r.subKgUsed||0;
@@ -964,6 +968,18 @@
       var arr = ratioBucket[k];
       sum[k] = arr.length ? arr.reduce(function(a,b){return a+b;},0)/arr.length : 0;
     });
+    // ★ 수율은 단순평균이 아니라 합계 분자/분모로 재계산 (퍼센트 평균은 틀림)
+    //   ★ 개별 그룹행과 동일한 반올림 경로(_r2(...*100)/100)로 통일 — 합계/개별 표시값 일치
+    //   원료육수율(원물 대비 누적)
+    sum.yieldRmPp = sum.rmKg ? _r2(sum.ppKg/sum.rmKg*100)/100 : 0;
+    sum.yieldRmCk = sum.rmKg ? _r2(sum.ckKg/sum.rmKg*100)/100 : 0;
+    sum.yieldRmSh = sum.rmKg ? _r2(sum.shKg/sum.rmKg*100)/100 : 0;
+    sum.yieldRmPk = sum.rmKg ? _r2(sum.meatKg/sum.rmKg*100)/100 : 0;
+    //   공정수율(직전 단계 대비)
+    sum.yieldPp = sum.rmKg ? _r2(sum.ppKg/sum.rmKg*100)/100 : 0;
+    sum.yieldCk = sum.ppKg ? _r2(sum.ckKg/sum.ppKg*100)/100 : 0;
+    sum.yieldSh = sum.ckKg ? _r2(sum.shKg/sum.ckKg*100)/100 : 0;
+    sum.yieldPk = sum.shKg ? _r2(sum.meatKg/sum.shKg*100)/100 : 0;
     return sum;
   }
 
@@ -1461,20 +1477,22 @@
       var ppKg = agg.ppKg||0, ckKg = agg.ckKg||0, shKg = agg.shKg||0;
       var meatKg = agg.meatKg||0;
       var ppT = agg.ppTotal||0, ckT = agg.ckTotal||0, shT = agg.shTotal||0, pkT = agg.pkTotal||0;
+      // ★ 개별 행과 동일한 반올림 경로 적용 — prod는 _r2(x), yield는 _r2(x*100)/100
+      //   (raw로 반환하면 합계만 다른 자리에서 반올림돼 행과 0.1% 어긋남)
       switch(c[0]){
-        case 'prodPp':  return rm&&ppT?rm/ppT:0;
-        case 'prodCk':  return rm&&ckT?rm/ckT:0;
-        case 'prodSh':  return rm&&shT?rm/shT:0;
-        case 'prodPk':  return rm&&pkT?rm/pkT:0;
-        case 'prodAll': return rm&&(ppT+ckT+shT+pkT)?rm/(ppT+ckT+shT+pkT):0;
-        case 'yieldRmPp': return rm?ppKg/rm:0;
-        case 'yieldRmCk': return rm?ckKg/rm:0;
-        case 'yieldRmSh': return rm?shKg/rm:0;
-        case 'yieldRmPk': return rm?meatKg/rm:0;
-        case 'yieldPp': return rm?ppKg/rm:0;
-        case 'yieldCk': return ppKg?ckKg/ppKg:0;
-        case 'yieldSh': return ckKg?shKg/ckKg:0;
-        case 'yieldPk': return shKg?meatKg/shKg:0;
+        case 'prodPp':  return rm&&ppT?_r2(rm/ppT):0;
+        case 'prodCk':  return rm&&ckT?_r2(rm/ckT):0;
+        case 'prodSh':  return rm&&shT?_r2(rm/shT):0;
+        case 'prodPk':  return rm&&pkT?_r2(rm/pkT):0;
+        case 'prodAll': return rm&&(ppT+ckT+shT+pkT)?_r2(rm/(ppT+ckT+shT+pkT)):0;
+        case 'yieldRmPp': return rm?_r2(ppKg/rm*100)/100:0;
+        case 'yieldRmCk': return rm?_r2(ckKg/rm*100)/100:0;
+        case 'yieldRmSh': return rm?_r2(shKg/rm*100)/100:0;
+        case 'yieldRmPk': return rm?_r2(meatKg/rm*100)/100:0;
+        case 'yieldPp': return rm?_r2(ppKg/rm*100)/100:0;
+        case 'yieldCk': return ppKg?_r2(ckKg/ppKg*100)/100:0;
+        case 'yieldSh': return ckKg?_r2(shKg/ckKg*100)/100:0;
+        case 'yieldPk': return shKg?_r2(meatKg/shKg*100)/100:0;
       }
       return 0;
     }

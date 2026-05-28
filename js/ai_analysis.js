@@ -1253,7 +1253,7 @@ function _aiSummarizeForChat(d, from, to) {
   lines.push('[월별 집계]');
   Object.keys(monthly).sort().forEach(ym => {
     const m = monthly[ym];
-    const defRate = m.packingEa>0 ? ((m.defPouch/m.packingEa)*100).toFixed(2) : '0';
+    const defRate = (m.packingEa+m.defPouch)>0 ? ((m.defPouch/(m.packingEa+m.defPouch))*100).toFixed(2) : '0';
     lines.push(`${ym}: 작업${m.days}일, 방혈${m.thawingBoxes}박스/${m.thawingKg.toFixed(0)}kg, 포장${m.packingEa.toLocaleString()}EA(불량${m.defPouch}/${defRate}%)`);
   });
   

@@ -108,8 +108,8 @@ async function exportDailyReport() {
       if(!m[k]) m[k]={ea:0,pouch:0,defect:0};
       m[k].ea+=parseFloat(r.ea)||0; m[k].pouch+=parseFloat(r.pouch)||0; m[k].defect+=parseFloat(r.defect)||0;
       return m;
-    },{})).map(([p,v])=>[p,v.ea,v.pouch,v.defect,v.ea>0?r2(v.defect/v.ea*100).toFixed(2)+'%':'-']),
-    ['합계', totalEA, '', defEA, totalEA>0?r2(defEA/totalEA*100).toFixed(2)+'%':'-'],
+    },{})).map(([p,v])=>[p,v.ea,v.pouch,v.defect,(v.ea+v.defect)>0?r2(v.defect/(v.ea+v.defect)*100).toFixed(2)+'%':'-']),
+    ['합계', totalEA, '', defEA, (totalEA+defEA)>0?r2(defEA/(totalEA+defEA)*100).toFixed(2)+'%':'-'],
     [],
     ['작성자:', '', '확인자:', ''],
   ];
@@ -161,7 +161,7 @@ async function exportDailyReport() {
       const lot = [r.wagon?'와건 '+r.wagon:'', r.cart?'카트 '+r.cart:''].filter(Boolean).join(' / ');
       return [r.machine||'',lot,r.type||'',r.product||'',r.start||'',r.end||'',r.ea||0,r.pouch||0,r.defect||0,defR,r.sauceTank||'',r.sauceKg||0];
     }),
-    ['합계','','','','','',totalEA,'',defEA,totalEA>0?r2(defEA/totalEA*100).toFixed(2)+'%':'','',''],
+    ['합계','','','','','',totalEA,'',defEA,(totalEA+defEA)>0?r2(defEA/(totalEA+defEA)*100).toFixed(2)+'%':'','',''],
   ];
   addSheet('포장', s6, [8,14,8,20,10,10,10,8,8,10,10,8]);
 
@@ -182,7 +182,7 @@ async function exportDailyReport() {
       [`외포장 공정 점검표 - ${date}`], [],
       ['제품명','내포장 EA','외박스','제품불량(EA)','불량률(%)','잔여 EA','샘플','비고'],
       ...opRecs.map(r=>{
-        const defRate = (r.innerEa||0)>0 ? r2((r.productDefect||0)/(r.innerEa||1)*100).toFixed(2)+'%' : '-';
+        const defRate = ((r.innerEa||0)+(r.productDefect||0))>0 ? r2((r.productDefect||0)/((r.innerEa||0)+(r.productDefect||0))*100).toFixed(2)+'%' : '-';
         return [r.product||'',r.innerEa||0,r.outerBoxes||0,r.productDefect||0,defRate,r.remainEa||0,r.sample||0,r.note||''];
       }),
       ['합계','',opRecs.reduce((s,r)=>s+(r.outerBoxes||0),0),opRecs.reduce((s,r)=>s+(r.productDefect||0),0),'','','',''],

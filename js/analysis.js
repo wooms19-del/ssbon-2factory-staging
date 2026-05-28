@@ -2060,6 +2060,11 @@ function getThByPartByPP_(ppRecs, allThawing, packDate) {
 
 async function renderDaily(){
   document.getElementById('dLbl').textContent=dateWithDay(DDATE);
+  // ★ products(메추리알 등 noMeat 플래그)가 아직 로드 안 됐으면 먼저 로드 — 무원육 제품에 원육 공정이 잘못 붙는 버그 방지
+  const _hasNoMeatFlag = (L.products||[]).some(p=>p.noMeat);
+  if(!_hasNoMeatFlag && typeof loadSettings_==='function'){
+    try { await loadSettings_(); } catch(e){ console.warn('[renderDaily] settings 로드 실패', e); }
+  }
   const prevD=(()=>{const [y,m,dd]=DDATE.split('-').map(Number);const dt=new Date(y,m-1,dd-1);return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;})();
   const nextD=addDays(DDATE,1);
   // nextD도 로드 → 방혈 재입력이 다음날로 저장된 경우 반영
@@ -2175,7 +2180,7 @@ function renderDailyFromLocal_(d){
   const totalEA=pk.reduce((s,r)=>s+(parseFloat(r.ea)||0),0);
   const totalMH=r2(sumMH(pp)+sumMH(ck)+sumMH(sh)+sumMH(pk));
   const defect=pk.reduce((s,r)=>s+(parseFloat(r.defect)||0),0);
-  const defRate=totalEA>0?r2(defect/totalEA*100):0;
+  const defRate=(totalEA+defect)>0?r2(defect/(totalEA+defect)*100):0;
   // 원육수율 = 완제품 원료육(포장EA×원료육kgEA) / 원육투입
   const pkRawKg = r2(pk.reduce((s,r)=>{
     const p=L.products.find(x=>x.name===r.product);
@@ -2587,6 +2592,10 @@ function renderDailyFromLocal_(d){
     let productivity = '-';
     if(p.name==='포장' && p.mh>0 && p.ea>0) {
       productivity = r2(p.ea/p.mh).toLocaleString()+' EA/인시';
+      // 설비 capa 참고용 — 단순 실측 분당 산출(EA ÷ 작업시간분)
+      if(p.h>0){
+        productivity += '<br><span style="font-size:11px;color:var(--g5)">'+r2(p.ea/(p.h*60)).toLocaleString()+' EA/분</span>';
+      }
     } else if((p.name==='전처리' || p.name==='자숙') && p.mh>0 && p.in>0) {
       productivity = r2(p.in/p.mh).toFixed(1)+' kg/인시';
     } else if(p.name==='파쇄' && p.mh>0 && p.out>0) {
@@ -2623,8 +2632,8 @@ function renderDailyFromLocal_(d){
         <td style="text-align:center;font-weight:600">${v.ea.toLocaleString()}</td>
         <td style="text-align:center">${v.pouch.toLocaleString()}</td>
         <td style="text-align:center">${v.defect.toLocaleString()}</td>
-        <td style="text-align:center;font-weight:600;color:${v.ea>0&&r2(v.defect/v.ea*100)<2?'var(--s)':'var(--d)'}">
-          ${v.ea>0?r2(v.defect/v.ea*100).toFixed(2)+'%':'-'}
+        <td style="text-align:center;font-weight:600;color:${(v.ea+v.defect)>0&&r2(v.defect/(v.ea+v.defect)*100)<2?'var(--s)':'var(--d)'}">
+          ${(v.ea+v.defect)>0?r2(v.defect/(v.ea+v.defect)*100).toFixed(2)+'%':'-'}
         </td>
       </tr>`).join('')||'<tr><td colspan="5" style="text-align:center;padding:1rem;color:var(--g4)">데이터 없음</td></tr>';
   }
@@ -3116,7 +3125,7 @@ async function renderTrend(){
     const rm=rmData[activeDates.indexOf(ds)];
     return rm>0?r2((ppW+shW)/rm*100):null;
   });
-  const defData  = activeDates.map(ds=>{ const ea=pkRecs.filter(r=>r.date===ds).reduce((s,r)=>s+(parseFloat(r.ea)||0),0); const def=pkRecs.filter(r=>r.date===ds).reduce((s,r)=>s+(parseFloat(r.defect)||0),0); return ea>0?r2(def/ea*100):null; });
+  const defData  = activeDates.map(ds=>{ const ea=pkRecs.filter(r=>r.date===ds).reduce((s,r)=>s+(parseFloat(r.ea)||0),0); const def=pkRecs.filter(r=>r.date===ds).reduce((s,r)=>s+(parseFloat(r.defect)||0),0); return (ea+def)>0?r2(def/(ea+def)*100):null; });
   const mhEaData = activeDates.map((ds,i)=>{ const mh=sumMH([...ppRecs,...ckRecs,...shRecs,...pkRecs].filter(r=>r.date===ds)); return mh>0?r2(eaData[i]/mh):null; });
 
   // 이달 평균 / 전달 평균 (원육)
