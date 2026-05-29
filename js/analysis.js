@@ -2687,9 +2687,10 @@ function renderDailyFromLocal_(d){
     const label = v.type ? v.type+' · '+v.product : v.product;
     // 같은 호기(machine) 의 record 들은 같은 인원이 연속 작업한 것 → 평균.
     // 호기끼리는 합 (다른 호기 = 다른 사람). machine 빈값은 각자 별도 그룹 (옛 동작 유지).
+    // ★ machine 표기 정규화: "2"와 "2호기"가 같은 호기로 인식되도록 "호기" 글자 제거
     const _wByMachine = {};
     (v._recs||[]).forEach((r, idx) => {
-      const m = String(r.machine||'').trim() || ('_no_'+idx);
+      const m = String(r.machine||'').replace(/호기/g,'').trim() || ('_no_'+idx);
       if(!_wByMachine[m]) _wByMachine[m] = [];
       _wByMachine[m].push(parseFloat(r.workers)||0);
     });
