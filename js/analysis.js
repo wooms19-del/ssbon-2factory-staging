@@ -478,9 +478,10 @@ async function renderMonthlyReport(pk, from, effectiveTo, ppMonth, thMonth, opDa
     _moRenderYieldKPI(moTotRm, moTotPkKg, moAvgYld, moDays, moGoodDays, moLossKg);
 
     // ★ 부위별 일자별 수율 계산 (토글용)
-    // packing 원본(pkClean)에서 일자|부위별 산출kg 합산 → 같은 일자|부위 rm으로 나눔
+    // packing 원본에서 일자|부위별 산출kg 합산 → 같은 일자|부위 rm으로 나눔
+    const _pkForYld = pk.filter(r => !r.testRun && !r.isTest);
     const pkKgByDatePart = {};  // {date: {부위: 산출kg}}
-    pkClean.forEach(r=>{
+    _pkForYld.forEach(r=>{
       const d = String(r.date||'').slice(0,10);
       const t = (r.type||'').trim();
       if(!d || !t) return;
@@ -1055,7 +1056,22 @@ function _moRedrawDefChart(){
 
   // X축 = 생산한 날 + 오늘 이후 평일.
   const ym = (window._moYm || tod().slice(0,7));
-  const producedSet = new Set(Object.keys(byDate));
+  const selProds = window._moDefSelProducts;
+  const byDP = window._moCurByDateByProduct || {};
+  // ★ 선택된 제품 있으면 X축을 그 제품들 합집합 생산일로 압축
+  let producedSet;
+  if(selProds && selProds.size > 0){
+    producedSet = new Set();
+    Object.keys(byDP).forEach(d=>{
+      [...selProds].forEach(p=>{
+        if(byDP[d] && byDP[d][p] && (byDP[d][p].ea + byDP[d][p].def) > 0){
+          producedSet.add(d);
+        }
+      });
+    });
+  } else {
+    producedSet = new Set(Object.keys(byDate));
+  }
   const weekdays = _moChartWeekdays(ym, producedSet);
   const labels = weekdays.map((d,i) => [(i+1)+'일차', d.slice(5)]);
   const defVals = weekdays.map(d => {
@@ -1070,8 +1086,6 @@ function _moRedrawDefChart(){
   const _curAvg = _curVals.length ? (_curVals.reduce((s,v)=>s+v,0)/_curVals.length) : null;
   const ds = [];
   // ★ 제품별 토글 — 선택된 제품 있으면 그것만 라인으로, 없으면 전체 한 줄
-  const selProds = window._moDefSelProducts;
-  const byDP = window._moCurByDateByProduct || {};
   const PROD_COLORS = ['#e24b4a','#1d4ed8','#047857','#c2410c','#7c3aed','#0891b2','#be185d','#65a30d'];
   if(selProds && selProds.size > 0){
     [...selProds].forEach((prod, i)=>{
@@ -1187,7 +1201,20 @@ function _moRenderYieldChart(dailyYields) {
   const ym = (window._moYm || tod().slice(0,7));
   const yldMap = {};
   dailyYields.forEach(d => { yldMap[d.date] = d.yld; });
-  const producedSet = new Set(Object.keys(yldMap));
+  const selParts = window._moYldSelParts;
+  const yldByDP = window._moYldByDatePart || {};
+  // ★ 선택된 부위 있으면 X축을 그 부위들 합집합 작업일로 압축
+  let producedSet;
+  if(selParts && selParts.size > 0){
+    producedSet = new Set();
+    Object.keys(yldByDP).forEach(d=>{
+      [...selParts].forEach(p=>{
+        if(yldByDP[d] && yldByDP[d][p] != null) producedSet.add(d);
+      });
+    });
+  } else {
+    producedSet = new Set(Object.keys(yldMap));
+  }
   const weekdays = _moChartWeekdays(ym, producedSet);
   const labels = weekdays.map((d,i) => [(i+1)+'일차', d.slice(5)]);
   const ylds = weekdays.map(d => yldMap[d]!=null ? parseFloat(yldMap[d].toFixed(1)) : null);
@@ -1198,8 +1225,6 @@ function _moRenderYieldChart(dailyYields) {
   const _curAvg = _curVals.length ? (_curVals.reduce((s,v)=>s+v,0)/_curVals.length) : null;
   const datasets = [];
   // ★ 부위별 토글 — _moYldSelParts에 선택된 부위 있으면 그것만, 없으면 전체
-  const selParts = window._moYldSelParts;
-  const yldByDP = window._moYldByDatePart || {};
   const PART_COLORS = {'홍두깨':'#dc2626','우둔':'#1d4ed8','설도':'#047857'};
   if(selParts && selParts.size > 0){
     [...selParts].forEach((part)=>{
