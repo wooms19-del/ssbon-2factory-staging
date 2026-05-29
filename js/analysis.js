@@ -310,21 +310,12 @@ async function renderMonthly() {
   // pkClean: KPI와 일관성 — testRun/isTest 제외
   // 불량률 공식: defect / 파우치사용량 (= ea + defect) — KPI와 동일
   const byDate={};
-  const byDateByProduct={};  // ★ 토글용: {date: {product: {ea, def}}}
   pkClean.forEach(r=>{ const d=String(r.date||'').slice(0,10);
     if(!byDate[d]) byDate[d]={ea:0,def:0};
     byDate[d].ea+=parseFloat(r.ea)||0; byDate[d].def+=parseFloat(r.defect)||0;
-    const p=r.product||'';
-    if(p){
-      if(!byDateByProduct[d]) byDateByProduct[d]={};
-      if(!byDateByProduct[d][p]) byDateByProduct[d][p]={ea:0,def:0};
-      byDateByProduct[d][p].ea+=parseFloat(r.ea)||0;
-      byDateByProduct[d][p].def+=parseFloat(r.defect)||0;
-    }
   });
   // 전역 저장 — _moRedrawDefChart에서 사용
   window._moCurByDate = byDate;
-  window._moCurByDateByProduct = byDateByProduct;
   window._moYm = _moYm;
   // 차트 그림 (전월 평균은 도착 후 자동 재그림)
   if(typeof _moRedrawDefChart === 'function') _moRedrawDefChart();
@@ -476,31 +467,6 @@ async function renderMonthlyReport(pk, from, effectiveTo, ppMonth, thMonth, opDa
     const moAvgYld=moTotRm>0?moTotPkKg/moTotRm*100:0;
     const moLossKg=r2(moTotRm*(0.55-moAvgYld/100));
     _moRenderYieldKPI(moTotRm, moTotPkKg, moAvgYld, moDays, moGoodDays, moLossKg);
-
-    // ★ 부위별 일자별 수율 계산 (토글용)
-    // packing 원본에서 일자|부위별 산출kg 합산 → 같은 일자|부위 rm으로 나눔
-    const _pkForYld = pk.filter(r => !r.testRun && !r.isTest);
-    const pkKgByDatePart = {};  // {date: {부위: 산출kg}}
-    _pkForYld.forEach(r=>{
-      const d = String(r.date||'').slice(0,10);
-      const t = (r.type||'').trim();
-      if(!d || !t) return;
-      const prod = L.products.find(x => x.name === r.product);
-      const kg = (parseFloat(r.ea)||0) * (prod ? prod.kgea : 0);
-      if(!pkKgByDatePart[d]) pkKgByDatePart[d] = {};
-      pkKgByDatePart[d][t] = (pkKgByDatePart[d][t]||0) + kg;
-    });
-    const yldByDatePart = {};  // {date: {부위: 수율%}}
-    Object.keys(pkKgByDatePart).forEach(d=>{
-      yldByDatePart[d] = {};
-      Object.keys(pkKgByDatePart[d]).forEach(t=>{
-        const rm = (rmByDatePart[d] && rmByDatePart[d][t]) || 0;
-        const out = pkKgByDatePart[d][t];
-        if(rm > 0 && out > 0) yldByDatePart[d][t] = (out / rm) * 100;
-      });
-    });
-    window._moYldByDatePart = yldByDatePart;
-
     _moRenderYieldChart(dailyYields);
 
     // ★ 동일 작업일 탭용 — cur 일별 공정 합계 (전처리/자숙/파쇄/완제품 + 원육)
@@ -840,16 +806,14 @@ function _moRenderRows(selProds) {
       if(isFirst){
         cells+=`<td rowspan="${cnt}" style="${vm}${PC}${yldBg}text-align:center;font-weight:700;font-size:15px;${yldTxt}border-right:1px solid #e2e8f0;border-bottom:2px solid #cbd5e1">${dayYld!=null?dayYld.toFixed(1)+'%':'—'}</td>`;
         cells+=`<td rowspan="${cnt}" style="${vm}${PC}${bg}text-align:center;color:#64748b;border-right:1px solid #e2e8f0;border-bottom:2px solid #cbd5e1">${editCapa}</td>`;
-        // 비고: 메모에 '비가식부' 단어가 있을 때만 비율 자동 추가 (원육 대비 %, 빨간색)
+        // 비고: 메모에 '비가식부 N kg' 형태가 있으면 그 숫자 기준으로 원육 대비 % 표시
         const _hasWasteNote = /비가식부|손실|폐기|불량/.test(note||'');
         let _wasteHtml = '';
         if(_hasWasteNote){
-          const _ppDay = (ppMonth||[]).filter(r=>String(r.date||'').slice(0,10)===date);
-          const _shDay = (shMonth||[]).filter(r=>String(r.date||'').slice(0,10)===date);
-          const _wastePp = _ppDay.reduce((s,r)=>s+(parseFloat(r.waste)||0),0);
-          const _wasteSh = _shDay.reduce((s,r)=>s+(parseFloat(r.waste)||0),0);
-          const _wasteTotal = _wastePp + _wasteSh;
-          const _wasteRate = (dayRm>0 && _wasteTotal>0) ? (_wasteTotal/dayRm*100) : null;
+          // 메모에서 "숫자 kg" 패턴 추출 (예: "비가식부 117kg" → 117)
+          const _m = (note||'').match(/(\d+(?:\.\d+)?)\s*kg/i);
+          const _wasteFromNote = _m ? parseFloat(_m[1]) : null;
+          const _wasteRate = (dayRm>0 && _wasteFromNote!=null && _wasteFromNote>0) ? (_wasteFromNote/dayRm*100) : null;
           if(_wasteRate!=null){
             _wasteHtml = `<div style="font-size:11px;color:#dc2626;margin-top:3px">원육 대비 ${_wasteRate.toFixed(1)}%</div>`;
           }
@@ -993,37 +957,6 @@ function _moRenderYieldKPI(totRm, totPkKg, avgYld, workDays, goodDays, lossKg) {
 
 // ── 수율 일별 추이 차트 ──────────────────────────────────────
 // 전월 데이터 도착 후 불량률 차트 재그림
-
-// ── 토글 칩 렌더링 (제품별/부위별 다중선택) ────────────────────
-function _moRenderToggleChips(containerId, items, selSetGlobalName, redrawFn){
-  const box = document.getElementById(containerId);
-  if(!box) return;
-  const selSet = window[selSetGlobalName] || new Set();
-  window[selSetGlobalName] = selSet;
-  const chips = items.map(it => {
-    const on = selSet.has(it);
-    const bg = on ? '#1d4ed8' : '#f1f5f9';
-    const fg = on ? '#fff' : '#475569';
-    const br = on ? '#1d4ed8' : '#cbd5e1';
-    return `<span data-key="${it.replace(/"/g,'&quot;')}" style="padding:3px 9px;border-radius:12px;background:${bg};color:${fg};border:1px solid ${br};cursor:pointer;user-select:none;white-space:nowrap">${it}</span>`;
-  }).join('');
-  const allOn = selSet.size === 0;
-  const allBg = allOn ? '#475569' : '#f1f5f9';
-  const allFg = allOn ? '#fff' : '#475569';
-  const allBr = allOn ? '#475569' : '#cbd5e1';
-  box.innerHTML = `<span data-key="__ALL__" style="padding:3px 9px;border-radius:12px;background:${allBg};color:${allFg};border:1px solid ${allBr};cursor:pointer;user-select:none;font-weight:600">전체</span>` + chips;
-  box.querySelectorAll('[data-key]').forEach(el=>{
-    el.onclick = ()=>{
-      const k = el.getAttribute('data-key');
-      if(k === '__ALL__'){ selSet.clear(); }
-      else { if(selSet.has(k)) selSet.delete(k); else selSet.add(k); }
-      _moRenderToggleChips(containerId, items, selSetGlobalName, redrawFn);
-      redrawFn();
-    };
-  });
-}
-
-
 // 그 달 평일(월~금) 전체 날짜 목록 ('YYYY-MM-DD' 배열)
 function _moWeekdaysOf(ym){
   const [yy, mm] = ym.split('-').map(Number);
@@ -1056,22 +989,7 @@ function _moRedrawDefChart(){
 
   // X축 = 생산한 날 + 오늘 이후 평일.
   const ym = (window._moYm || tod().slice(0,7));
-  const selProds = window._moDefSelProducts;
-  const byDP = window._moCurByDateByProduct || {};
-  // ★ 선택된 제품 있으면 X축을 그 제품들 합집합 생산일로 압축
-  let producedSet;
-  if(selProds && selProds.size > 0){
-    producedSet = new Set();
-    Object.keys(byDP).forEach(d=>{
-      [...selProds].forEach(p=>{
-        if(byDP[d] && byDP[d][p] && (byDP[d][p].ea + byDP[d][p].def) > 0){
-          producedSet.add(d);
-        }
-      });
-    });
-  } else {
-    producedSet = new Set(Object.keys(byDate));
-  }
+  const producedSet = new Set(Object.keys(byDate));
   const weekdays = _moChartWeekdays(ym, producedSet);
   const labels = weekdays.map((d,i) => [(i+1)+'일차', d.slice(5)]);
   const defVals = weekdays.map(d => {
@@ -1084,23 +1002,9 @@ function _moRedrawDefChart(){
   // 이번달 평균 (생산한 날 기준)
   const _curVals = defVals.filter(v => v!=null);
   const _curAvg = _curVals.length ? (_curVals.reduce((s,v)=>s+v,0)/_curVals.length) : null;
-  const ds = [];
-  // ★ 제품별 토글 — 선택된 제품 있으면 그것만 라인으로, 없으면 전체 한 줄
-  const PROD_COLORS = ['#e24b4a','#1d4ed8','#047857','#c2410c','#7c3aed','#0891b2','#be185d','#65a30d'];
-  if(selProds && selProds.size > 0){
-    [...selProds].forEach((prod, i)=>{
-      const data = weekdays.map(d => {
-        const v = byDP[d] && byDP[d][prod];
-        if(!v) return null;
-        const pouch = v.ea + v.def;
-        return pouch>0 ? parseFloat((v.def/pouch*100).toFixed(2)) : null;
-      });
-      ds.push({label: prod, data, borderColor: PROD_COLORS[i % PROD_COLORS.length],
-        backgroundColor:'transparent', fill:false, tension:0.3, pointRadius:3, borderWidth:2, spanGaps:false});
-    });
-  } else {
-    ds.push({label:'이번달 불량률',data:defVals,borderColor:'#e24b4a',backgroundColor:'rgba(226,75,74,0.08)',fill:true,tension:0.3,pointRadius:4,borderWidth:2,spanGaps:false});
-  }
+  const ds = [
+    {label:'이번달 불량률',data:defVals,borderColor:'#e24b4a',backgroundColor:'rgba(226,75,74,0.08)',fill:true,tension:0.3,pointRadius:4,borderWidth:2,spanGaps:false}
+  ];
   if(_curAvg!=null){
     ds.push({label:'이번달 평균',data:Array(xLen).fill(parseFloat(_curAvg.toFixed(2))),borderColor:'#7c3aed',borderDash:[2,3],pointRadius:0,borderWidth:1.5,fill:false,_endLabel:_curAvg.toFixed(2)+'%'});
   }
@@ -1179,15 +1083,6 @@ function _moRedrawDefChart(){
     scales:{x:{ticks:{color:'#888',font:{size:9},autoSkip:false,maxRotation:0},grid:{display:false}},
             y:{ticks:{color:'#888',font:{size:10},callback:v=>v+'%'},
                grid:{color:'rgba(128,128,128,0.1)'},min:0,grace:'15%'}}}});
-
-  // ★ 제품 토글 칩 렌더
-  const _byDP_chip = window._moCurByDateByProduct || {};
-  const allProds = new Set();
-  Object.keys(_byDP_chip).forEach(d => Object.keys(_byDP_chip[d]).forEach(p => allProds.add(p)));
-  const prodList = [...allProds].sort();
-  if(prodList.length > 0){
-    _moRenderToggleChips('mo_def_toggle', prodList, '_moDefSelProducts', _moRedrawDefChart);
-  }
 }
 
 function _moRenderYieldChart(dailyYields) {
@@ -1201,20 +1096,7 @@ function _moRenderYieldChart(dailyYields) {
   const ym = (window._moYm || tod().slice(0,7));
   const yldMap = {};
   dailyYields.forEach(d => { yldMap[d.date] = d.yld; });
-  const selParts = window._moYldSelParts;
-  const yldByDP = window._moYldByDatePart || {};
-  // ★ 선택된 부위 있으면 X축을 그 부위들 합집합 작업일로 압축
-  let producedSet;
-  if(selParts && selParts.size > 0){
-    producedSet = new Set();
-    Object.keys(yldByDP).forEach(d=>{
-      [...selParts].forEach(p=>{
-        if(yldByDP[d] && yldByDP[d][p] != null) producedSet.add(d);
-      });
-    });
-  } else {
-    producedSet = new Set(Object.keys(yldMap));
-  }
+  const producedSet = new Set(Object.keys(yldMap));
   const weekdays = _moChartWeekdays(ym, producedSet);
   const labels = weekdays.map((d,i) => [(i+1)+'일차', d.slice(5)]);
   const ylds = weekdays.map(d => yldMap[d]!=null ? parseFloat(yldMap[d].toFixed(1)) : null);
@@ -1223,23 +1105,9 @@ function _moRenderYieldChart(dailyYields) {
   // 이번달 평균
   const _curVals = ylds.filter(v => v!=null);
   const _curAvg = _curVals.length ? (_curVals.reduce((s,v)=>s+v,0)/_curVals.length) : null;
-  const datasets = [];
-  // ★ 부위별 토글 — _moYldSelParts에 선택된 부위 있으면 그것만, 없으면 전체
-  const PART_COLORS = {'홍두깨':'#dc2626','우둔':'#1d4ed8','설도':'#047857'};
-  if(selParts && selParts.size > 0){
-    [...selParts].forEach((part)=>{
-      const data = weekdays.map(d => {
-        const v = yldByDP[d] && yldByDP[d][part];
-        return v!=null ? parseFloat(v.toFixed(1)) : null;
-      });
-      const color = PART_COLORS[part] || '#64748b';
-      datasets.push({label: part, data, borderColor: color, backgroundColor:'transparent',
-        fill:false, tension:0.3, pointRadius:4, pointBackgroundColor:color, pointBorderColor:color,
-        borderWidth:2, spanGaps:false});
-    });
-  } else {
-    datasets.push({label:'이번달 수율',data:ylds,borderColor:'#64748b',backgroundColor:'rgba(100,116,139,0.08)',fill:true,tension:0.3,pointRadius:5,pointBackgroundColor:ptColors,pointBorderColor:ptColors,borderWidth:2,spanGaps:false});
-  }
+  const datasets = [
+    {label:'이번달 수율',data:ylds,borderColor:'#64748b',backgroundColor:'rgba(100,116,139,0.08)',fill:true,tension:0.3,pointRadius:5,pointBackgroundColor:ptColors,pointBorderColor:ptColors,borderWidth:2,spanGaps:false}
+  ];
   if(_curAvg!=null){
     datasets.push({label:'이번달 평균',data:Array(xLen).fill(parseFloat(_curAvg.toFixed(1))),borderColor:'#7c3aed',borderDash:[2,3],pointRadius:0,borderWidth:1.5,fill:false,_endLabel:_curAvg.toFixed(1)+'%'});
   }
@@ -1321,19 +1189,6 @@ function _moRenderYieldChart(dailyYields) {
               y:{ticks:{color:'#888',font:{size:10},callback:v=>v+'%'},
                  grid:{color:'rgba(128,128,128,0.1)'},min:44,suggestedMax:60}}}
   });
-
-  // ★ 부위 토글 칩 렌더 — 데이터에 존재하는 부위만 표시
-  const _yldByDP_chip = window._moYldByDatePart || {};
-  const allParts = new Set();
-  Object.keys(_yldByDP_chip).forEach(d => Object.keys(_yldByDP_chip[d]).forEach(p => allParts.add(p)));
-  // 부위 표시 순서: 홍두깨 > 우둔 > 설도 > 기타
-  const PART_ORDER = ['홍두깨','우둔','설도'];
-  const partList = PART_ORDER.filter(p => allParts.has(p)).concat([...allParts].filter(p=>!PART_ORDER.includes(p)));
-  if(partList.length > 0){
-    _moRenderToggleChips('mo_yield_toggle', partList, '_moYldSelParts', ()=>{
-      if(window._moCurYldDays) _moRenderYieldChart(window._moCurYldDays);
-    });
-  }
 }
 
 // ── 전월 비교 로드 + 렌더 ────────────────────────────────────
@@ -2753,7 +2608,7 @@ function renderDailyFromLocal_(d){
       <td style="text-align:center;color:var(--g6);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${p.type||'-'}">${p.type||'-'}</td>
       <td style="text-align:center">${p.in>0?p.in.toFixed(2):'-'}${p.boxes?'<br><span style="font-size:11px;color:var(--g5)">'+p.boxes+'박스</span>':''}</td>
       <td style="text-align:center;font-weight:600">${p.noMeat?'-':p.out.toFixed(2)}</td>
-      <td style="text-align:center;color:var(--d);font-size:12px">${p.waste>0?p.waste.toFixed(2)+'kg':'-'}</td>
+      <td style="text-align:center;color:var(--d);font-size:12px">${p.waste>0?p.waste.toFixed(2)+'kg'+(p.in>0?' ('+(p.waste/p.in*100).toFixed(1)+'%)':''):'-'}</td>
       <td style="text-align:center;font-weight:600">${p.noMeat?'-':(oYld!==null?oYld.toFixed(1)+'%':'-')}</td>
       <td style="text-align:center;font-weight:600">${p.noMeat?'-':(pYld!==null?pYld.toFixed(1)+'%':'-')}</td>
       <td style="text-align:center">${p.h.toFixed(1)}h</td>
