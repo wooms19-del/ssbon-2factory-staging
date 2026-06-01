@@ -493,7 +493,9 @@ function _perfBuildRows(th, pp, ck, sh, pk, op, sc){
     var partType={}, partKgM={};
     ded.forEach(function(r){
       var p=r.part||r.type||'';
-      var bx=parseInt(r.boxes)||0;
+      // ★ 박스 수: importCodes(실제 스캔된 바코드) 개수 우선, 없으면 boxes 필드 fallback
+      var icLen = Array.isArray(r.importCodes) ? r.importCodes.length : 0;
+      var bx = icLen || parseInt(r.boxes)||0;
       var kgv=parseFloat(r.totalKg)||0;
       partType[p]=(partType[p]||0)+bx;
       partKgM[p]=(partKgM[p]||0)+kgv;
@@ -561,7 +563,7 @@ function _perfBuildRows(th, pp, ck, sh, pk, op, sc){
       var bx={}, kg={};
       ded.forEach(function(r){
         var p = r.part||r.type||'';
-        bx[p] = (bx[p]||0) + (parseInt(r.boxes)||0);
+        bx[p] = (bx[p]||0) + ((Array.isArray(r.importCodes)&&r.importCodes.length)||parseInt(r.boxes)||0);
         kg[p] = (kg[p]||0) + (parseFloat(r.totalKg)||0);
       });
       // ★ poolKey: product 제외 = 같은 (date, type) 쓰는 제품들 같은 풀로 묶임
@@ -581,7 +583,7 @@ function _perfBuildRows(th, pp, ck, sh, pk, op, sc){
       var bx={}, kg={};
       ded.forEach(function(r){
         var p = r.part||r.type||'';
-        bx[p] = (bx[p]||0) + (parseInt(r.boxes)||0);
+        bx[p] = (bx[p]||0) + ((Array.isArray(r.importCodes)&&r.importCodes.length)||parseInt(r.boxes)||0);
         kg[p] = (kg[p]||0) + (parseFloat(r.totalKg)||0);
       });
       var poolKey = ded.map(function(r){ return d(r)+'|'+r.cart+'|'+(r.part||r.type); }).sort().join(';');
@@ -654,7 +656,7 @@ function _perfBuildRows(th, pp, ck, sh, pk, op, sc){
     var bx={}, kg={};
     ded.forEach(function(r){
       var p = r.part||r.type||'';
-      bx[p] = (bx[p]||0) + (parseInt(r.boxes)||0);
+      bx[p] = (bx[p]||0) + ((Array.isArray(r.importCodes)&&r.importCodes.length)||parseInt(r.boxes)||0);
       kg[p] = (kg[p]||0) + (parseFloat(r.totalKg)||0);
     });
     var poolKey = ded.map(function(r){ return d(r)+'|'+r.cart+'|'+(r.part||r.type); }).sort().join(';');
@@ -848,9 +850,10 @@ function _perfBuildRows(th, pp, ck, sh, pk, op, sc){
     testThDay.forEach(function(t){
       tRmKg+=parseFloat(t.totalKg)||0;
       var p=t.part||t.type||'';
-      if(p==='설도') tBxS+=parseInt(t.boxes)||0;
-      else if(p==='홍두깨'||p==='홍두께') tBxH+=parseInt(t.boxes)||0;
-      else if(p==='우둔') tBxU+=parseInt(t.boxes)||0;
+      var bxT = (Array.isArray(t.importCodes)&&t.importCodes.length)||parseInt(t.boxes)||0;
+      if(p==='설도') tBxS+=bxT;
+      else if(p==='홍두깨'||p==='홍두께') tBxH+=bxT;
+      else if(p==='우둔') tBxU+=bxT;
       if(p&&tParts.indexOf(p)<0) tParts.push(p);
     });
     var tRmType=tParts.length?tParts.join(', '):'홍두깨';
