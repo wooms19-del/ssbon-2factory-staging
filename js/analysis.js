@@ -2397,7 +2397,9 @@ function renderDailyFromLocal_(d){
     if(!rmByType[t]) rmByType[t]=0;
     if(!rmBoxByType[t]) rmBoxByType[t]=0;
     rmByType[t]+=parseFloat(r.totalKg)||0;
-    rmBoxByType[t]+=parseFloat(r.boxes)||1;
+    // ★ 박스 수는 importCodes(실제 스캔된 바코드) 개수 우선, 없으면 boxes 필드 fallback
+    const _icLen = Array.isArray(r.importCodes) ? r.importCodes.length : 0;
+    rmBoxByType[t] += _icLen || parseFloat(r.boxes) || 1;
   });
 
   // 포장 원료육 계산은 위 KPI 섹션에서 처리

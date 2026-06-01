@@ -136,7 +136,8 @@ function _renderStockShell(){
     if(!isCompleted && !isPastStart) return;  // 둘 다 아니면 아직 진행중
     if(od > selDate) return;
     var types = (r.type||'').split(',').map(function(s){return s.trim();}).filter(Boolean);
-    var boxes = parseInt(r.boxes,10)||0;
+    // ★ 박스 수는 importCodes(실제 스캔된 바코드) 개수 우선, 없으면 boxes 필드 fallback
+    var boxes = (Array.isArray(r.importCodes) && r.importCodes.length) || parseInt(r.boxes,10) || 0;
     if(!types.length) return;
     var per = boxes/types.length;
     types.forEach(function(t){
@@ -151,7 +152,8 @@ function _renderStockShell(){
     if(startDay !== selDate) return;
     if(startDay < START_DATE) return;
     var types = (r.type||'').split(',').map(function(s){return s.trim();}).filter(Boolean);
-    var boxes = parseInt(r.boxes,10)||0;
+    // ★ importCodes 실제 개수 우선
+    var boxes = (Array.isArray(r.importCodes) && r.importCodes.length) || parseInt(r.boxes,10) || 0;
     if(!types.length) return;
     var per = boxes/types.length;
     types.forEach(function(t){ f2InProgress[t] = (f2InProgress[t]||0) + per; });
