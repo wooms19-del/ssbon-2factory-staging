@@ -76,12 +76,14 @@ async function renderStock(){
       fbGetRange('stockIn', stockInFrom, toStr),
       fbGetRange('stockIn_f1', stockInFrom, toStr).catch(function(){return [];}),
       fbGetRange('transfer', stockInFrom, toStr).catch(function(){return [];}),
-      fbGetRange('thawing', thawingFrom, toStrThawing)
+      fbGetRange('thawing', thawingFrom, toStrThawing),
+      fbGetRange('barcode', thawingFrom, toStrThawing).catch(function(){return [];})
     ]);
     _stockData.stockIn = R[0] || [];
     _stockData.stockIn_f1 = R[1] || [];
     _stockData.transfer = R[2] || [];
     _stockData.thawing = R[3] || [];
+    _stockData.barcode = R[4] || [];
     _stockFetchedFrom = stockInFrom;  // 캐시 시작 기록
     _renderStockShell();
     // 미등록 GTIN 배너는 입력>해동기 화면에서만 처리 (바코드 스캔 위치)
@@ -145,18 +147,15 @@ function _renderStockShell(){
       if(od === selDate) f2OutDay[t] = (f2OutDay[t]||0) + per;
     });
   });
-  _stockData.thawing.forEach(function(r){
-    // 해동중 = 바코드(start) 날짜가 선택일과 같은 날만. 다음날 되면 자동 해제.
-    var startDay = String(r.start||'').slice(0,10);
-    if(!startDay) return;
-    if(startDay !== selDate) return;
-    if(startDay < START_DATE) return;
-    var types = (r.type||'').split(',').map(function(s){return s.trim();}).filter(Boolean);
-    // ★ importCodes 실제 개수 우선
-    var boxes = (Array.isArray(r.importCodes) && r.importCodes.length) || parseInt(r.boxes,10) || 0;
-    if(!types.length) return;
-    var per = boxes/types.length;
-    types.forEach(function(t){ f2InProgress[t] = (f2InProgress[t]||0) + per; });
+  // 해동중 = barcode 컬렉션 기준 (오늘 스캔된 바코드들). 바코드 스캔 시점 = 창고에서 빠진 시점.
+  // thawing 레코드 생성 전이라도 바코드만 찍히면 해동중으로 카운트됨.
+  (_stockData.barcode || []).forEach(function(b){
+    var d = String(b.date||'').slice(0,10);
+    if(d !== selDate) return;
+    if(d < START_DATE) return;
+    var t = String(b.part||'').trim();
+    if(!t) return;
+    f2InProgress[t] = (f2InProgress[t]||0) + 1;  // 바코드 1개 = 1박스
   });
   _stockData.transfer.forEach(function(r){
     var d = String(r.date||'').slice(0,10);
