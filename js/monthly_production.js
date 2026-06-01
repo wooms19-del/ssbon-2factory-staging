@@ -90,13 +90,11 @@
         t.classList.toggle('on', (i===0&&name==='daily') || (i===1&&name==='monthly') || (i===2&&name==='stock'));
       });
     }
+    // ★ 다른 모드(일정표/출퇴근 등) 페이지가 켜져 있을 수 있으니 모든 .pg 먼저 끄기
+    document.querySelectorAll('.pg').forEach(function(p){ p.classList.remove('on'); });
     var perfPg = document.getElementById('p-performance');
     var moPg   = document.getElementById('p-monthly-prod');
     var stPg   = document.getElementById('p-stock');
-    // 모두 끄고
-    if(perfPg) perfPg.classList.remove('on');
-    if(moPg)   moPg.classList.remove('on');
-    if(stPg)   stPg.classList.remove('on');
     // 선택된 거 켜기
     if(name==='daily'){
       if(perfPg) perfPg.classList.add('on');
