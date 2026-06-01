@@ -129,7 +129,11 @@ function _renderStockShell(){
   _stockData.thawing.forEach(function(r){
     var od = String(r.date||'').slice(0,10);
     if(od < START_DATE) return;
-    if(!r.end) return;
+    // ★ end 없어도 start 날짜가 선택일 이전이면 사용으로 카운트 (입력 누락 케이스 자동 정리)
+    var startDay = String(r.start||'').slice(0,10);
+    var isCompleted = !!r.end;  // end 있으면 작업 완료
+    var isPastStart = startDay && startDay < selDate;  // start가 어제 이전이면 끝난 걸로 간주
+    if(!isCompleted && !isPastStart) return;  // 둘 다 아니면 아직 진행중
     if(od > selDate) return;
     var types = (r.type||'').split(',').map(function(s){return s.trim();}).filter(Boolean);
     var boxes = parseInt(r.boxes,10)||0;
