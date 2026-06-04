@@ -67,7 +67,14 @@ async function renderRetort(){
           <option value="">제품 선택</option>${_rtProductOptions('')}
         </select>
         <input type="number" id="rt_ea_${m}" class="fc" placeholder="수량 (EA)" style="width:100%;margin-bottom:6px">
-        <input type="text" id="rt_batch_${m}" class="fc" placeholder="배치 (예: A 또는 A:50, B:46)" style="width:100%;margin-bottom:8px;display:none" oninput="rtBatchInput('${m}')">
+        <div id="rt_batchbox_${m}" style="display:none;margin-bottom:8px">
+          <div style="font-size:12px;color:var(--g5);margin-bottom:4px">자숙 배치별 수량</div>
+          <div id="rt_brows_${m}"></div>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px">
+            <button class="btn bo bsm" onclick="rtAddBatchRow('${m}')">＋ 배치 추가</button>
+            <span style="font-size:12px;color:var(--g6);font-weight:600">합계 <span id="rt_bsum_${m}">0</span> EA</span>
+          </div>
+        </div>
         <button class="btn bp bblk" onclick="rtStart('${m}')">① 가동 시작</button>
       </div>`;
     }
@@ -136,28 +143,65 @@ async function renderRetort(){
   </table>`;
 }
 
-function rtBatchInput(m){
-  const bSel=document.getElementById('rt_batch_'+m);
+const RT_ABC='ABCDEFGHIJ';
+function rtAddBatchRow(m, letter){
+  const rows=document.getElementById('rt_brows_'+m);
+  if(!rows) return;
+  const idx=rows.children.length;
+  if(idx>=RT_ABC.length) return;
+  const lt=letter||RT_ABC[idx];
+  const div=document.createElement('div');
+  div.style.cssText='display:flex;gap:6px;align-items:center;margin-bottom:4px';
+  div.innerHTML=`<select class="fc rt-bl" style="width:64px">${RT_ABC.split('').map(c=>`<option ${c===lt?'selected':''}>${c}</option>`).join('')}</select>
+    <input type="number" class="fc rt-bn" placeholder="수량" style="flex:1" oninput="rtBatchSum('${m}')">
+    <span style="cursor:pointer;color:var(--g4);padding:0 4px" onclick="this.parentElement.remove();rtBatchSum('${m}')">✕</span>`;
+  rows.appendChild(div);
+  const inp=div.querySelector('.rt-bn'); if(inp) inp.focus();
+}
+function rtBatchSum(m){
+  const rows=document.getElementById('rt_brows_'+m);
   const eaEl=document.getElementById('rt_ea_'+m);
-  if(!bSel||!eaEl) return;
-  const sum=_rtBatchSum(bSel.value);
-  if(sum!=null) eaEl.value=sum;
+  const sumEl=document.getElementById('rt_bsum_'+m);
+  if(!rows) return;
+  let sum=0;
+  rows.querySelectorAll('.rt-bn').forEach(i=>{ sum+=parseInt(i.value)||0; });
+  if(sumEl) sumEl.textContent=sum.toLocaleString();
+  if(eaEl) eaEl.value=sum||'';
 }
 function rtProdChanged(m){
   const prod=document.getElementById('rt_prod_'+m).value;
-  const bSel=document.getElementById('rt_batch_'+m);
-  if(!bSel) return;
-  bSel.style.display = (prod && _rtDefaultCcp(prod)==='3B') ? '' : 'none';
+  const box=document.getElementById('rt_batchbox_'+m);
+  const eaEl=document.getElementById('rt_ea_'+m);
+  if(!box) return;
+  const is3B = prod && _rtDefaultCcp(prod)==='3B';
+  box.style.display = is3B ? '' : 'none';
+  if(eaEl) eaEl.style.display = is3B ? 'none' : '';
+  if(is3B){
+    const rows=document.getElementById('rt_brows_'+m);
+    if(rows && !rows.children.length) rtAddBatchRow(m,'A');
+  }
 }
 
 async function rtStart(m){
   const prod=document.getElementById('rt_prod_'+m).value;
   if(!prod){ toast('제품을 선택하세요','d'); return; }
   const ccp=_rtDefaultCcp(prod);
-  const bSel=document.getElementById('rt_batch_'+m);
-  const batch=(ccp==='3B'&&bSel)?bSel.value.trim().toUpperCase():'';
-  const eaEl=document.getElementById('rt_ea_'+m);
-  const ea=eaEl?(parseInt(eaEl.value)||0):0;
+  let batch='', ea=0;
+  if(ccp==='3B'){
+    const rows=document.getElementById('rt_brows_'+m);
+    const parts=[];
+    if(rows) rows.querySelectorAll('div').forEach(div=>{
+      const lt=div.querySelector('.rt-bl'), n=div.querySelector('.rt-bn');
+      if(!lt) return;
+      const cnt=parseInt(n&&n.value)||0;
+      parts.push(cnt>0 ? `${lt.value}:${cnt}` : lt.value);
+      ea+=cnt;
+    });
+    batch=parts.join(', ');
+  } else {
+    const eaEl=document.getElementById('rt_ea_'+m);
+    ea=eaEl?(parseInt(eaEl.value)||0):0;
+  }
   const mine=_rtToday().filter(r=>String(r.machine)===m);
   if(mine.some(r=>!r.t4)){ toast(m+'호기는 진행 중 회차가 있습니다','d'); return; }
   const round=(mine.length?Math.max(...mine.map(r=>r.round||0)):0)+1;
