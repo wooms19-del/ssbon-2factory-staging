@@ -6,9 +6,11 @@
 const RT_MACHINES = ['1','2','3'];
 const RT_CCP = {
   '2B':   {label:'CCP-2B (멸균 121℃·18분↑)',  temp:121, min:18, defTemp:121},
-  '3B-A': {label:'CCP-3B A형 (95℃·30분↑)',    temp:95,  min:30, defTemp:115},
-  '3B-B': {label:'CCP-3B B형 (121℃·18분↑)',   temp:121, min:18, defTemp:115},
+  '3B':   {label:'CCP-3B (살균 95℃·30분↑)',   temp:95,  min:30, defTemp:115},
+  '3B-A': {label:'CCP-3B (살균 95℃·30분↑)',   temp:95,  min:30, defTemp:115},  // 구버전 호환
+  '3B-B': {label:'CCP-3B (살균 95℃·30분↑)',   temp:95,  min:30, defTemp:115},  // 구버전 호환
 };
+const RT_BATCH=['A','B','C','D','E','F'];  // 3B 자숙 배치 구분
 
 function _rtToday(){ return (L.retort||[]).filter(r=>String(r.date||'').slice(0,10)===tod()); }
 function _rtMin(a,b){ // 'HH:MM' 차이(분), 자정 넘김 보정
@@ -20,7 +22,8 @@ function _rtJudge(ccp, min, temp){
   const std=RT_CCP[ccp]; if(!std||min==null||!(temp>0)) return null;
   return (temp>=std.temp && min>=std.min) ? '적합' : '부적합';
 }
-function _rtDefaultCcp(product){ return /3\s*KG/i.test(product||'') ? '3B-A' : '2B'; }
+function _rtDefaultCcp(product){ return /3\s*KG/i.test(product||'') ? '3B' : '2B'; }
+function _rtIs3B(ccp){ return String(ccp||'').indexOf('3B')===0; }
 
 // 당일 내포장 제품 후보 (+전체 제품 fallback)
 function _rtProductOptions(sel){
@@ -57,8 +60,8 @@ async function renderRetort(){
         <select id="rt_prod_${m}" class="fc" style="width:100%;margin-bottom:6px" onchange="rtProdChanged('${m}')">
           <option value="">제품 선택</option>${_rtProductOptions('')}
         </select>
-        <select id="rt_ccp_${m}" class="fc" style="width:100%;margin-bottom:8px">
-          ${Object.keys(RT_CCP).map(k=>`<option value="${k}">${RT_CCP[k].label}</option>`).join('')}
+        <select id="rt_batch_${m}" class="fc" style="width:100%;margin-bottom:8px;display:none">
+          ${RT_BATCH.map(b=>`<option value="${b}">자숙 배치 ${b}</option>`).join('')}
         </select>
         <button class="btn bp bblk" onclick="rtStart('${m}')">① 가동 시작</button>
       </div>`;
@@ -87,7 +90,7 @@ async function renderRetort(){
     return `<div class="card" style="margin:0;border-color:var(--p)">
       ${head}
       <div style="font-size:13px;font-weight:600;margin-bottom:2px">${cur.product||''}</div>
-      <div style="font-size:11px;color:var(--g5);margin-bottom:6px">${ccpStd.label}</div>
+      <div style="font-size:11px;color:var(--g5);margin-bottom:6px">${ccpStd.label}${cur.batch?` · 배치 ${cur.batch}`:''}</div>
       <table style="width:100%;border-collapse:collapse;margin-bottom:8px">
         ${tRow('① 가동 시작','t1')}${tRow('② 온도 도달','t2')}${tRow('③ 가열 종료','t3')}${tRow('④ 배출 완료','t4')}
       </table>
@@ -113,7 +116,7 @@ async function renderRetort(){
       return `<tr style="border-top:1px solid var(--g2)">
         <td style="padding:7px 10px">${r.machine}호기 ${r.round||'?'}회차</td>
         <td style="padding:7px 6px;cursor:pointer" title="클릭하여 수정" onclick="rtEditProd('${r.fbId}')">${r.product||''}</td>
-        <td style="padding:7px 6px;font-size:11.5px;color:var(--g5);cursor:pointer" title="클릭하여 수정" onclick="rtEditCcp('${r.fbId}')">${r.ccp||''}</td>
+        <td style="padding:7px 6px;font-size:11.5px;color:var(--g5);cursor:pointer" title="클릭하여 수정" onclick="rtEditCcp('${r.fbId}')">${_rtIs3B(r.ccp)?('3B'+(r.batch?' · '+r.batch:'')):(r.ccp||'')}</td>
         <td style="padding:7px 6px">${tCell('t1')}</td>
         <td style="padding:7px 6px">${tCell('t2')}→${tCell('t3')}${min!=null?` · <span style="${bad?'color:#b91c1c;font-weight:600':''}">${min}분</span>`:''}</td>
         <td style="padding:7px 6px">${tCell('t4')}</td>
@@ -129,18 +132,28 @@ async function renderRetort(){
 
 function rtProdChanged(m){
   const prod=document.getElementById('rt_prod_'+m).value;
-  const ccpSel=document.getElementById('rt_ccp_'+m);
-  if(ccpSel && prod) ccpSel.value=_rtDefaultCcp(prod);
+  const bSel=document.getElementById('rt_batch_'+m);
+  if(!bSel) return;
+  if(prod && _rtDefaultCcp(prod)==='3B'){
+    bSel.style.display='';
+    // 기본값 = 당일 3B 회차 수 다음 알파벳 (자숙 배치 순서와 일치)
+    const cnt=_rtToday().filter(r=>_rtIs3B(r.ccp)).length;
+    bSel.value=RT_BATCH[Math.min(cnt, RT_BATCH.length-1)];
+  } else {
+    bSel.style.display='none';
+  }
 }
 
 async function rtStart(m){
   const prod=document.getElementById('rt_prod_'+m).value;
   if(!prod){ toast('제품을 선택하세요','d'); return; }
-  const ccp=document.getElementById('rt_ccp_'+m).value;
+  const ccp=_rtDefaultCcp(prod);
+  const bSel=document.getElementById('rt_batch_'+m);
+  const batch=(ccp==='3B'&&bSel)?bSel.value:'';
   const mine=_rtToday().filter(r=>String(r.machine)===m);
   if(mine.some(r=>!r.t4)){ toast(m+'호기는 진행 중 회차가 있습니다','d'); return; }
   const round=(mine.length?Math.max(...mine.map(r=>r.round||0)):0)+1;
-  const rec={ id:gid(), date:tod(), machine:m, round, product:prod, ccp,
+  const rec={ id:gid(), date:tod(), machine:m, round, product:prod, ccp, batch,
               t1:nowHM(), t2:'', t3:'', t4:'', temp:null };
   toast('저장중...','i');
   const fbId=await fbSave('retort', rec);
@@ -212,12 +225,21 @@ async function rtEditTemp(fbId){
 }
 async function rtEditCcp(fbId){
   const rec=(L.retort||[]).find(r=>r.fbId===fbId); if(!rec) return;
-  const v=prompt('구분 입력: 2B / 3B-A / 3B-B', rec.ccp||'2B');
-  if(v==null) return;
-  const key=v.trim().toUpperCase().replace('3B-A','3B-A').replace('3B-B','3B-B');
-  if(!RT_CCP[key]){ toast('2B, 3B-A, 3B-B 중 하나로 입력하세요','d'); return; }
-  if(await fbUpdate('retort',fbId,{ccp:key})===false){ toast('저장 실패','d'); return; }
-  rec.ccp=key; renderRetort();
+  if(_rtIs3B(rec.ccp)){
+    const v=prompt('자숙 배치 (A~F)', rec.batch||'A');
+    if(v==null) return;
+    const b=v.trim().toUpperCase();
+    if(RT_BATCH.indexOf(b)<0){ toast('A~F 중 하나로 입력하세요','d'); return; }
+    if(await fbUpdate('retort',fbId,{ccp:'3B',batch:b})===false){ toast('저장 실패','d'); return; }
+    rec.ccp='3B'; rec.batch=b; renderRetort();
+  } else {
+    const v=prompt('구분: 2B 또는 3B', rec.ccp||'2B');
+    if(v==null) return;
+    const key=v.trim().toUpperCase();
+    if(key!=='2B'&&key!=='3B'){ toast('2B 또는 3B로 입력하세요','d'); return; }
+    if(await fbUpdate('retort',fbId,{ccp:key})===false){ toast('저장 실패','d'); return; }
+    rec.ccp=key; renderRetort();
+  }
 }
 async function rtEditProd(fbId){
   const rec=(L.retort||[]).find(r=>r.fbId===fbId); if(!rec) return;
@@ -236,7 +258,7 @@ async function rtDownloadCcp(){
     const recs=(await fbGetByDate('retort', dateStr)).filter(r=>r.t2&&r.t3)
       .sort((a,b)=>String(a.t2||'').localeCompare(String(b.t2||'')));
     const r2b=recs.filter(r=>r.ccp==='2B');
-    const r3b=recs.filter(r=>r.ccp==='3B-A'||r.ccp==='3B-B');
+    const r3b=recs.filter(r=>_rtIs3B(r.ccp));
 
     const B={top:{style:'thin',color:{rgb:'444444'}},bottom:{style:'thin',color:{rgb:'444444'}},
              left:{style:'thin',color:{rgb:'444444'}},right:{style:'thin',color:{rgb:'444444'}}};
@@ -321,7 +343,7 @@ async function rtDownloadCcp(){
           const judge=_rtJudge(rec.ccp,min,rec.temp);
           const jTxt=judge==='적합'?'적':judge==='부적합'?'부':'';
           if(is3B){
-            set(r,1,C(rec.machine,sBase)); set(r,2,C(rec.ccp==='3B-A'?'A':'B',sBase)); set(r,3,C(rec.product,sBase));
+            set(r,1,C(rec.machine,sBase)); set(r,2,C(rec.batch||'A',sBase)); set(r,3,C(rec.product,sBase));
             set(r,4,C(rec.t2,sBase)); set(r,5,C(rec.t3,sBase));
             set(r,6,C(min+'분',sBase)); set(r,7,C(rec.temp+'℃',sBase)); set(r,8,C(jTxt,sBase)); set(r,9,C('',sBase));
           } else {
