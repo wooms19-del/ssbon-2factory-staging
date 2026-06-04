@@ -146,10 +146,14 @@ function renderOpPending(list) {
         <div style="background:var(--bg);border:0.5px solid var(--g2);border-radius:6px;padding:10px 12px;margin-bottom:14px">
           <div style="font-size:11px;font-weight:500;color:var(--g5);margin-bottom:8px">작업 시간 기록</div>
           ${wlRows || '<div style="font-size:12px;color:var(--g4);padding:2px 0">기록 없음</div>'}
-          <div style="display:flex;align-items:center;gap:6px;margin-top:8px;flex-wrap:wrap">
-            <input class="fc" type="time" id="op_ts_${i}" style="padding:5px 6px">
-            <span style="font-size:12px;color:var(--g5)">~</span>
-            <input class="fc" type="time" id="op_te_${i}" style="padding:5px 6px">
+          <div style="display:flex;align-items:center;gap:4px;margin-top:8px;flex-wrap:wrap">
+            <select class="fc" id="op_ts_h_${i}" style="padding:5px 4px"><option value="">시</option>${Array.from({length:24},(_,h)=>`<option>${String(h).padStart(2,'0')}</option>`).join('')}</select>
+            <span style="font-size:12px">:</span>
+            <select class="fc" id="op_ts_m_${i}" style="padding:5px 4px"><option value="">분</option>${Array.from({length:60},(_,m)=>`<option>${String(m).padStart(2,'0')}</option>`).join('')}</select>
+            <span style="font-size:12px;color:var(--g5);margin:0 2px">~</span>
+            <select class="fc" id="op_te_h_${i}" style="padding:5px 4px"><option value="">시</option>${Array.from({length:24},(_,h)=>`<option>${String(h).padStart(2,'0')}</option>`).join('')}</select>
+            <span style="font-size:12px">:</span>
+            <select class="fc" id="op_te_m_${i}" style="padding:5px 4px"><option value="">분</option>${Array.from({length:60},(_,m)=>`<option>${String(m).padStart(2,'0')}</option>`).join('')}</select>
             <input class="fc" type="number" id="op_tw_${i}" placeholder="인원" style="width:58px;text-align:right;padding:5px 8px">
             <span style="font-size:12px;color:var(--g5)">명</span>
             <input type="hidden" id="op_tidx_${i}" value="-1">
@@ -369,8 +373,10 @@ function opCalc(i, innerEa) {
 function opDocId(date, product){ return 'op_'+date+'_'+String(product).replace(/[\s\W]/g,'_').slice(0,20); }
 
 async function opTimeSave(i, date, product){
-  const start = (document.getElementById('op_ts_'+i)||{}).value||'';
-  const end   = (document.getElementById('op_te_'+i)||{}).value||'';
+  const sh=(document.getElementById('op_ts_h_'+i)||{}).value||'', sm=(document.getElementById('op_ts_m_'+i)||{}).value||'';
+  const eh=(document.getElementById('op_te_h_'+i)||{}).value||'', em=(document.getElementById('op_te_m_'+i)||{}).value||'';
+  const start = (sh!=='' && sm!=='') ? sh+':'+sm : '';
+  const end   = (eh!=='' && em!=='') ? eh+':'+em : '';
   const n = parseInt((document.getElementById('op_tw_'+i)||{}).value)||0;
   const idx = parseInt((document.getElementById('op_tidx_'+i)||{}).value);
   if(!start || !end){ toast('시작/종료 시간을 입력하세요','d'); return; }
@@ -391,11 +397,12 @@ async function opTimeSave(i, date, product){
 }
 
 function opTimeEdit(i, idx, start, end, workers){
-  const ts=document.getElementById('op_ts_'+i), te=document.getElementById('op_te_'+i),
-        tw=document.getElementById('op_tw_'+i), ti=document.getElementById('op_tidx_'+i),
-        bt=document.getElementById('op_tsave_'+i);
-  if(ts) ts.value=start; if(te) te.value=end; if(tw) tw.value=workers;
-  if(ti) ti.value=idx;
+  const sp=String(start).split(':'), ep=String(end).split(':');
+  const set=(id,v)=>{ const el=document.getElementById(id); if(el) el.value=v; };
+  set('op_ts_h_'+i, sp[0]||''); set('op_ts_m_'+i, sp[1]||'');
+  set('op_te_h_'+i, ep[0]||''); set('op_te_m_'+i, ep[1]||'');
+  set('op_tw_'+i, workers); set('op_tidx_'+i, idx);
+  const bt=document.getElementById('op_tsave_'+i);
   if(bt) bt.textContent='수정 저장';
 }
 
