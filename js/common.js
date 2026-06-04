@@ -466,12 +466,22 @@ async function registerGtin(gtin, part){
   if(!L) L = nL();
   L.gtinMap[gtin] = part;
   saveL();
-  // Firestore 업데이트
+  // Firestore 업데이트 — ★ 해당 GTIN 필드만 update (통째 set 금지: 다른 기기 등록분 덮어쓰기 방지)
   if(typeof db !== 'undefined' && db){
-    await db.collection('_config').doc('gtin_map').set({
-      map: L.gtinMap,
-      updatedAt: new Date().toISOString()
-    });
+    try {
+      const upd = { updatedAt: new Date().toISOString() };
+      upd['map.'+gtin] = part;
+      await db.collection('_config').doc('gtin_map').update(upd);
+    } catch(e){
+      // 문서가 없을 때만 set으로 생성 (최신 원격본 병합 후)
+      await syncGtinMapFromFirestore();
+      L.gtinMap[gtin] = part;
+      saveL();
+      await db.collection('_config').doc('gtin_map').set({
+        map: L.gtinMap,
+        updatedAt: new Date().toISOString()
+      });
+    }
   }
   return true;
 }
@@ -483,11 +493,15 @@ async function unregisterGtin(gtin){
   if(!L) L = nL();
   delete L.gtinMap[gtin];
   saveL();
+  // ★ 해당 GTIN 필드만 삭제 (통째 set 금지: 다른 기기 등록분 덮어쓰기 방지)
   if(typeof db !== 'undefined' && db){
-    await db.collection('_config').doc('gtin_map').set({
-      map: L.gtinMap,
-      updatedAt: new Date().toISOString()
-    });
+    try {
+      const upd = { updatedAt: new Date().toISOString() };
+      upd['map.'+gtin] = firebase.firestore.FieldValue.delete();
+      await db.collection('_config').doc('gtin_map').update(upd);
+    } catch(e){
+      console.warn('[gtinMap] 삭제 update 실패:', e);
+    }
   }
   return true;
 }
