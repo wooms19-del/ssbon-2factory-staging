@@ -133,31 +133,29 @@ function renderOpPending(list) {
         <!-- 작업 시간 기록 -->
         ${(() => {
           const wl = item.workLogs||[];
-          const running = wl.length && !wl[wl.length-1].end ? wl[wl.length-1] : null;
-          const wlSum = wl.filter(w=>w.end).reduce((s,w)=>s+dur(w.start,w.end)*(parseFloat(w.workers)||0),0);
+          const wlSum = wl.reduce((s,w)=>s+dur(w.start,w.end)*(parseFloat(w.workers)||0),0);
           const wlRows = wl.map((w,j)=>`
             <div style="display:flex;align-items:center;gap:8px;font-size:12px;padding:3px 0">
-              <span style="color:var(--g5);min-width:96px">${w.start} ~ ${w.end||'진행중'}</span>
+              <span style="color:var(--g5);min-width:96px">${w.start} ~ ${w.end}</span>
               <span>${w.workers}명</span>
-              <span style="margin-left:auto;color:var(--g5)">${w.end?r2(dur(w.start,w.end)*(parseFloat(w.workers)||0)).toFixed(2)+'인시':''}</span>
+              <span style="margin-left:auto;color:var(--g5)">${r2(dur(w.start,w.end)*(parseFloat(w.workers)||0)).toFixed(2)}인시</span>
+              <span style="color:#1d4ed8;cursor:pointer;padding:0 4px;font-size:12px" onclick="opTimeEdit(${i},${j},'${w.start}','${w.end}',${parseFloat(w.workers)||0})">수정</span>
               <span style="color:var(--g4);cursor:pointer;padding:0 4px" onclick="opTimeDel(${i},'${item.date}','${item.product}',${j})">✕</span>
             </div>`).join('');
           return `
         <div style="background:var(--bg);border:0.5px solid var(--g2);border-radius:6px;padding:10px 12px;margin-bottom:14px">
           <div style="font-size:11px;font-weight:500;color:var(--g5);margin-bottom:8px">작업 시간 기록</div>
           ${wlRows || '<div style="font-size:12px;color:var(--g4);padding:2px 0">기록 없음</div>'}
-          ${running ? `
-          <div style="display:flex;align-items:center;gap:8px;margin-top:8px;padding:8px 10px;background:#e6f7f0;border-radius:6px">
-            <span style="font-size:12px;color:#1a7f5a;font-weight:500">${running.start} 시작 · ${running.workers}명 작업중</span>
-            <button class="btn bs" style="margin-left:auto;padding:6px 14px" onclick="opTimeEnd(${i},'${item.date}','${item.product}')">종료</button>
-          </div>` : `
-          <div style="display:flex;align-items:center;gap:8px;margin-top:8px">
-            <span style="font-size:12px;color:var(--g5)">인원</span>
-            <input class="fc" type="number" id="op_tw_${i}" placeholder="0" style="width:60px;text-align:right;padding:5px 8px">
+          <div style="display:flex;align-items:center;gap:6px;margin-top:8px;flex-wrap:wrap">
+            <input class="fc" type="time" id="op_ts_${i}" style="padding:5px 6px">
+            <span style="font-size:12px;color:var(--g5)">~</span>
+            <input class="fc" type="time" id="op_te_${i}" style="padding:5px 6px">
+            <input class="fc" type="number" id="op_tw_${i}" placeholder="인원" style="width:58px;text-align:right;padding:5px 8px">
             <span style="font-size:12px;color:var(--g5)">명</span>
-            <button class="btn bs" style="margin-left:auto;padding:6px 14px" onclick="opTimeStart(${i},'${item.date}','${item.product}')">▶ 시작</button>
-          </div>`}
-          ${wl.filter(w=>w.end).length ? `<div style="display:flex;justify-content:flex-end;margin-top:6px;font-size:12px;font-weight:500">합계 ${r2(wlSum).toFixed(2)}인시</div>` : ''}
+            <input type="hidden" id="op_tidx_${i}" value="-1">
+            <button class="btn bs" id="op_tsave_${i}" style="margin-left:auto;padding:6px 14px" onclick="opTimeSave(${i},'${item.date}','${item.product}')">저장</button>
+          </div>
+          ${wl.length ? `<div style="display:flex;justify-content:flex-end;margin-top:6px;font-size:12px;font-weight:500">합계 ${r2(wlSum).toFixed(2)}인시</div>` : ''}
         </div>`;
         })()}
 
@@ -369,38 +367,36 @@ function opCalc(i, innerEa) {
 
 // ─ 외포장 작업시간 기록 (생산성용) ─
 function opDocId(date, product){ return 'op_'+date+'_'+String(product).replace(/[\s\W]/g,'_').slice(0,20); }
-function _opNowHM(){ const d=new Date(); return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); }
 
-async function opTimeStart(i, date, product){
+async function opTimeSave(i, date, product){
+  const start = (document.getElementById('op_ts_'+i)||{}).value||'';
+  const end   = (document.getElementById('op_te_'+i)||{}).value||'';
   const n = parseInt((document.getElementById('op_tw_'+i)||{}).value)||0;
+  const idx = parseInt((document.getElementById('op_tidx_'+i)||{}).value);
+  if(!start || !end){ toast('시작/종료 시간을 입력하세요','d'); return; }
   if(!n){ toast('인원을 입력하세요','d'); return; }
   try{
     const ref = db.collection('outerpacking').doc(opDocId(date, product));
     const snap = await ref.get();
     const logs = (snap.exists && snap.data().workLogs) || [];
-    if(logs.length && !logs[logs.length-1].end){ toast('이미 진행중인 작업이 있습니다','d'); return; }
-    logs.push({ start:_opNowHM(), end:'', workers:n });
+    const rec = { start, end, workers:n };
+    if(idx >= 0 && idx < logs.length) logs[idx] = rec;  // 수정
+    else logs.push(rec);                                 // 신규
     if(snap.exists){ await ref.update({ workLogs: logs }); }
     else { await ref.set({ date, product, workLogs: logs, _timeOnly:true, _createdAt: firebase.firestore.FieldValue.serverTimestamp() }); }
     fbClearCache('outerpacking');
-    toast('작업 시작 ('+n+'명)');
+    toast(idx>=0 ? '작업 기록 수정됨' : '작업 기록 저장됨');
     loadOuterPacking();
-  }catch(e){ console.error('[opTimeStart]',e); toast('시간 기록 실패','d'); }
+  }catch(e){ console.error('[opTimeSave]',e); toast('시간 기록 실패','d'); }
 }
 
-async function opTimeEnd(i, date, product){
-  try{
-    const ref = db.collection('outerpacking').doc(opDocId(date, product));
-    const snap = await ref.get();
-    if(!snap.exists){ toast('진행중인 작업이 없습니다','d'); return; }
-    const logs = snap.data().workLogs||[];
-    if(!logs.length || logs[logs.length-1].end){ toast('진행중인 작업이 없습니다','d'); return; }
-    logs[logs.length-1].end = _opNowHM();
-    await ref.update({ workLogs: logs });
-    fbClearCache('outerpacking');
-    toast('작업 종료 기록됨');
-    loadOuterPacking();
-  }catch(e){ console.error('[opTimeEnd]',e); toast('시간 기록 실패','d'); }
+function opTimeEdit(i, idx, start, end, workers){
+  const ts=document.getElementById('op_ts_'+i), te=document.getElementById('op_te_'+i),
+        tw=document.getElementById('op_tw_'+i), ti=document.getElementById('op_tidx_'+i),
+        bt=document.getElementById('op_tsave_'+i);
+  if(ts) ts.value=start; if(te) te.value=end; if(tw) tw.value=workers;
+  if(ti) ti.value=idx;
+  if(bt) bt.textContent='수정 저장';
 }
 
 async function opTimeDel(i, date, product, idx){
