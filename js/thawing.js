@@ -161,6 +161,7 @@ async function renderThawWaiting(){
             data-max="${v.count}" data-totalkg="${r2(v.kg)}"
             data-barcodes='${JSON.stringify(v.barcodes.map(b=>b.importCode))}'
             data-weights='${JSON.stringify(v.barcodes.map(b=>parseFloat(b.weightKg)||0))}'
+            data-rfends='${JSON.stringify(v.barcodes.map(b=>String(b.rfEnd||"").slice(0,5)))}'
             min="0" max="${v.count}" value="${v.count}"
             style="width:70px;text-align:center" oninput="updateTwSummary()">
           <span style="font-size:12px;color:var(--g5)">박스</span>
@@ -194,13 +195,13 @@ function updateTwSummary(){
 async function startThawing(){
   const cartNo=document.getElementById('tw_cart').value.trim();
   if(!cartNo){toast('해동대차 번호 입력하세요','d');return;}
-  const startTime=document.getElementById('tw_start').value||nowHM();
+  const manualTime=document.getElementById('tw_start').value;
 
   const inputs=[...document.querySelectorAll('.tw-box-cnt')];
   if(!inputs.length){toast('방혈 대기 원육이 없습니다','d');return;}
 
   let totalBoxes=0, totalKg=0;
-  const importCodes=[], typeArr=[];
+  const importCodes=[], typeArr=[], rfEnds=[];
   let hasError=false;
 
   inputs.forEach(inp=>{
@@ -212,8 +213,10 @@ async function startThawing(){
     // ★ 실제 박스별 무게 합 사용 (찍은 순서대로 cnt개) — 비례 계산 금지
     const allCodes=JSON.parse(inp.dataset.barcodes||'[]');
     const allWeights=JSON.parse(inp.dataset.weights||'[]');
+    const allRfEnds=JSON.parse(inp.dataset.rfends||'[]');
     const selectedCodes=allCodes.slice(0,cnt);
     const selectedWeights=allWeights.slice(0,cnt);
+    rfEnds.push(...allRfEnds.slice(0,cnt).filter(Boolean));
     const partKg2 = r2(selectedWeights.reduce((s,w)=>s+(parseFloat(w)||0),0));
     totalKg=r2(totalKg+partKg2);
     typeArr.push(inp.dataset.part);
@@ -222,6 +225,9 @@ async function startThawing(){
 
   if(hasError||!totalBoxes){toast('박스수를 입력하세요','d');return;}
   const type=typeArr.join(',');
+  // ★ 방혈 시작 = 수동 입력 > 해동 종료(rfEnd) 마지막 시각 > 현재 시각
+  //   (해동기에서 나오는 즉시 방혈통 투입 — 입력 지연이 있어도 실제 시각 기준)
+  const startTime = manualTime || (rfEnds.length ? rfEnds.sort()[rfEnds.length-1] : nowHM());
 
   document.getElementById('tw_cart').value='';
   document.getElementById('tw_start').value='';
