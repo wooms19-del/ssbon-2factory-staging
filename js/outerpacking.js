@@ -146,15 +146,15 @@ function renderOpPending(list) {
         <div style="background:var(--bg);border:0.5px solid var(--g2);border-radius:6px;padding:10px 12px;margin-bottom:14px">
           <div style="font-size:11px;font-weight:500;color:var(--g5);margin-bottom:8px">작업 시간 기록</div>
           ${wlRows || '<div style="font-size:12px;color:var(--g4);padding:2px 0">기록 없음</div>'}
-          <div style="display:flex;align-items:center;gap:4px;margin-top:8px;flex-wrap:wrap">
-            <select class="fc" id="op_ts_h_${i}" style="padding:5px 4px"><option value="">시</option>${Array.from({length:24},(_,h)=>`<option>${String(h).padStart(2,'0')}</option>`).join('')}</select>
+          <div style="display:flex;align-items:center;gap:4px;margin-top:8px">
+            <select class="fc" id="op_ts_h_${i}" style="width:62px;flex:none;padding:5px 4px"><option value="">시</option>${Array.from({length:24},(_,h)=>`<option>${String(h).padStart(2,'0')}</option>`).join('')}</select>
             <span style="font-size:12px">:</span>
-            <select class="fc" id="op_ts_m_${i}" style="padding:5px 4px"><option value="">분</option>${Array.from({length:60},(_,m)=>`<option>${String(m).padStart(2,'0')}</option>`).join('')}</select>
+            <select class="fc" id="op_ts_m_${i}" style="width:62px;flex:none;padding:5px 4px"><option value="">분</option>${Array.from({length:60},(_,m)=>`<option>${String(m).padStart(2,'0')}</option>`).join('')}</select>
             <span style="font-size:12px;color:var(--g5);margin:0 2px">~</span>
-            <select class="fc" id="op_te_h_${i}" style="padding:5px 4px"><option value="">시</option>${Array.from({length:24},(_,h)=>`<option>${String(h).padStart(2,'0')}</option>`).join('')}</select>
+            <select class="fc" id="op_te_h_${i}" style="width:62px;flex:none;padding:5px 4px"><option value="">시</option>${Array.from({length:24},(_,h)=>`<option>${String(h).padStart(2,'0')}</option>`).join('')}</select>
             <span style="font-size:12px">:</span>
-            <select class="fc" id="op_te_m_${i}" style="padding:5px 4px"><option value="">분</option>${Array.from({length:60},(_,m)=>`<option>${String(m).padStart(2,'0')}</option>`).join('')}</select>
-            <input class="fc" type="number" id="op_tw_${i}" placeholder="인원" style="width:58px;text-align:right;padding:5px 8px">
+            <select class="fc" id="op_te_m_${i}" style="width:62px;flex:none;padding:5px 4px"><option value="">분</option>${Array.from({length:60},(_,m)=>`<option>${String(m).padStart(2,'0')}</option>`).join('')}</select>
+            <input class="fc" type="number" id="op_tw_${i}" placeholder="인원" style="width:58px;flex:none;text-align:right;padding:5px 8px">
             <span style="font-size:12px;color:var(--g5)">명</span>
             <input type="hidden" id="op_tidx_${i}" value="-1">
             <button class="btn bs" id="op_tsave_${i}" style="margin-left:auto;padding:6px 14px" onclick="opTimeSave(${i},'${item.date}','${item.product}')">저장</button>
