@@ -358,7 +358,7 @@
   }
 
   /* ===== 데이터 처리 (월별현황 로직 카피) ===== */
-  function _mpProcess(pk, op, ppMonth, thMonth, shMonth, ckMonth, pendingDates){
+  function _mpProcess(pk, op, ppMonth, thMonth, shMonth, ckMonth, pendingDates, groupModeOverride){
     pk = pk||[]; op = op||[]; ppMonth = ppMonth||[]; thMonth = thMonth||[];
     shMonth = shMonth||[]; ckMonth = ckMonth||[];
 
@@ -841,7 +841,7 @@
         if(grp.length > 1){
           // ★ 그룹 모드(제품별) → 행마다 비율 분배 (필터 유무 무관)
           //   '없음' 모드일 때만 기존 풀+0 표시
-          var splitMode = (_mpGroupMode === 'product');
+          var splitMode = ((groupModeOverride !== undefined ? groupModeOverride : _mpGroupMode) === 'product');
           if(splitMode){
             // ★ 각 행이 자기 td 출력하도록 rowspan 효과 끔
             r._grpSize = 1;

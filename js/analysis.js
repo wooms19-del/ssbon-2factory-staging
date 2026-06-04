@@ -436,9 +436,13 @@ async function renderMonthlyReport(pk, from, effectiveTo, ppMonth, thMonth, opDa
   // 글로벌 저장 (필터용)
   window._moGD = { dayEntries, rmByDate, rmByDatePart, opMap, metaMap, thMonth: thMonth||[], ppMonth: ppMonth||[], shMonth: shMonth||[], metaKey, attendanceMap: attendanceMap||{} };
   // ★ 월단위생산량과 동일 데이터 (값·그룹 완전 일치)
+  //   none 모드용 / 제품별(공유원육 비례분배) 모드용 두 벌
   try {
-    if(window._mpProcess) window._moGD.mpRows = (window._mpProcess(pk, opData, ppMonth, thMonth, shMonth, ckMonth)||{}).rows || null;
-  } catch(e){ console.error('[일보] mpRows 빌드 실패', e); window._moGD.mpRows = null; }
+    if(window._mpProcess){
+      window._moGD.mpRows      = (window._mpProcess(pk, opData, ppMonth, thMonth, shMonth, ckMonth, undefined, 'none')||{}).rows || null;
+      window._moGD.mpRowsSplit = (window._mpProcess(pk, opData, ppMonth, thMonth, shMonth, ckMonth, undefined, 'product')||{}).rows || null;
+    }
+  } catch(e){ console.error('[일보] mpRows 빌드 실패', e); window._moGD.mpRows = null; window._moGD.mpRowsSplit = null; }
   _moRenderRows(null);
   renderPackingChart(dayEntries, opMap, _moYm || tod().slice(0,7));
   // 일별 원육 사용량 차트
@@ -697,42 +701,65 @@ function _moRenderRows() {
   let totRm=0, totPkKg=0, totEa=0;
   window._moReportRows = [];
 
-  // ════════ 원육별 모드: 부위별 합산 한 행 ════════
+  // ════════ 원육별 모드: 부위별로 일자 세부 행 + 소계 ════════
   if(mode==='part'){
-    const grouped={}, order=[];
+    // (date, type) 단위로 합침 — 같은 날 같은 부위의 제품들을 한 행으로
+    const byType={}, order=[];
     disp.forEach(r=>{
       const key = r.type || (r.noMeat?'무육':'?');
-      if(!grouped[key]){ grouped[key]={rm:0, ea:0, meat:0, days:new Set(), prods:new Set()}; order.push(key); }
-      const g=grouped[key];
-      g.rm += r.rmKg||0; g.ea += r.pkEa||0; g.meat += meatOf(r);
-      if(r.date) g.days.add(r.date);
-      if(r.product) g.prods.add(r.product);
+      if(!byType[key]){ byType[key]={}; order.push(key); }
+      const d = r.date||'';
+      if(!byType[key][d]) byType[key][d] = {rm:0, ea:0, meat:0, prods:new Set(), workers:''};
+      const c = byType[key][d];
+      c.rm += r.rmKg||0; c.ea += r.pkEa||0; c.meat += meatOf(r);
+      if(r.product) c.prods.add(r.product);
     });
-    order.forEach((key,i)=>{
-      const g=grouped[key];
-      const yld = g.rm>0 ? g.meat/g.rm*100 : null;
-      const [yt, yb] = yldStyle(yld);
-      const bg = dayBg[i%2];
-      totRm+=g.rm; totPkKg+=g.meat; totEa+=g.ea;
+    order.sort((a,b)=>a.localeCompare(b));
+    order.forEach(type=>{
+      const days = Object.keys(byType[type]).sort();
+      let sRm=0, sEa=0, sMeat=0;
+      days.forEach((d,ri)=>{
+        const c = byType[type][d];
+        const yld = c.rm>0 ? c.meat/c.rm*100 : null;
+        const [yt, yb] = yldStyle(yld);
+        const bg = dayBg[ri%2];
+        sRm+=c.rm; sEa+=c.ea; sMeat+=c.meat;
+        const dow = d ? ['일','월','화','수','목','금','토'][new Date(d).getDay()] : '';
+        html.push(`<tr>
+          <td style="${vm}${PC}${bg}text-align:center;color:#94a3b8;border-right:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0">${ri+1}</td>
+          <td style="${vm}${PC}${bg}text-align:center;border-right:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0"><span style="font-weight:600;font-size:13px;color:#334155">${d.slice(5).replace('-','/')}</span> <span style="font-size:10px;color:#94a3b8">(${dow})</span></td>
+          <td style="${vm}${PC}${bg}text-align:center;color:#475569;border-right:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0">${_attMap[d]||'—'}${_attMap[d]?'명':''}</td>
+          <td style="${vm}${PC}${bg}text-align:center;border-right:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0">${typeBadge(type==='?'||type==='무육'?'':type)}</td>
+          <td style="${vm}${PC}${bg}text-align:center;font-size:12px;color:#475569;border-right:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0">${[...c.prods].join(', ')}</td>
+          <td style="${vm}${PC}${bg}text-align:center;font-variant-numeric:tabular-nums;border-right:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0">${fmtKg(r2(c.rm))}</td>
+          <td style="${vm}${PC}${bg}text-align:center;font-variant-numeric:tabular-nums;border-right:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0">${c.ea>0?c.ea.toLocaleString():'—'}</td>
+          <td style="${vm}${PC}${bg}text-align:center;font-weight:600;font-variant-numeric:tabular-nums;border-right:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0">${fmtKg(r2(c.meat))}</td>
+          <td style="${vm}${PC}${yb||bg}text-align:center;font-weight:600;${yt}border-right:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0">${yld!=null?yld.toFixed(1)+'%':'—'}</td>
+          <td colspan="2" style="${vm}${PC}${bg}border-bottom:1px solid #e2e8f0"></td>
+        </tr>`);
+      });
+      const sy = sRm>0 ? sMeat/sRm*100 : null;
+      totRm+=sRm; totPkKg+=sMeat; totEa+=sEa;
+      const typeLbl = (type==='?')?'(부위 미지정)':type;
       html.push(`<tr>
-        <td style="${vm}${PC}${bg}text-align:center;font-weight:700;border-right:1px solid #e2e8f0;border-bottom:2px solid #cbd5e1">${i+1}</td>
-        <td style="${vm}${PC}${bg}text-align:center;border-right:1px solid #e2e8f0;border-bottom:2px solid #cbd5e1">${g.days.size}일</td>
-        <td style="${vm}${PC}${bg}text-align:center;color:#94a3b8;border-right:1px solid #e2e8f0;border-bottom:2px solid #cbd5e1">—</td>
-        <td style="${vm}${PC}${bg}text-align:center;border-right:1px solid #e2e8f0;border-bottom:2px solid #cbd5e1">${typeBadge(key==='?'?'':key)}</td>
-        <td style="${vm}${PC}${bg}text-align:center;font-size:12px;color:#475569;border-right:1px solid #e2e8f0;border-bottom:2px solid #cbd5e1">${[...g.prods].join(', ')}</td>
-        <td style="${vm}${PC}${bg}text-align:center;font-variant-numeric:tabular-nums;border-right:1px solid #e2e8f0;border-bottom:2px solid #cbd5e1">${fmtKg(r2(g.rm))}</td>
-        <td style="${vm}${PC}${bg}text-align:center;font-variant-numeric:tabular-nums;border-right:1px solid #e2e8f0;border-bottom:2px solid #cbd5e1">${g.ea>0?g.ea.toLocaleString():'—'}</td>
-        <td style="${vm}${PC}${bg}text-align:center;font-weight:600;font-variant-numeric:tabular-nums;border-right:1px solid #e2e8f0;border-bottom:2px solid #cbd5e1">${fmtKg(r2(g.meat))}</td>
-        <td style="${vm}${PC}${yb||bg}text-align:center;font-weight:700;font-size:15px;${yt}border-right:1px solid #e2e8f0;border-bottom:2px solid #cbd5e1">${yld!=null?yld.toFixed(1)+'%':'—'}</td>
-        <td colspan="2" style="${vm}${PC}${bg}border-bottom:2px solid #cbd5e1"></td>
+        <td colspan="5" style="${vm}${PC}background:#eef2f7;text-align:center;font-weight:700;color:#1e293b;border-bottom:2px solid #cbd5e1">${typeLbl} 소계 (${days.length}일)</td>
+        <td style="${vm}${PC}background:#eef2f7;text-align:center;font-weight:700;font-variant-numeric:tabular-nums;border-bottom:2px solid #cbd5e1">${fmtKg(r2(sRm))}</td>
+        <td style="${vm}${PC}background:#eef2f7;text-align:center;font-weight:700;font-variant-numeric:tabular-nums;border-bottom:2px solid #cbd5e1">${sEa>0?sEa.toLocaleString():'—'}</td>
+        <td style="${vm}${PC}background:#eef2f7;text-align:center;font-weight:700;font-variant-numeric:tabular-nums;border-bottom:2px solid #cbd5e1">${fmtKg(r2(sMeat))}</td>
+        <td style="${vm}${PC}background:#eef2f7;text-align:center;font-weight:700;color:#1e293b;border-bottom:2px solid #cbd5e1">${sy!=null?sy.toFixed(1)+'%':'—'}</td>
+        <td colspan="2" style="background:#eef2f7;border-bottom:2px solid #cbd5e1"></td>
       </tr>`);
     });
   }
 
-  // ════════ 제품별 모드: 제품별 일자 행 + 소계 ════════
+  // ════════ 제품별 모드: 제품별 일자 행 + 소계 (공유 원육은 월단위생산량과 동일하게 비례 분배) ════════
   else if(mode==='product'){
+    const srcRows = window._moGD.mpRowsSplit || mpRows;
+    const _md2 = {};
+    srcRows.forEach(r => { if(r._isMainRow !== false && r.date) _md2[r.date] = true; });
+    const disp2 = srcRows.filter(r => r._isMainRow !== false || !_md2[r.date]);
     const byProd={}, order=[];
-    disp.forEach(r=>{
+    disp2.forEach(r=>{
       const key=r.product||'?';
       if(!byProd[key]){ byProd[key]=[]; order.push(key); }
       byProd[key].push(r);
