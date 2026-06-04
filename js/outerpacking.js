@@ -60,6 +60,8 @@ function renderOpPending(list) {
     const rc = (L.recipes||{})[item.product] || {};
     const outerMats = rc.outer || [];
     const d = item.date ? item.date.slice(5).replace('-','/') : '';
+    const wl = item.workLogs||[];
+    const wlSum = wl.reduce((s,w)=>s+dur(w.start,w.end)*(parseFloat(w.workers)||0),0);
 
     // 포장재 행 HTML (제품 행 + outer 항목들)
     const matRows = `
@@ -132,8 +134,6 @@ function renderOpPending(list) {
 
         <!-- 작업 시간 기록 -->
         ${(() => {
-          const wl = item.workLogs||[];
-          const wlSum = wl.reduce((s,w)=>s+dur(w.start,w.end)*(parseFloat(w.workers)||0),0);
           const wlRows = wl.map((w,j)=>`
             <div style="display:flex;align-items:center;gap:8px;font-size:12px;padding:3px 0">
               <span style="color:var(--g5);min-width:96px">${w.start} ~ ${w.end}</span>
@@ -221,10 +221,17 @@ function renderOpPending(list) {
         </table>
 
         <!-- 불량률 -->
-        <div style="display:flex;align-items:center;gap:6px;margin-bottom:12px;padding:8px 10px;background:var(--bg);border-radius:6px;border:0.5px solid var(--g2)">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;padding:8px 10px;background:var(--bg);border-radius:6px;border:0.5px solid var(--g2)">
           <span style="font-size:12px;color:var(--g5)">불량률</span>
           <span style="font-size:14px;font-weight:500" id="op_rate_${i}">0.00%</span>
           <span style="font-size:11px;color:var(--g4)">(제품 불량 ÷ 내포장 EA)</span>
+        </div>
+
+        <!-- 생산성 -->
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:12px;padding:8px 10px;background:var(--bg);border-radius:6px;border:0.5px solid var(--g2)">
+          <span style="font-size:12px;color:var(--g5)">생산성</span>
+          <span style="font-size:14px;font-weight:500;color:#1d4ed8" id="op_prod_${i}" data-mh="${wlSum}">${wlSum>0 ? Math.round(item.ea/wlSum).toLocaleString()+' EA/인시' : '—'}</span>
+          <span style="font-size:11px;color:var(--g4)">${wlSum>0 ? '(외포장 완료 ÷ '+r2(wlSum).toFixed(2)+'인시)' : '(작업 시간 기록 필요)'}</span>
         </div>
 
         <!-- 제품 테스트 체크 -->
@@ -313,6 +320,13 @@ function opCalc(i, innerEa) {
   const outerInput = document.getElementById('op_outer_'+i);
   if(sOuter){ sOuter.textContent = outerCalc.toLocaleString(); }
   if(outerInput){ outerInput.value = outerCalc; }
+
+  // 생산성 갱신 (외포장 완료 EA ÷ 기록 인시)
+  const prodEl = document.getElementById('op_prod_'+i);
+  if(prodEl){
+    const mh = parseFloat(prodEl.dataset.mh)||0;
+    if(mh > 0) prodEl.textContent = Math.round(outerCalc/mh).toLocaleString()+' EA/인시';
+  }
 
   // 잔여 EA
   const remInput = document.getElementById('op_rem_'+i);
@@ -540,6 +554,13 @@ function renderOpDone(list) {
           <div><span style="color:var(--g5);font-size:12px">외포장 완료</span><br><b>${(opEa(item)||(item.ea||item.innerEa||0)-(item.productDefect||0)).toLocaleString()} EA</b></div>
           <div><span style="color:var(--g5);font-size:12px">외박스 사용</span><br><b>${boxes} 박스</b></div>
           <div><span style="color:var(--g5);font-size:12px">불량률</span><br><b>${rate}</b></div>
+          ${(()=>{
+            const wl=item.workLogs||[];
+            const mh=wl.reduce((s,w)=>s+dur(w.start,w.end)*(parseFloat(w.workers)||0),0);
+            if(mh<=0) return '';
+            const oea=opEa(item)||(item.ea||item.innerEa||0)-(item.productDefect||0);
+            return `<div><span style="color:var(--g5);font-size:12px">생산성</span><br><b style="color:#1d4ed8">${Math.round(oea/mh).toLocaleString()} EA/인시</b> <span style="font-size:11px;color:var(--g4)">(${r2(mh).toFixed(2)}인시)</span></div>`;
+          })()}
           ${item.sample ? `<div><span style="color:var(--g5);font-size:12px">샘플</span><br><b>${item.sample} EA</b></div>` : ''}
           <div><span style="color:var(--g5);font-size:12px">잔여 EA</span><br><b>${rem} EA</b></div>
           ${(item.remainBoxes||0)>0 ? `<div><span style="color:var(--g5);font-size:12px">잔여 박스</span><br><b>${item.remainBoxes}박스</b></div>` : ''}
