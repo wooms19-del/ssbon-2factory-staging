@@ -608,18 +608,36 @@ async function renderMonthlyReport(pk, from, effectiveTo, ppMonth, thMonth, opDa
     <td colspan="2" style="border-left:1px solid #334155"></td>
   </tr>`; } /* end if(false) dead code */
 
-  // 그룹 바 빌드 (월단위생산량과 동일한 그룹: 없음/제품별/원육별)
+  // 그룹 바 빌드 (월단위생산량과 동일한 그룹: 없음/제품별/원육별 + 항목 개별 선택 칩)
   const _fbar = document.getElementById('mo_filter_bar');
   if(_fbar) {
     window._moGrpMode = window._moGrpMode || 'none';
+    if(!(window._moGrpSel instanceof Set)) window._moGrpSel = new Set();
     _fbar.style.display = 'flex';
-    const _mkRadio = (val, lbl) => {
-      const on = window._moGrpMode === val;
-      return `<label style="display:flex;align-items:center;gap:4px;font-size:12px;color:#475569;cursor:pointer;padding:3px 6px">`
-        + `<input type="radio" name="_mogrpmode" ${on?'checked':''} onchange="window._moSetGrpMode('${val}')">${lbl}</label>`;
+    window._moRenderGrpBar = function(){
+      const mode = window._moGrpMode;
+      const _mkRadio = (val, lbl) => {
+        const on = mode === val;
+        return `<label style="display:flex;align-items:center;gap:4px;font-size:12px;color:#475569;cursor:pointer;padding:3px 6px;white-space:nowrap">`
+          + `<input type="radio" name="_mogrpmode" ${on?'checked':''} onchange="window._moSetGrpMode('${val}')">${lbl}</label>`;
+      };
+      let chips = '';
+      if(mode !== 'none' && window._moGD){
+        const rows = (mode==='product' ? (window._moGD.mpRowsSplit||window._moGD.mpRows) : window._moGD.mpRows) || [];
+        const items = [...new Set(rows.map(r => mode==='product' ? (r.product||'') : (r.type || (r.noMeat?'무육':''))).filter(Boolean))].sort();
+        chips = items.map(it => {
+          const on = window._moGrpSel.has(it);
+          const esc = it.replace(/'/g,"\\'");
+          return `<button onclick="window._moToggleGrpSel('${esc}')" style="padding:3px 10px;border-radius:14px;border:1.5px solid ${on?'#1e293b':'#cbd5e1'};background:${on?'#1e293b':'#f1f5f9'};color:${on?'#fff':'#475569'};font-size:12px;cursor:pointer;white-space:nowrap">${it}</button>`;
+        }).join('')
+        + `<button onclick="window._moClearGrpSel()" style="padding:3px 10px;border-radius:14px;border:1.5px solid #94a3b8;background:#fff;color:#64748b;font-size:12px;cursor:pointer;white-space:nowrap">전체</button>`;
+      }
+      _fbar.innerHTML = `<span style="font-size:12px;color:#64748b;font-weight:600;white-space:nowrap;padding:3px 4px">그룹:</span>`
+        + _mkRadio('none','없음') + _mkRadio('product','제품별') + _mkRadio('part','원육별') + chips;
+      _fbar.style.flexWrap = 'wrap';
+      _fbar.style.gap = '4px';
     };
-    _fbar.innerHTML = `<span style="font-size:12px;color:#64748b;font-weight:600;white-space:nowrap;padding:3px 4px">그룹:</span>`
-      + _mkRadio('none','없음') + _mkRadio('product','제품별') + _mkRadio('part','원육별');
+    window._moRenderGrpBar();
   }
 
   // 엑셀용 캐시는 _moRenderRows(없음 모드)에서 화면과 동일 값으로 채움
@@ -703,10 +721,12 @@ function _moRenderRows() {
 
   // ════════ 원육별 모드: 부위별로 일자 세부 행 + 소계 ════════
   if(mode==='part'){
+    const _sel = window._moGrpSel instanceof Set ? window._moGrpSel : new Set();
     // (date, type) 단위로 합침 — 같은 날 같은 부위의 제품들을 한 행으로
     const byType={}, order=[];
     disp.forEach(r=>{
       const key = r.type || (r.noMeat?'무육':'?');
+      if(_sel.size>0 && !_sel.has(key)) return;
       if(!byType[key]){ byType[key]={}; order.push(key); }
       const d = r.date||'';
       if(!byType[key][d]) byType[key][d] = {rm:0, ea:0, meat:0, prods:new Set(), workers:''};
@@ -759,8 +779,10 @@ function _moRenderRows() {
     srcRows.forEach(r => { if(r._isMainRow !== false && r.date) _md2[r.date] = true; });
     const disp2 = srcRows.filter(r => r._isMainRow !== false || !_md2[r.date]);
     const byProd={}, order=[];
+    const _selP = window._moGrpSel instanceof Set ? window._moGrpSel : new Set();
     disp2.forEach(r=>{
       const key=r.product||'?';
+      if(_selP.size>0 && !_selP.has(key)) return;
       if(!byProd[key]){ byProd[key]=[]; order.push(key); }
       byProd[key].push(r);
     });
@@ -976,6 +998,21 @@ function _moRenderRows() {
 // 그룹 모드 전환 (없음/제품별/원육별)
 window._moSetGrpMode = function(mode) {
   window._moGrpMode = mode;
+  window._moGrpSel = new Set();   // 모드 바뀌면 선택 초기화
+  if(window._moRenderGrpBar) window._moRenderGrpBar();
+  _moRenderRows();
+};
+// 그룹 항목(제품/원육) 개별 선택 토글
+window._moToggleGrpSel = function(item) {
+  if(!(window._moGrpSel instanceof Set)) window._moGrpSel = new Set();
+  if(window._moGrpSel.has(item)) window._moGrpSel.delete(item);
+  else window._moGrpSel.add(item);
+  if(window._moRenderGrpBar) window._moRenderGrpBar();
+  _moRenderRows();
+};
+window._moClearGrpSel = function() {
+  window._moGrpSel = new Set();
+  if(window._moRenderGrpBar) window._moRenderGrpBar();
   _moRenderRows();
 };
 
