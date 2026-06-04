@@ -681,7 +681,7 @@ function _moRenderRows() {
   const {metaMap, attendanceMap} = window._moGD;
   const mpRows = window._moGD.mpRows;
   const _attMap = attendanceMap || {};
-  const fmtKg = v => v>0 ? v.toLocaleString('ko-KR',{minimumFractionDigits:1,maximumFractionDigits:1}) : '—';
+  const fmtKg = v => v>0 ? v.toLocaleString('ko-KR',{minimumFractionDigits:2,maximumFractionDigits:2}) : '—';
   const PC='padding:8px 8px;', P='padding:8px 10px;', vm='vertical-align:middle;';
   const dayBg=['background:#ffffff;','background:#f8fafc;'];
   const mode = window._moGrpMode || 'none';
