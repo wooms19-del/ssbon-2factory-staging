@@ -145,7 +145,7 @@ window._switchAITab = _switchAITab;
 function showTab(mode,tab){
   if(mode==='i') ITAB=tab; else DTAB=tab;
   const nav=mode==='i'?'inav':'dnav';
-  const tabs=mode==='i'?['barcode','thawing','preprocess','cooking','shredding','packing','sauce','outerpacking','attendance']:['daily','monthly','trace','recipe','timetable','timetable_test','settings'];
+  const tabs=mode==='i'?['barcode','thawing','preprocess','cooking','shredding','packing','sauce','outerpacking','retort','attendance']:['daily','monthly','trace','recipe','timetable','timetable_test','settings'];
   document.querySelectorAll(`#${nav} .ti`).forEach((el,i)=>el.classList.toggle('on',tabs[i]===tab));
   document.querySelectorAll('.pg').forEach(p=>p.classList.remove('on'));
   const pg=document.getElementById('p-'+tab); if(pg) pg.classList.add('on');
@@ -205,6 +205,8 @@ function showTab(mode,tab){
     if(typeof initSchedule==='function') initSchedule();
   } else if(tab==='outerpacking'){
     loadOuterPacking();
+  } else if(tab==='retort'){
+    loadFromServer(today).then(()=>{ if(typeof renderRetort==='function') renderRetort(); });
   } else if(tab==='attendance'){
     initAttendance();
   } else if(tab==='recipe'){

@@ -88,6 +88,7 @@ body{display:flex;flex-direction:column;font-family:-apple-system,BlinkMacSystem
     <div class="ti" onclick="showTab('i','packing')">포장</div>
     <div class="ti" onclick="showTab('i','sauce')">소스</div>
     <div class="ti" onclick="showTab('i','outerpacking')">외포장</div>
+    <div class="ti" onclick="showTab('i','retort')">레토르트</div>
 
   </div>
 </div>
@@ -419,6 +420,21 @@ body{display:flex;flex-direction:column;font-family:-apple-system,BlinkMacSystem
     <div id="op_done_list" style="display:flex;flex-direction:column;gap:6px">
       <div class="emp">데이터 없음</div>
     </div>
+  </div>
+</div>
+
+<!-- ===== 레토르트 ===== -->
+<div class="pg" id="p-retort">
+  <div class="card">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+      <div class="ct" style="margin:0">레토르트 (멸균·살균)</div>
+      <button class="btn bo bsm" onclick="loadFromServer(tod()).then(()=>renderRetort())">↻ 새로고침</button>
+    </div>
+    <div id="rt_machines" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px"></div>
+  </div>
+  <div class="card">
+    <div class="ct">오늘 회차 기록</div>
+    <div id="rt_list" style="overflow-x:auto"></div>
   </div>
 </div>
 
@@ -1584,7 +1600,7 @@ body{display:flex;flex-direction:column;font-family:-apple-system,BlinkMacSystem
 <!-- Kakao JavaScript SDK -->
 <script src="https://t1.kakaocdn.net/kakao_js_sdk/2.7.4/kakao.min.js" integrity="sha384-DKYJZ8NLiK8MN4/C5P2dtSmLQ4KwPaoqAfyA/DfmEc1VDxu4yyC7wy6K1Hs90nka" crossorigin="anonymous"></script>
 <script>if(window.Kakao){Kakao.init('3c36e1a3bb9ea2d4445a5cd30dd906c1');}</script>
-<script src="js/common.js?v=1780532471"></script>
+<script src="js/common.js?v=1780557328"></script>
 <script src="js/alt_calc.js?v=1779183534"></script>
 <script src="js/monthly_production.js?v=1780554484"></script>
 <script src="js/performance.js?v=1780285758"></script>
@@ -1602,9 +1618,10 @@ body{display:flex;flex-direction:column;font-family:-apple-system,BlinkMacSystem
 <script src="js/dashboard.js?v=1779947223"></script>
 <script src="js/trace.js?v=1778809200"></script>
 <script src="js/outerpacking.js?v=1780534755"></script>
+<script src="js/retort.js?v=1780557328"></script>
 <script src="js/settings.js?v=1778129561"></script>
 <script src="js/kakao.js?v=1778129561"></script>
-<script src="js/app.js?v=1779780469"></script>
+<script src="js/app.js?v=1780557328"></script>
 <script src="js/schedule.js?v=1779409601"></script>
 <script src="js/attendance.js?v=1779956579"></script>
 <script src="js/timepicker.js?v=1778129561"></script>

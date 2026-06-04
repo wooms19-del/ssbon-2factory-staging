@@ -850,9 +850,9 @@ async function fbGetRange(colName, startDate, endDate) {
 // ============================================================
 async function loadFromServer(date) {
   try {
-    const cols = ['barcodes','thawing','preprocess','cooking','shredding','packing','sauce'];
+    const cols = ['barcodes','thawing','preprocess','cooking','shredding','packing','sauce','retort'];
     const colMap = {barcodes:'barcode', thawing:'thawing', preprocess:'preprocess',
-      cooking:'cooking', shredding:'shredding', packing:'packing', sauce:'sauce'};
+      cooking:'cooking', shredding:'shredding', packing:'packing', sauce:'sauce', retort:'retort'};
     // ★ 잘못된 fbId prefix 검출용 (컬렉션별 정상 fbId prefix)
     // cooking record가 cooking_pending_ 시작 fbId 가지면 잘못됨 (saveCkEnd 옛 버그 잔여)
     const wrongPrefix = {
