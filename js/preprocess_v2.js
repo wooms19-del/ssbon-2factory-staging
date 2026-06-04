@@ -98,7 +98,7 @@ async function pp2Render(){
 
 function pp2RenderRemain(){
   const today = (typeof tod==='function') ? tod() : new Date().toISOString().slice(0,10);
-  const thList = (L.thawing||[]).filter(t => pp2IsWorkingToday(t, today) && t.end && (parseFloat(t.remainKg)||0) > 0.01);
+  const thList = (L.thawing||[]).filter(t => pp2IsWorkingToday(t, today) && (parseFloat(t.remainKg)||0) > 0.01);
   // ★ 입력 중(미저장)인 행의 (kg+waste)를 부위별로 빼기 (미리보기)
   const previewByType = {};
   const tbody = document.getElementById('pp2_tbody');
@@ -158,7 +158,7 @@ function pp2AddRow(data){
   const today = (typeof tod==='function') ? tod() : new Date().toISOString().slice(0,10);
   const availTypes = [...new Set(
     (L.thawing||[])
-      .filter(t => pp2IsWorkingToday(t, today) && t.end && (parseFloat(t.remainKg)||0) > 0.01 && t.type)
+      .filter(t => pp2IsWorkingToday(t, today) && (parseFloat(t.remainKg)||0) > 0.01 && t.type)
       .map(t => t.type)
   )];
   // 수정 모드(data.type)에선 잔량 0이어도 그 부위는 포함
@@ -304,7 +304,7 @@ function pp2ValidateRow(d){
 function pp2FifoDeduct(type, totalKg){
   const today = (typeof tod==='function') ? tod() : new Date().toISOString().slice(0,10);
   const candidates = (L.thawing||[])
-    .filter(t => pp2IsWorkingToday(t, today) && t.end && t.type === type && (parseFloat(t.remainKg)||0) > 0.01)
+    .filter(t => pp2IsWorkingToday(t, today) && t.type === type && (parseFloat(t.remainKg)||0) > 0.01)
     .sort((a,b) => {
       const aT = a.start || a._id || a.id || '';
       const bT = b.start || b._id || b.id || '';
