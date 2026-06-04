@@ -60,9 +60,7 @@ async function renderRetort(){
         <select id="rt_prod_${m}" class="fc" style="width:100%;margin-bottom:6px" onchange="rtProdChanged('${m}')">
           <option value="">제품 선택</option>${_rtProductOptions('')}
         </select>
-        <select id="rt_batch_${m}" class="fc" style="width:100%;margin-bottom:8px;display:none">
-          ${RT_BATCH.map(b=>`<option value="${b}">자숙 배치 ${b}</option>`).join('')}
-        </select>
+        <input type="text" id="rt_batch_${m}" class="fc" placeholder="자숙 배치 (예: A 또는 A,B)" style="width:100%;margin-bottom:8px;display:none">
         <button class="btn bp bblk" onclick="rtStart('${m}')">① 가동 시작</button>
       </div>`;
     }
@@ -134,14 +132,7 @@ function rtProdChanged(m){
   const prod=document.getElementById('rt_prod_'+m).value;
   const bSel=document.getElementById('rt_batch_'+m);
   if(!bSel) return;
-  if(prod && _rtDefaultCcp(prod)==='3B'){
-    bSel.style.display='';
-    // 기본값 = 당일 3B 회차 수 다음 알파벳 (자숙 배치 순서와 일치)
-    const cnt=_rtToday().filter(r=>_rtIs3B(r.ccp)).length;
-    bSel.value=RT_BATCH[Math.min(cnt, RT_BATCH.length-1)];
-  } else {
-    bSel.style.display='none';
-  }
+  bSel.style.display = (prod && _rtDefaultCcp(prod)==='3B') ? '' : 'none';
 }
 
 async function rtStart(m){
@@ -149,7 +140,7 @@ async function rtStart(m){
   if(!prod){ toast('제품을 선택하세요','d'); return; }
   const ccp=_rtDefaultCcp(prod);
   const bSel=document.getElementById('rt_batch_'+m);
-  const batch=(ccp==='3B'&&bSel)?bSel.value:'';
+  const batch=(ccp==='3B'&&bSel)?bSel.value.trim().toUpperCase():'';
   const mine=_rtToday().filter(r=>String(r.machine)===m);
   if(mine.some(r=>!r.t4)){ toast(m+'호기는 진행 중 회차가 있습니다','d'); return; }
   const round=(mine.length?Math.max(...mine.map(r=>r.round||0)):0)+1;
@@ -226,10 +217,9 @@ async function rtEditTemp(fbId){
 async function rtEditCcp(fbId){
   const rec=(L.retort||[]).find(r=>r.fbId===fbId); if(!rec) return;
   if(_rtIs3B(rec.ccp)){
-    const v=prompt('자숙 배치 (A~F)', rec.batch||'A');
+    const v=prompt('자숙 배치 (예: A 또는 A,B)', rec.batch||'');
     if(v==null) return;
     const b=v.trim().toUpperCase();
-    if(RT_BATCH.indexOf(b)<0){ toast('A~F 중 하나로 입력하세요','d'); return; }
     if(await fbUpdate('retort',fbId,{ccp:'3B',batch:b})===false){ toast('저장 실패','d'); return; }
     rec.ccp='3B'; rec.batch=b; renderRetort();
   } else {
@@ -343,7 +333,7 @@ async function rtDownloadCcp(){
           const judge=_rtJudge(rec.ccp,min,rec.temp);
           const jTxt=judge==='적합'?'적':judge==='부적합'?'부':'';
           if(is3B){
-            set(r,1,C(rec.machine,sBase)); set(r,2,C(rec.batch||'A',sBase)); set(r,3,C(rec.product,sBase));
+            set(r,1,C(rec.machine,sBase)); set(r,2,C(rec.batch||'',sBase)); set(r,3,C(rec.product,sBase));
             set(r,4,C(rec.t2,sBase)); set(r,5,C(rec.t3,sBase));
             set(r,6,C(min+'분',sBase)); set(r,7,C(rec.temp+'℃',sBase)); set(r,8,C(jTxt,sBase)); set(r,9,C('',sBase));
           } else {
