@@ -542,7 +542,7 @@ function renderOpDone(list) {
         <div style="min-width:36px;font-size:12px;font-weight:500;color:var(--g5)">${d}</div>
         <div style="flex:1;min-width:0">
           <div class="sn" style="font-size:13px">${item.product}</div>
-          <div class="ss">${inner} EA · ${boxes}박스 · 불량률 ${rate}</div>
+          <div class="ss">외포장 ${(opEa(item)||(item.ea||item.innerEa||0)-(item.productDefect||0)).toLocaleString()} EA · ${boxes}박스 · 불량률 ${rate}</div>
         </div>
         <span style="font-size:11px;padding:2px 8px;border-radius:var(--rl);background:${item.testRun?'#fff8e1':'#e6f7f0'};color:${item.testRun?'#92400e':'#1a7f5a'};font-weight:500;margin-right:6px">${item.testRun?'🔬테스트':'완료'}</span>
         <span id="op_done_chev_${i}" style="color:var(--g4);font-size:13px;transition:transform .2s">▶</span>
