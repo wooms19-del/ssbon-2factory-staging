@@ -5,9 +5,9 @@
 
 const RT_MACHINES = ['1','2','3'];
 const RT_CCP = {
-  '2B':   {label:'CCP-2B (멸균 121℃·18분↑)',  temp:121, min:18},
-  '3B-A': {label:'CCP-3B A형 (95℃·30분↑)',    temp:95,  min:30},
-  '3B-B': {label:'CCP-3B B형 (121℃·18분↑)',   temp:121, min:18},
+  '2B':   {label:'CCP-2B (멸균 121℃·18분↑)',  temp:121, min:18, defTemp:121},
+  '3B-A': {label:'CCP-3B A형 (95℃·30분↑)',    temp:95,  min:30, defTemp:115},
+  '3B-B': {label:'CCP-3B B형 (121℃·18분↑)',   temp:121, min:18, defTemp:115},
 };
 
 function _rtToday(){ return (L.retort||[]).filter(r=>String(r.date||'').slice(0,10)===tod()); }
@@ -70,10 +70,10 @@ async function renderRetort(){
         ? `${cur[key]} <span style="cursor:pointer;color:var(--g4)" onclick="rtEditTime('${cur.fbId}','${key}')">✎</span>`
         : '<span style="color:var(--g3)">—</span>'}</td></tr>`;
     let action='';
-    if(!cur.t2) action=`<button class="btn bp bblk" onclick="rtMark('${cur.fbId}','t2')">② 온도 도달 (${ccpStd.temp}℃)</button>`;
+    if(!cur.t2) action=`<button class="btn bp bblk" onclick="rtMark('${cur.fbId}','t2')">② 온도 도달 (${ccpStd.defTemp||ccpStd.temp}℃)</button>`;
     else if(!cur.t3) action=`<div style="display:flex;gap:6px;align-items:center">
         <button class="btn bp" style="flex:1" onclick="rtMark('${cur.fbId}','t3')">③ 가열 종료</button>
-        <input type="number" id="rt_temp_${cur.fbId}" class="fc" value="${cur.temp||ccpStd.temp}" style="width:64px;text-align:center">
+        <input type="number" id="rt_temp_${cur.fbId}" class="fc" value="${cur.temp||ccpStd.defTemp||ccpStd.temp}" style="width:64px;text-align:center">
         <span style="font-size:12px;color:var(--g5)">℃</span></div>`;
     else action=`<button class="btn bp bblk" onclick="rtMark('${cur.fbId}','t4')">④ 배출 완료</button>`;
 
