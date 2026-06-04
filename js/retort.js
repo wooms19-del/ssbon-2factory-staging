@@ -33,9 +33,9 @@ function _rtIs3B(ccp){ return String(ccp||'').indexOf('3B')===0; }
 
 // 당일 내포장 제품 후보 (+전체 제품 fallback)
 function _rtProductOptions(sel){
-  const todayPk=[...new Set((L.packing||[]).filter(r=>String(r.date||'').slice(0,10)===tod()).map(r=>r.product).filter(Boolean))];
-  const all=(L.products||[]).map(p=>p.name);
-  const list=[...new Set([...todayPk, ...all])];
+  // 오늘 내포장(완료+진행중) 제품만 후보로
+  const src=[...(L.packing||[]), ...(L.packing_pending||[])];
+  const list=[...new Set(src.filter(r=>String(r.date||'').slice(0,10)===tod()).map(r=>r.product).filter(Boolean))];
   return list.map(n=>`<option value="${n.replace(/"/g,'&quot;')}" ${n===sel?'selected':''}>${n}</option>`).join('');
 }
 
@@ -64,7 +64,7 @@ async function renderRetort(){
       return `<div class="card" style="margin:0">
         ${head}
         <select id="rt_prod_${m}" class="fc" style="width:100%;margin-bottom:6px" onchange="rtProdChanged('${m}')">
-          <option value="">제품 선택</option>${_rtProductOptions('')}
+          <option value="">${_rtProductOptions('')?'제품 선택':'오늘 내포장 제품 없음'}</option>${_rtProductOptions('')}
         </select>
         <input type="number" id="rt_ea_${m}" class="fc" placeholder="수량 (EA)" style="width:100%;margin-bottom:6px">
         <div id="rt_batchbox_${m}" style="display:none;margin-bottom:8px">
