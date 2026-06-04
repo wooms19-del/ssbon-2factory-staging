@@ -1938,6 +1938,7 @@
   window.showPerf       = showPerf;
   window.showPerfSub    = showPerfSub;
   window.mpPrevMonth    = mpPrevMonth;
+  window._mpProcess     = _mpProcess;  // ★ 월간 생산 일보가 동일 값을 쓰도록 노출
   window.mpNextMonth    = mpNextMonth;
   window.mpThisMonth    = mpThisMonth;
   window.mpPickMonth    = mpPickMonth;
