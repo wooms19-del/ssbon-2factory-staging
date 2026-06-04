@@ -37,8 +37,10 @@ async function loadOuterPacking() {
 
   const pending = [], done = [];
   Object.keys(pkMap).sort((a,b)=>b.localeCompare(a)).forEach(key => {
-    if(opDoneMap[key]) done.push({...pkMap[key], ...opDoneMap[key]});
-    else pending.push(pkMap[key]);
+    const op = opDoneMap[key];
+    // ★ _timeOnly = 작업시간 기록만 있는 임시 문서 → 아직 미완료 (workLogs만 카드에 전달)
+    if(op && !op._timeOnly) done.push({...pkMap[key], ...op});
+    else pending.push({...pkMap[key], workLogs: (op||{}).workLogs||[]});
   });
 
   renderOpPending(pending);
@@ -127,6 +129,37 @@ function renderOpPending(list) {
             <div style="font-size:15px;font-weight:500" id="op_srem_${i}">${item.ea.toLocaleString()}</div>
           </div>
         </div>
+
+        <!-- 작업 시간 기록 -->
+        ${(() => {
+          const wl = item.workLogs||[];
+          const running = wl.length && !wl[wl.length-1].end ? wl[wl.length-1] : null;
+          const wlSum = wl.filter(w=>w.end).reduce((s,w)=>s+dur(w.start,w.end)*(parseFloat(w.workers)||0),0);
+          const wlRows = wl.map((w,j)=>`
+            <div style="display:flex;align-items:center;gap:8px;font-size:12px;padding:3px 0">
+              <span style="color:var(--g5);min-width:96px">${w.start} ~ ${w.end||'진행중'}</span>
+              <span>${w.workers}명</span>
+              <span style="margin-left:auto;color:var(--g5)">${w.end?r2(dur(w.start,w.end)*(parseFloat(w.workers)||0)).toFixed(2)+'인시':''}</span>
+              <span style="color:var(--g4);cursor:pointer;padding:0 4px" onclick="opTimeDel(${i},'${item.date}','${item.product}',${j})">✕</span>
+            </div>`).join('');
+          return `
+        <div style="background:var(--bg);border:0.5px solid var(--g2);border-radius:6px;padding:10px 12px;margin-bottom:14px">
+          <div style="font-size:11px;font-weight:500;color:var(--g5);margin-bottom:8px">작업 시간 기록</div>
+          ${wlRows || '<div style="font-size:12px;color:var(--g4);padding:2px 0">기록 없음</div>'}
+          ${running ? `
+          <div style="display:flex;align-items:center;gap:8px;margin-top:8px;padding:8px 10px;background:#e6f7f0;border-radius:6px">
+            <span style="font-size:12px;color:#1a7f5a;font-weight:500">${running.start} 시작 · ${running.workers}명 작업중</span>
+            <button class="btn bs" style="margin-left:auto;padding:6px 14px" onclick="opTimeEnd(${i},'${item.date}','${item.product}')">종료</button>
+          </div>` : `
+          <div style="display:flex;align-items:center;gap:8px;margin-top:8px">
+            <span style="font-size:12px;color:var(--g5)">인원</span>
+            <input class="fc" type="number" id="op_tw_${i}" placeholder="0" style="width:60px;text-align:right;padding:5px 8px">
+            <span style="font-size:12px;color:var(--g5)">명</span>
+            <button class="btn bs" style="margin-left:auto;padding:6px 14px" onclick="opTimeStart(${i},'${item.date}','${item.product}')">▶ 시작</button>
+          </div>`}
+          ${wl.filter(w=>w.end).length ? `<div style="display:flex;justify-content:flex-end;margin-top:6px;font-size:12px;font-weight:500">합계 ${r2(wlSum).toFixed(2)}인시</div>` : ''}
+        </div>`;
+        })()}
 
         <!-- 완제품 입력 -->
         <div style="font-size:11px;font-weight:500;color:var(--g5);margin-bottom:8px">완제품</div>
@@ -334,6 +367,56 @@ function opCalc(i, innerEa) {
   }
 }
 
+// ─ 외포장 작업시간 기록 (생산성용) ─
+function opDocId(date, product){ return 'op_'+date+'_'+String(product).replace(/[\s\W]/g,'_').slice(0,20); }
+function _opNowHM(){ const d=new Date(); return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); }
+
+async function opTimeStart(i, date, product){
+  const n = parseInt((document.getElementById('op_tw_'+i)||{}).value)||0;
+  if(!n){ toast('인원을 입력하세요','d'); return; }
+  try{
+    const ref = db.collection('outerpacking').doc(opDocId(date, product));
+    const snap = await ref.get();
+    const logs = (snap.exists && snap.data().workLogs) || [];
+    if(logs.length && !logs[logs.length-1].end){ toast('이미 진행중인 작업이 있습니다','d'); return; }
+    logs.push({ start:_opNowHM(), end:'', workers:n });
+    if(snap.exists){ await ref.update({ workLogs: logs }); }
+    else { await ref.set({ date, product, workLogs: logs, _timeOnly:true, _createdAt: firebase.firestore.FieldValue.serverTimestamp() }); }
+    fbClearCache('outerpacking');
+    toast('작업 시작 ('+n+'명)');
+    loadOuterPacking();
+  }catch(e){ console.error('[opTimeStart]',e); toast('시간 기록 실패','d'); }
+}
+
+async function opTimeEnd(i, date, product){
+  try{
+    const ref = db.collection('outerpacking').doc(opDocId(date, product));
+    const snap = await ref.get();
+    if(!snap.exists){ toast('진행중인 작업이 없습니다','d'); return; }
+    const logs = snap.data().workLogs||[];
+    if(!logs.length || logs[logs.length-1].end){ toast('진행중인 작업이 없습니다','d'); return; }
+    logs[logs.length-1].end = _opNowHM();
+    await ref.update({ workLogs: logs });
+    fbClearCache('outerpacking');
+    toast('작업 종료 기록됨');
+    loadOuterPacking();
+  }catch(e){ console.error('[opTimeEnd]',e); toast('시간 기록 실패','d'); }
+}
+
+async function opTimeDel(i, date, product, idx){
+  if(!confirm('이 작업 기록을 삭제할까요?')) return;
+  try{
+    const ref = db.collection('outerpacking').doc(opDocId(date, product));
+    const snap = await ref.get();
+    if(!snap.exists) return;
+    const logs = snap.data().workLogs||[];
+    logs.splice(idx,1);
+    await ref.update({ workLogs: logs });
+    fbClearCache('outerpacking');
+    loadOuterPacking();
+  }catch(e){ console.error('[opTimeDel]',e); toast('삭제 실패','d'); }
+}
+
 async function completeOuterPacking(i, date, product, innerEa) {
   const boxes   = parseInt(document.getElementById('op_boxes_'+i).value)||0;
   const partial = parseInt(document.getElementById('op_partial_'+i) ? document.getElementById('op_partial_'+i).value : 0)||0;
@@ -380,7 +463,12 @@ async function completeOuterPacking(i, date, product, innerEa) {
     savedAt: new Date().toISOString()
   };
 
-  const docId = 'op_'+date+'_'+product.replace(/[\s\W]/g,'_').slice(0,20);
+  const docId = opDocId(date, product);
+  // ★ 시간 기록 보존: fbSave는 통째 set이라 기존 workLogs를 rec에 합쳐서 저장
+  try{
+    const ex = await db.collection('outerpacking').doc(docId).get();
+    if(ex.exists && ex.data().workLogs) rec.workLogs = ex.data().workLogs;
+  }catch(e){ console.warn('[외포장] workLogs 보존 실패', e); }
   const ok = await fbSave('outerpacking', rec, docId);
   if(ok){
     // ─ testRun 자동 전파: 외포장 testRun=true → 같은 날짜+제품의 packing record도 testRun=true ─
