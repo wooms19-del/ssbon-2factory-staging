@@ -22,6 +22,12 @@ function _rtJudge(ccp, min, temp){
   const std=RT_CCP[ccp]; if(!std||min==null||!(temp>0)) return null;
   return (temp>=std.temp && min>=std.min) ? '적합' : '부적합';
 }
+// 배치 문자열(예: "A:50, B:46")에서 수량 합계 추출 — 숫자 없으면 null
+function _rtBatchSum(str){
+  const nums=String(str||'').match(/\d+/g);
+  if(!nums||!nums.length) return null;
+  return nums.reduce((s,n)=>s+parseInt(n),0);
+}
 function _rtDefaultCcp(product){ return /3\s*KG/i.test(product||'') ? '3B' : '2B'; }
 function _rtIs3B(ccp){ return String(ccp||'').indexOf('3B')===0; }
 
@@ -61,7 +67,7 @@ async function renderRetort(){
           <option value="">제품 선택</option>${_rtProductOptions('')}
         </select>
         <input type="number" id="rt_ea_${m}" class="fc" placeholder="수량 (EA)" style="width:100%;margin-bottom:6px">
-        <input type="text" id="rt_batch_${m}" class="fc" placeholder="자숙 배치 (예: A 또는 A,B)" style="width:100%;margin-bottom:8px;display:none">
+        <input type="text" id="rt_batch_${m}" class="fc" placeholder="배치 (예: A 또는 A:50, B:46)" style="width:100%;margin-bottom:8px;display:none" oninput="rtBatchInput('${m}')">
         <button class="btn bp bblk" onclick="rtStart('${m}')">① 가동 시작</button>
       </div>`;
     }
@@ -130,6 +136,13 @@ async function renderRetort(){
   </table>`;
 }
 
+function rtBatchInput(m){
+  const bSel=document.getElementById('rt_batch_'+m);
+  const eaEl=document.getElementById('rt_ea_'+m);
+  if(!bSel||!eaEl) return;
+  const sum=_rtBatchSum(bSel.value);
+  if(sum!=null) eaEl.value=sum;
+}
 function rtProdChanged(m){
   const prod=document.getElementById('rt_prod_'+m).value;
   const bSel=document.getElementById('rt_batch_'+m);
@@ -221,11 +234,14 @@ async function rtEditTemp(fbId){
 async function rtEditCcp(fbId){
   const rec=(L.retort||[]).find(r=>r.fbId===fbId); if(!rec) return;
   if(_rtIs3B(rec.ccp)){
-    const v=prompt('자숙 배치 (예: A 또는 A,B)', rec.batch||'');
+    const v=prompt('자숙 배치 (예: A 또는 A:50, B:46)', rec.batch||'');
     if(v==null) return;
     const b=v.trim().toUpperCase();
-    if(await fbUpdate('retort',fbId,{ccp:'3B',batch:b})===false){ toast('저장 실패','d'); return; }
-    rec.ccp='3B'; rec.batch=b; renderRetort();
+    const patch={ccp:'3B',batch:b};
+    const sum=_rtBatchSum(b);
+    if(sum!=null) patch.ea=sum;
+    if(await fbUpdate('retort',fbId,patch)===false){ toast('저장 실패','d'); return; }
+    Object.assign(rec,patch); renderRetort();
   } else {
     const v=prompt('구분: 2B 또는 3B', rec.ccp||'2B');
     if(v==null) return;
