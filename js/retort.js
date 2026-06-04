@@ -60,6 +60,7 @@ async function renderRetort(){
         <select id="rt_prod_${m}" class="fc" style="width:100%;margin-bottom:6px" onchange="rtProdChanged('${m}')">
           <option value="">제품 선택</option>${_rtProductOptions('')}
         </select>
+        <input type="number" id="rt_ea_${m}" class="fc" placeholder="수량 (EA)" style="width:100%;margin-bottom:6px">
         <input type="text" id="rt_batch_${m}" class="fc" placeholder="자숙 배치 (예: A 또는 A,B)" style="width:100%;margin-bottom:8px;display:none">
         <button class="btn bp bblk" onclick="rtStart('${m}')">① 가동 시작</button>
       </div>`;
@@ -87,7 +88,7 @@ async function renderRetort(){
 
     return `<div class="card" style="margin:0;border-color:var(--p)">
       ${head}
-      <div style="font-size:13px;font-weight:600;margin-bottom:2px">${cur.product||''}</div>
+      <div style="font-size:13px;font-weight:600;margin-bottom:2px">${cur.product||''}${cur.ea?` <span style="font-weight:400;color:var(--g5);font-size:12px">· ${Number(cur.ea).toLocaleString()}EA</span>`:''}</div>
       <div style="font-size:11px;color:var(--g5);margin-bottom:6px">${ccpStd.label}${cur.batch?` · 배치 ${cur.batch}`:''}</div>
       <table style="width:100%;border-collapse:collapse;margin-bottom:8px">
         ${tRow('① 가동 시작','t1')}${tRow('② 온도 도달','t2')}${tRow('③ 가열 종료','t3')}${tRow('④ 배출 완료','t4')}
@@ -101,7 +102,7 @@ async function renderRetort(){
   if(!rows.length){ listEl.innerHTML='<div style="color:var(--g4);font-size:13px;padding:14px;text-align:center">오늘 회차 기록 없음</div>'; return; }
   listEl.innerHTML=`<table style="width:100%;border-collapse:collapse;font-size:12.5px">
     <tr style="background:var(--g1);color:var(--g5)">
-      <td style="padding:7px 10px">호기·회차</td><td style="padding:7px 6px">제품</td><td style="padding:7px 6px">구분</td>
+      <td style="padding:7px 10px">호기·회차</td><td style="padding:7px 6px">제품</td><td style="padding:7px 6px">수량</td><td style="padding:7px 6px">구분</td>
       <td style="padding:7px 6px">① 시작</td><td style="padding:7px 6px">CCP ②~③</td><td style="padding:7px 6px">④ 배출</td>
       <td style="padding:7px 6px">온도</td><td style="padding:7px 6px">판정</td><td style="padding:7px 6px;text-align:right"></td>
     </tr>
@@ -114,6 +115,7 @@ async function renderRetort(){
       return `<tr style="border-top:1px solid var(--g2)">
         <td style="padding:7px 10px">${r.machine}호기 ${r.round||'?'}회차</td>
         <td style="padding:7px 6px;cursor:pointer" title="클릭하여 수정" onclick="rtEditProd('${r.fbId}')">${r.product||''}</td>
+        <td style="padding:7px 6px;cursor:pointer" title="클릭하여 수정" onclick="rtEditEa('${r.fbId}')">${r.ea?Number(r.ea).toLocaleString():'—'}</td>
         <td style="padding:7px 6px;font-size:11.5px;color:var(--g5);cursor:pointer" title="클릭하여 수정" onclick="rtEditCcp('${r.fbId}')">${_rtIs3B(r.ccp)?('3B'+(r.batch?' · '+r.batch:'')):(r.ccp||'')}</td>
         <td style="padding:7px 6px">${tCell('t1')}</td>
         <td style="padding:7px 6px">${tCell('t2')}→${tCell('t3')}${min!=null?` · <span style="${bad?'color:#b91c1c;font-weight:600':''}">${min}분</span>`:''}</td>
@@ -141,10 +143,12 @@ async function rtStart(m){
   const ccp=_rtDefaultCcp(prod);
   const bSel=document.getElementById('rt_batch_'+m);
   const batch=(ccp==='3B'&&bSel)?bSel.value.trim().toUpperCase():'';
+  const eaEl=document.getElementById('rt_ea_'+m);
+  const ea=eaEl?(parseInt(eaEl.value)||0):0;
   const mine=_rtToday().filter(r=>String(r.machine)===m);
   if(mine.some(r=>!r.t4)){ toast(m+'호기는 진행 중 회차가 있습니다','d'); return; }
   const round=(mine.length?Math.max(...mine.map(r=>r.round||0)):0)+1;
-  const rec={ id:gid(), date:tod(), machine:m, round, product:prod, ccp, batch,
+  const rec={ id:gid(), date:tod(), machine:m, round, product:prod, ccp, batch, ea,
               t1:nowHM(), t2:'', t3:'', t4:'', temp:null };
   toast('저장중...','i');
   const fbId=await fbSave('retort', rec);
@@ -230,6 +234,14 @@ async function rtEditCcp(fbId){
     if(await fbUpdate('retort',fbId,{ccp:key})===false){ toast('저장 실패','d'); return; }
     rec.ccp=key; renderRetort();
   }
+}
+async function rtEditEa(fbId){
+  const rec=(L.retort||[]).find(r=>r.fbId===fbId); if(!rec) return;
+  const v=prompt('수량 (EA)', rec.ea||'');
+  if(v==null) return;
+  const ea=parseInt(v)||0;
+  if(await fbUpdate('retort',fbId,{ea})===false){ toast('저장 실패','d'); return; }
+  rec.ea=ea; renderRetort();
 }
 async function rtEditProd(fbId){
   const rec=(L.retort||[]).find(r=>r.fbId===fbId); if(!rec) return;
