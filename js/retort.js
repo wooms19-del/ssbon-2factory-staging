@@ -345,7 +345,7 @@ function _rtAddShrink(z, dec, enc, baseIdx){
   const xfs=st.match(/<cellXfs count="(\d+)">([\s\S]*?)<\/cellXfs>/);
   if(!xfs) return null;
   const cnt=parseInt(xfs[1]);
-  const all=xfs[2].match(/<xf\b[\s\S]*?(?:\/>|<\/xf>)/g);
+  const all=xfs[2].match(/<xf\b[^>]*\/>|<xf\b[^>]*>[\s\S]*?<\/xf>/g);
   if(!all||!all[baseIdx]) return null;
   let base=all[baseIdx], nx;
   if(/<alignment/.test(base)) nx=base.replace(/<alignment/,'<alignment shrinkToFit="1"');
