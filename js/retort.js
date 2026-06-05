@@ -300,20 +300,41 @@ async function rtEditProd(fbId){
 }
 
 /* ── CCP 점검표 엑셀 — 실물 양식(원본 템플릿)에 데이터 주입 ── */
-function _rtXset(xml,ref,val){
+function _rtXset(xml,ref,val,newS){
   const re=new RegExp('<c r="'+ref+'"([^>]*?)(/>|>[\\s\\S]*?</c>)');
   if(!re.test(xml)) return xml;
   return xml.replace(re,(m0,attrs)=>{
-    const st=(attrs.match(/s="\d+"/)||[''])[0];
+    let st=(attrs.match(/s="\d+"/)||[''])[0];
+    if(newS!=null) st='s="'+newS+'"';
     const esc=String(val).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     return '<c r="'+ref+'" '+st+' t="inlineStr"><is><t xml:space="preserve">'+esc+'</t></is></c>';
   });
+}
+// styles.xml에 base xf 복제 + shrinkToFit 추가, 새 인덱스 반환
+function _rtAddShrink(z, dec, enc, baseIdx){
+  let st=dec.decode(z['xl/styles.xml']);
+  const xfs=st.match(/<cellXfs count="(\d+)">([\s\S]*?)<\/cellXfs>/);
+  if(!xfs) return null;
+  const cnt=parseInt(xfs[1]);
+  const all=xfs[2].match(/<xf\b[\s\S]*?(?:\/>|<\/xf>)/g);
+  if(!all||!all[baseIdx]) return null;
+  let base=all[baseIdx], nx;
+  if(/<alignment/.test(base)) nx=base.replace(/<alignment/,'<alignment shrinkToFit="1"');
+  else if(base.endsWith('/>')) nx=base.replace('<xf','<xf applyAlignment="1"').replace(/\/>$/,'><alignment shrinkToFit="1"/></xf>');
+  else nx=base.replace('</xf>','<alignment shrinkToFit="1"/></xf>');
+  st=st.replace('<cellXfs count="'+cnt+'">','<cellXfs count="'+(cnt+1)+'">').replace('</cellXfs>',nx+'</cellXfs>');
+  z['xl/styles.xml']=enc.encode(st);
+  return cnt;
 }
 async function _rtFillTemplate(tplPath, outName, rows, is3B, dateTxt){
   const buf=await (await fetch(tplPath)).arrayBuffer();
   const z=fflate.unzipSync(new Uint8Array(buf));
   const dec=new TextDecoder(), enc=new TextEncoder();
   let xml=dec.decode(z['xl/worksheets/sheet1.xml']);
+  const CIRC='\u20DD';  // 글자 뒤 결합 동그라미
+  // 제품명 칸 자동축소 스타일 (긴 제품명 잘림 방지)
+  const prodBase = is3B ? 27 : 57;
+  const shrinkIdx = _rtAddShrink(z, dec, enc, prodBase);
   xml=_rtXset(xml,'E6',dateTxt);
   rows.forEach((r,i)=>{
     const R=24+i; if(R>34) return;
@@ -323,14 +344,18 @@ async function _rtFillTemplate(tplPath, outName, rows, is3B, dateTxt){
     if(is3B){
       const letters=String(r.batch||'').replace(/:\s*\d+/g,'');  // A:50, B:46 → A, B
       xml=_rtXset(xml,'B'+R,letters);
-      xml=_rtXset(xml,'D'+R,r.product||'');
+      xml=_rtXset(xml,'D'+R,r.product||'', shrinkIdx);
     } else {
-      xml=_rtXset(xml,'C'+R,r.product||'');
+      xml=_rtXset(xml,'C'+R,r.product||'', shrinkIdx);
     }
     xml=_rtXset(xml,'G'+R,r.t2||''); xml=_rtXset(xml,'K'+R,r.t3||'');
     xml=_rtXset(xml,'O'+R,min!=null?min+'분':'');
     xml=_rtXset(xml,'Q'+R,r.temp?r.temp+'℃':'');
-    xml=_rtXset(xml,'S'+R,judge==='적합'?'적':judge==='부적합'?'부':'');
+    // 판정: 원본 '적 │ 부' 유지 + 해당 글자에 동그라미
+    let sv='적 │ 부';
+    if(judge==='적합') sv='적'+CIRC+' │ 부';
+    else if(judge==='부적합') sv='적 │ 부'+CIRC;
+    xml=_rtXset(xml,'S'+R,sv);
   });
   z['xl/worksheets/sheet1.xml']=enc.encode(xml);
   const blob=new Blob([fflate.zipSync(z)],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
