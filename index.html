@@ -429,7 +429,7 @@ body{display:flex;flex-direction:column;font-family:-apple-system,BlinkMacSystem
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
       <div class="ct" style="margin:0">레토르트 (멸균·살균)</div>
       <div style="display:flex;gap:6px;align-items:center">
-        <input type="date" id="rt_ccp_date" class="fc" style="width:140px">
+        <input type="date" id="rt_ccp_date" class="fc" style="width:140px" onchange="rtDateChanged()">
         <button class="btn bp bsm" onclick="rtDownloadCcp()">📄 CCP 점검표</button>
         <button class="btn bo bsm" onclick="loadFromServer(tod()).then(()=>renderRetort())">↻ 새로고침</button>
       </div>
@@ -437,7 +437,7 @@ body{display:flex;flex-direction:column;font-family:-apple-system,BlinkMacSystem
     <div id="rt_machines" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px"></div>
   </div>
   <div class="card">
-    <div class="ct">오늘 회차 기록</div>
+    <div class="ct" id="rt_list_title">오늘 회차 기록</div>
     <div id="rt_list" style="overflow-x:auto"></div>
   </div>
 </div>
@@ -1622,7 +1622,7 @@ body{display:flex;flex-direction:column;font-family:-apple-system,BlinkMacSystem
 <script src="js/dashboard.js?v=1779947223"></script>
 <script src="js/trace.js?v=1778809200"></script>
 <script src="js/outerpacking.js?v=1780534755"></script>
-<script src="js/retort.js?v=1780648511"></script>
+<script src="js/retort.js?v=1780648735"></script>
 <script src="js/settings.js?v=1778129561"></script>
 <script src="js/kakao.js?v=1778129561"></script>
 <script src="js/app.js?v=1780561143"></script>

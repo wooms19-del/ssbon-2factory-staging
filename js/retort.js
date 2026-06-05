@@ -13,14 +13,38 @@ const RT_CCP = {
 const RT_BATCH=['A','B','C','D','E','F'];  // 3B 자숙 배치 구분
 
 function _rtToday(){ return (L.retort||[]).filter(r=>String(r.date||'').slice(0,10)===tod()); }
+function _rtViewDate(){ return window._rtViewDt || tod(); }
+function _rtViewRecs(){ const d=_rtViewDate(); return (L.retort||[]).filter(r=>String(r.date||'').slice(0,10)===d); }
+async function rtDateChanged(){
+  const dEl=document.getElementById('rt_ccp_date');
+  const d=(dEl&&dEl.value)||tod();
+  window._rtViewDt=d;
+  if(d!==tod()){
+    try{
+      const recs=await fbGetByDate('retort', d);
+      L.retort=(L.retort||[]).filter(r=>String(r.date||'').slice(0,10)!==d).concat(recs);
+    }catch(e){ console.error('[레토르트] 날짜 조회 실패', e); }
+  }
+  renderRetort();
+}
 function _rtMin(a,b){ // 'HH:MM' 차이(분), 자정 넘김 보정
   if(!a||!b) return null;
   const [h1,m1]=a.split(':').map(Number), [h2,m2]=b.split(':').map(Number);
   let d=(h2*60+m2)-(h1*60+m1); if(d<0) d+=1440; return d;
 }
 function _rtJudge(ccp, min, temp){
-  const std=RT_CCP[ccp]; if(!std||min==null||!(temp>0)) return null;
+  if(min==null||!(temp>0)) return null;
+  if(_rtIs3B(ccp)){
+    // 3B는 A형(95℃·30분↑) 또는 B형(121℃·18분↑) 중 하나 충족이면 적합
+    return ((temp>=95&&min>=30)||(temp>=121&&min>=18)) ? '적합' : '부적합';
+  }
+  const std=RT_CCP[ccp]; if(!std) return null;
   return (temp>=std.temp && min>=std.min) ? '적합' : '부적합';
+}
+// 3B 적용 조건 판별: B형(121℃·18분)으로만 충족하면 'B', 그 외 'A'
+function _rt3bCond(min, temp){
+  if(temp>=121&&min>=18&&!(temp>=95&&min>=30)) return 'B';
+  return 'A';
 }
 // 배치 문자열(예: "A:50, B:46")에서 수량 합계 추출 — 숫자 없으면 null
 function _rtBatchSum(str){
@@ -43,7 +67,12 @@ async function renderRetort(){
   const wrap=document.getElementById('rt_machines');
   const listEl=document.getElementById('rt_list');
   if(!wrap) return;
+  const dEl=document.getElementById('rt_ccp_date');
+  if(dEl && !dEl.value) dEl.value=tod();
   const recs=_rtToday();
+  const viewDate=_rtViewDate();
+  const titleEl=document.getElementById('rt_list_title');
+  if(titleEl) titleEl.textContent = viewDate===tod() ? '오늘 회차 기록' : viewDate+' 회차 기록';
 
   // ── 호기 카드
   wrap.innerHTML = RT_MACHINES.map(m=>{
@@ -110,9 +139,9 @@ async function renderRetort(){
     </div>`;
   }).join('');
 
-  // ── 오늘 회차 목록 (완료된 것 + 진행중 포함 전체, 시작시각 순)
-  const rows=recs.slice().sort((a,b)=>String(a.t1||'').localeCompare(String(b.t1||'')));
-  if(!rows.length){ listEl.innerHTML='<div style="color:var(--g4);font-size:13px;padding:14px;text-align:center">오늘 회차 기록 없음</div>'; return; }
+  // ── 회차 목록 (선택 날짜 기준, 시작시각 순)
+  const rows=_rtViewRecs().slice().sort((a,b)=>String(a.t1||'').localeCompare(String(b.t1||'')));
+  if(!rows.length){ listEl.innerHTML='<div style="color:var(--g4);font-size:13px;padding:14px;text-align:center">'+(viewDate===tod()?'오늘':viewDate)+' 회차 기록 없음</div>'; return; }
   listEl.innerHTML=`<table style="width:100%;border-collapse:collapse;font-size:12.5px">
     <tr style="background:var(--g1);color:var(--g5)">
       <td style="padding:7px 10px">호기·회차</td><td style="padding:7px 6px">제품</td><td style="padding:7px 6px">수량</td><td style="padding:7px 6px">구분</td>
@@ -342,8 +371,9 @@ async function _rtFillTemplate(tplPath, outName, rows, is3B, dateTxt){
     const judge=_rtJudge(r.ccp,min,r.temp);
     xml=_rtXset(xml,'A'+R,r.machine||'');
     if(is3B){
-      const letters=String(r.batch||'').replace(/:\s*\d+/g,'');  // A:50, B:46 → A, B
-      xml=_rtXset(xml,'B'+R,letters);
+      // 구분 = 살균 조건 A/B (해당 조건에 동그라미). 배치는 시스템 데이터로만 보관
+      const cond=_rt3bCond(min, r.temp);
+      xml=_rtXset(xml,'B'+R, cond==='B' ? ('A / B'+CIRC) : ('A'+CIRC+' / B'));
       xml=_rtXset(xml,'D'+R,r.product||'', shrinkIdx);
     } else {
       xml=_rtXset(xml,'C'+R,r.product||'', shrinkIdx);
