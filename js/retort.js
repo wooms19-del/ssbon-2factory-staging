@@ -299,7 +299,45 @@ async function rtEditProd(fbId){
   rec.product=v.trim(); renderRetort();
 }
 
-/* ── CCP 점검표 엑셀 (CCP-2B / CCP-3B 시트 2장, A4 세로 한 장) ── */
+/* ── CCP 점검표 엑셀 — 실물 양식(원본 템플릿)에 데이터 주입 ── */
+function _rtXset(xml,ref,val){
+  const re=new RegExp('<c r="'+ref+'"([^>]*?)(/>|>[\\s\\S]*?</c>)');
+  if(!re.test(xml)) return xml;
+  return xml.replace(re,(m0,attrs)=>{
+    const st=(attrs.match(/s="\d+"/)||[''])[0];
+    const esc=String(val).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    return '<c r="'+ref+'" '+st+' t="inlineStr"><is><t xml:space="preserve">'+esc+'</t></is></c>';
+  });
+}
+async function _rtFillTemplate(tplPath, outName, rows, is3B, dateTxt){
+  const buf=await (await fetch(tplPath)).arrayBuffer();
+  const z=fflate.unzipSync(new Uint8Array(buf));
+  const dec=new TextDecoder(), enc=new TextEncoder();
+  let xml=dec.decode(z['xl/worksheets/sheet1.xml']);
+  xml=_rtXset(xml,'E6',dateTxt);
+  rows.forEach((r,i)=>{
+    const R=24+i; if(R>34) return;
+    const min=_rtMin(r.t2,r.t3);
+    const judge=_rtJudge(r.ccp,min,r.temp);
+    xml=_rtXset(xml,'A'+R,r.machine||'');
+    if(is3B){
+      const letters=String(r.batch||'').replace(/:\s*\d+/g,'');  // A:50, B:46 → A, B
+      xml=_rtXset(xml,'B'+R,letters);
+      xml=_rtXset(xml,'D'+R,r.product||'');
+    } else {
+      xml=_rtXset(xml,'C'+R,r.product||'');
+    }
+    xml=_rtXset(xml,'G'+R,r.t2||''); xml=_rtXset(xml,'K'+R,r.t3||'');
+    xml=_rtXset(xml,'O'+R,min!=null?min+'분':'');
+    xml=_rtXset(xml,'Q'+R,r.temp?r.temp+'℃':'');
+    xml=_rtXset(xml,'S'+R,judge==='적합'?'적':judge==='부적합'?'부':'');
+  });
+  z['xl/worksheets/sheet1.xml']=enc.encode(xml);
+  const blob=new Blob([fflate.zipSync(z)],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download=outName;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(a.href);
+}
 async function rtDownloadCcp(){
   try{
     const dEl=document.getElementById('rt_ccp_date');
@@ -307,139 +345,14 @@ async function rtDownloadCcp(){
     toast('점검표 생성중...','i');
     const recs=(await fbGetByDate('retort', dateStr)).filter(r=>r.t2&&r.t3)
       .sort((a,b)=>String(a.t2||'').localeCompare(String(b.t2||'')));
-    const r2b=recs.filter(r=>r.ccp==='2B');
+    const r2b=recs.filter(r=>!_rtIs3B(r.ccp));
     const r3b=recs.filter(r=>_rtIs3B(r.ccp));
-
-    const B={top:{style:'thin',color:{rgb:'444444'}},bottom:{style:'thin',color:{rgb:'444444'}},
-             left:{style:'thin',color:{rgb:'444444'}},right:{style:'thin',color:{rgb:'444444'}}};
-    const sBase={font:{sz:9},alignment:{horizontal:'center',vertical:'center',wrapText:true},border:B};
-    const sHdr=Object.assign({},sBase,{font:{sz:9,bold:true},fill:{fgColor:{rgb:'E8E8E8'}}});
-    const sLeft=Object.assign({},sBase,{alignment:{horizontal:'left',vertical:'center',wrapText:true}});
-    const C=(v,s)=>({t:'s',v:String(v==null?'':v),s:s||sBase});
+    if(!r2b.length && !r3b.length){ toast('해당 날짜에 완료된 회차가 없습니다','d'); return; }
+    if(r2b.length>11||r3b.length>11) alert('회차가 11건을 넘어 양식 초과분은 점검표에서 제외됩니다.');
     const [yy,mm,dd]=dateStr.split('-');
-
-    function buildSheet(is3B, rows){
-      const ws={}; const merges=[]; const rowH=[];
-      const COLN = 9;
-      const cols='ABCDEFGHI';
-      const M=(r1,c1,r2,c2)=>merges.push({s:{r:r1-1,c:c1-1},e:{r:r2-1,c:c2-1}});
-      const set=(r,c,cell)=>{ ws[cols[c-1]+r]=cell; };
-      const fillRow=(r,s)=>{ for(let c=1;c<=COLN;c++) if(!ws[cols[c-1]+r]) set(r,c,C('',s||sBase)); };
-      let r=1;
-      // 제목/결재란
-      set(r,1,C('BON',Object.assign({},sBase,{font:{sz:12,bold:true,color:{rgb:'2C7A4B'}}})));
-      M(r,1,r+1,2);
-      set(r,3,C(is3B?'CCP-3B(살균공정) 점검표':'CCP-2B(멸균공정) 점검표',Object.assign({},sBase,{font:{sz:15,bold:true}})));
-      M(r,3,r+1,6);
-      set(r,7,C('결재',sHdr)); M(r,7,r+1,7);
-      set(r,8,C('작성',sHdr)); set(r,9,C('검토 / 승인',sHdr));
-      set(r+1,8,C('')); set(r+1,9,C(''));
-      fillRow(r); fillRow(r+1); rowH[r-1]={hpt:20}; rowH[r]={hpt:26}; r+=2;
-      // 문서번호
-      set(r,1,C(is3B?'PBⅡ-HI-04-02':'PBⅡ-HI-04-01',Object.assign({},sLeft,{font:{sz:8}}))); M(r,1,r,9); fillRow(r); rowH[r-1]={hpt:13}; r++;
-      // 점검일자/점검자
-      set(r,1,C('점검일자',sHdr)); M(r,1,r,2);
-      set(r,3,C(`${yy}년 ${parseInt(mm)}월 ${parseInt(dd)}일`,sBase)); M(r,3,r,6);
-      set(r,7,C('점검자',sHdr));
-      set(r,8,C('')); M(r,8,r,9);
-      fillRow(r); rowH[r-1]={hpt:20}; r++;
-      // 한계기준
-      if(is3B){
-        set(r,1,C('한계기준',sHdr)); M(r,1,r+1,2);
-        set(r,3,C('구분',sHdr)); set(r,4,C('살균온도',sHdr)); M(r,4,r,5); set(r,6,C('살균시간',sHdr)); M(r,6,r,7);
-        set(r,8,C('비고',sHdr)); M(r,8,r,9); fillRow(r);
-        rowH[r-1]={hpt:16}; r++;
-        set(r,3,C('A: 95℃ 이상 · 30분 이상    /    B: 121℃ · 18분 이상',sBase)); M(r,3,r,9); fillRow(r);
-        rowH[r-1]={hpt:16}; r++;
-      } else {
-        set(r,1,C('한계기준',sHdr)); M(r,1,r,2);
-        set(r,3,C('멸균 온도',sHdr)); set(r,4,C('121℃',sBase)); M(r,4,r,5);
-        set(r,6,C('멸균시간',sHdr)); M(r,6,r,7);
-        set(r,8,C('18분 이상',sBase)); M(r,8,r,9);
-        fillRow(r); rowH[r-1]={hpt:18}; r++;
-      }
-      // 주기
-      set(r,1,C('주기',sHdr)); M(r,1,r,2);
-      set(r,3,C('매 작업시 마다',sLeft)); M(r,3,r,9); fillRow(r); rowH[r-1]={hpt:16}; r++;
-      // 방법
-      set(r,1,C('방법',sHdr)); M(r,1,r,2);
-      set(r,3,C((is3B?'살균':'멸균')+'온도: 설비의 판넬 온도계를 이용하여 온도를 확인한 후 기록한다\n'+(is3B?'살균':'멸균')+'시간: 온도가 기준 이상 확인된 시점부터 공정이 종료되는데 걸리는 시간을 설비 자체 판넬 타이머를 확인하여 측정하고 기록한다',sLeft)); M(r,3,r,9); fillRow(r); rowH[r-1]={hpt:34}; r++;
-      // 개선조치방법
-      const careTop=r;
-      set(r,1,C('개선조치방법',sHdr)); M(r,1,r+2,1);
-      set(r,2,C('한계기준 이탈 시 (초과)',sHdr));
-      set(r,3,C('공정을 중단하고 HACCP팀장에게 보고한다. 제품을 육안으로 확인하여 제품검사기준에 따라 폐기 또는 정상제품으로 처리. 이탈사항 및 개선조치사항을 모니터링 일지에 기록한다.',sLeft)); M(r,3,r,9); fillRow(r); rowH[r-1]={hpt:40}; r++;
-      set(r,2,C('한계기준 이탈 시 (미달)',sHdr));
-      set(r,3,C('공정을 중단하고 HACCP팀장에게 보고한다. 설비의 온도 및 시간을 조절하여 재가열한 후 제품을 육안으로 확인하여 제품검사기준에 따라 폐기 또는 정상제품으로 처리. 이탈사항 및 개선조치사항을 모니터링 일지에 기록한다.',sLeft)); M(r,3,r,9); fillRow(r); rowH[r-1]={hpt:40}; r++;
-      set(r,2,C('시설·설비 고장 시',sHdr));
-      set(r,3,C('기기 고장 시 HACCP팀장에게 보고 후 단시간에 수리가 가능한 경우 공정품을 보관하였다가 기기가 정상작동하면 재가열한다. 단시간에 수리가 불가능한 경우 공정품을 폐기한다. 이탈사항 및 개선조치사항을 모니터링 일지에 기록한다.',sLeft)); M(r,3,r,9); fillRow(r); rowH[r-1]={hpt:44}; r++;
-      // 기록 테이블 헤더
-      if(is3B){
-        set(r,1,C('호기',sHdr)); set(r,2,C('구분',sHdr)); set(r,3,C('제품명',sHdr));
-        set(r,4,C('시작',sHdr)); set(r,5,C('종료',sHdr));
-        set(r,6,C('살균시간',sHdr)); set(r,7,C('살균온도',sHdr)); set(r,8,C('판정',sHdr)); set(r,9,C('서명',sHdr));
-      } else {
-        set(r,1,C('멸균기 No.',sHdr)); set(r,2,C('제품명',sHdr)); M(r,2,r,3);
-        set(r,4,C('시작',sHdr)); set(r,5,C('종료',sHdr));
-        set(r,6,C('멸균시간',sHdr)); set(r,7,C('멸균온도',sHdr)); set(r,8,C('판정',sHdr)); set(r,9,C('서명',sHdr));
-      }
-      fillRow(r); rowH[r-1]={hpt:18}; r++;
-      // 데이터 행 (최소 10행)
-      const totalRows=Math.max(10, rows.length);
-      for(let i=0;i<totalRows;i++){
-        const rec=rows[i];
-        if(rec){
-          const min=_rtMin(rec.t2,rec.t3);
-          const judge=_rtJudge(rec.ccp,min,rec.temp);
-          const jTxt=judge==='적합'?'적':judge==='부적합'?'부':'';
-          if(is3B){
-            set(r,1,C(rec.machine,sBase)); set(r,2,C(rec.batch||'',sBase)); set(r,3,C(rec.product,sBase));
-            set(r,4,C(rec.t2,sBase)); set(r,5,C(rec.t3,sBase));
-            set(r,6,C(min+'분',sBase)); set(r,7,C(rec.temp+'℃',sBase)); set(r,8,C(jTxt,sBase)); set(r,9,C('',sBase));
-          } else {
-            set(r,1,C(rec.machine,sBase)); set(r,2,C(rec.product,sBase)); M(r,2,r,3);
-            set(r,4,C(rec.t2,sBase)); set(r,5,C(rec.t3,sBase));
-            set(r,6,C(min+'분',sBase)); set(r,7,C(rec.temp+'℃',sBase)); set(r,8,C(jTxt,sBase)); set(r,9,C('',sBase));
-          }
-        } else if(!is3B){ M(r,2,r,3); }
-        fillRow(r); rowH[r-1]={hpt:20}; r++;
-      }
-      // 하단 이탈/개선조치
-      set(r,1,C('이탈내용',sHdr)); M(r,1,r,3);
-      set(r,4,C('개선조치 및 결과',sHdr)); M(r,4,r,7);
-      set(r,8,C('조치자',sHdr)); set(r,9,C('확인',sHdr));
-      fillRow(r); rowH[r-1]={hpt:16}; r++;
-      M(r,1,r+1,3); M(r,4,r+1,7); M(r,8,r+1,8); M(r,9,r+1,9);
-      fillRow(r); fillRow(r+1); rowH[r-1]={hpt:18}; rowH[r]={hpt:18}; r+=2;
-
-      ws['!ref']='A1:I'+(r-1);
-      ws['!merges']=merges;
-      ws['!rows']=rowH;
-      ws['!cols']=[{wch:9},{wch:13},{wch:16},{wch:8},{wch:8},{wch:9},{wch:9},{wch:7},{wch:9}];
-      return ws;
-    }
-
-    const wb=XLSX.utils.book_new();
-    wb.SheetNames.push('CCP-2B'); wb.Sheets['CCP-2B']=buildSheet(false, r2b);
-    wb.SheetNames.push('CCP-3B'); wb.Sheets['CCP-3B']=buildSheet(true,  r3b);
-
-    // A4 세로 한 장 (fflate XML 주입 — xlsx-js-style은 pageSetup 미출력)
-    const arr=XLSX.write(wb,{type:'array',bookType:'xlsx',cellStyles:true});
-    const z=fflate.unzipSync(new Uint8Array(arr));
-    const dec=new TextDecoder(), enc=new TextEncoder();
-    const ps='<pageMargins left="0.35" right="0.35" top="0.4" bottom="0.4" header="0.1" footer="0.1"/><pageSetup paperSize="9" orientation="portrait" fitToWidth="1" fitToHeight="1"/>';
-    Object.keys(z).forEach(k=>{
-      if(/^xl\/worksheets\/sheet\d+\.xml$/.test(k)){
-        let xml=dec.decode(z[k]);
-        if(xml.indexOf('<sheetPr')<0) xml=xml.replace(/(<worksheet[^>]*>)/,'$1<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>');
-        xml = xml.indexOf('<ignoredErrors')>=0 ? xml.replace('<ignoredErrors', ps+'<ignoredErrors') : xml.replace('</worksheet>', ps+'</worksheet>');
-        z[k]=enc.encode(xml);
-      }
-    });
-    const blob=new Blob([fflate.zipSync(z)],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
-    const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
-    a.download=`CCP점검표_${dateStr}.xlsx`;
-    document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(a.href);
+    const dateTxt=yy+' 년   '+parseInt(mm)+' 월   '+parseInt(dd)+' 일';
+    if(r2b.length) await _rtFillTemplate('assets/ccp2b.xlsx','CCP-2B_점검표_'+dateStr+'.xlsx', r2b, false, dateTxt);
+    if(r3b.length) await _rtFillTemplate('assets/ccp3b.xlsx','CCP-3B_점검표_'+dateStr+'.xlsx', r3b, true, dateTxt);
     toast('CCP 점검표 다운로드 ✓','s');
   }catch(e){
     console.error('[CCP 점검표]',e);
