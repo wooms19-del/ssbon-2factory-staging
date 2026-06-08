@@ -112,8 +112,9 @@ async function renderThawWaiting(){
 
   const byPart={};
   waiting.forEach(b=>{
-    if(!byPart[b.part]) byPart[b.part]={kg:0,count:0,ystCount:0,ystKg:0,todCount:0,todKg:0,barcodes:[]};
-    const bKg=parseFloat(b.weightKg)||0;
+    if(!byPart[b.part]) byPart[b.part]={kg:0,count:0,ystCount:0,ystKg:0,todCount:0,todKg:0,sampleCount:0,barcodes:[]};
+    const bKg=b.sample?0:(parseFloat(b.weightKg)||0);   // ★ 샘플은 무게 제외 (박스 수에는 포함)
+    if(b.sample) byPart[b.part].sampleCount++;
     byPart[b.part].kg+=bKg;
     byPart[b.part].count++;
     const bd=String(b.date||'').slice(0,10);
@@ -138,7 +139,7 @@ async function renderThawWaiting(){
     <div style="padding:10px 0;border-bottom:1px solid var(--g2)">
       <div style="display:flex;justify-content:space-between;align-items:center">
         <span style="font-size:14px;font-weight:600">${part}</span>
-        <span style="font-size:14px;color:var(--g5)">${v.count}박스 · <b style="color:var(--p)">${r2(v.kg).toFixed(2)}kg</b></span>
+        <span style="font-size:14px;color:var(--g5)">${v.count}박스 · <b style="color:var(--p)">${r2(v.kg).toFixed(2)}kg</b>${v.sampleCount?` <span style="font-size:11px;color:#92400e">(🧪샘플 ${v.sampleCount}박스 무게제외)</span>`:''}</span>
       </div>
       ${v.ystCount>0?`
       <div style="display:flex;gap:14px;margin-top:6px;font-size:12px">
@@ -155,12 +156,12 @@ async function renderThawWaiting(){
     Object.entries(byPart).map(([part,v])=>`
       <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--g2)">
         <span style="font-size:14px;font-weight:600;min-width:60px">${part}</span>
-        <span style="font-size:13px;color:var(--g5);flex:1">총 ${v.count}박스 · ${r2(v.kg).toFixed(2)}kg</span>
+        <span style="font-size:13px;color:var(--g5);flex:1">총 ${v.count}박스 · ${r2(v.kg).toFixed(2)}kg${v.sampleCount?` <span style="font-size:11px;color:#92400e">(샘플 ${v.sampleCount})</span>`:''}</span>
         <div style="display:flex;align-items:center;gap:6px">
           <input type="number" class="tw-box-cnt fc" data-part="${part}"
             data-max="${v.count}" data-totalkg="${r2(v.kg)}"
             data-barcodes='${JSON.stringify(v.barcodes.map(b=>b.importCode))}'
-            data-weights='${JSON.stringify(v.barcodes.map(b=>parseFloat(b.weightKg)||0))}'
+            data-weights='${JSON.stringify(v.barcodes.map(b=>b.sample?0:(parseFloat(b.weightKg)||0)))}'
             data-rfends='${JSON.stringify(v.barcodes.map(b=>String(b.rfEnd||"").slice(0,5)))}'
             min="0" max="${v.count}" value="${v.count}"
             style="width:70px;text-align:center" oninput="updateTwSummary()">

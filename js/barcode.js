@@ -273,9 +273,10 @@ async function renderBC(){
     <div class="bcitem ${b.status==='적합'?'gd':'bd'}">
       <span class="bcst ${b.status==='적합'?'sg':'sb'}">${b.status}</span>
       <div class="bcinfo">
-        <div class="bcm">${b.part||'-'} · ${b.origin||'-'} · ${b.weightKg||'-'}kg</div>
+        <div class="bcm">${b.part||'-'} · ${b.origin||'-'} · ${b.weightKg||'-'}kg${b.sample?' <span style="background:#fef3c7;color:#92400e;font-size:11px;padding:1px 7px;border-radius:9px;font-weight:600">🧪 샘플 (무게 제외)</span>':''}</div>
         <div class="bcd">🕐 해동기 ${b.rfStart?b.rfStart.slice(0,5):'-'} → 종료 ${b.rfEnd||'-'}${b.status==='부적합'?' · '+b.reason:' · 소비기한 '+(b.expiryDate||'-')}</div>
       </div>
+      <button class="bcdel" style="margin-right:4px;font-size:11px;width:auto;padding:0 8px;border-radius:10px;${b.sample?'background:#92400e;color:#fff':''}" title="샘플 지정/해제 — 박스수에는 포함, 무게에서는 제외" onclick="toggleSampleBC('${b.id}','${b.fbId||''}')">${b.sample?'샘플해제':'샘플'}</button>
       <button class="bcdel" onclick="delBC('${b.id}','${b.fbId||''}')">×</button>
     </div>`).join('');
   renderBcSummaryCard();
@@ -312,6 +313,18 @@ async function _bcCheckUnknownGtinsBanner(){
 }
 window._bcCheckUnknownGtinsBanner = _bcCheckUnknownGtinsBanner;
 
+async function toggleSampleBC(id,fbId){
+  const rec=L.barcodes.find(b=>b.id===id);
+  if(!rec) return;
+  const nv=!rec.sample;
+  if(nv && !confirm(`이 박스(${rec.part} ${rec.weightKg}kg)를 샘플로 지정할까요?\n박스 수에는 포함되고, 방혈 대차 무게에서는 제외됩니다.`)) return;
+  if(fbId){
+    const ok=await fbUpdate('barcode', fbId, {sample:nv});
+    if(ok===false){ toast('저장 실패','d'); return; }
+  }
+  rec.sample=nv; saveL(); renderBC();
+  toast(nv?'샘플 지정 ✓ (무게 제외)':'샘플 해제 ✓');
+}
 function delBC(id,fbId){
   const rec = L.barcodes.find(b=>b.id===id);
   L.barcodes=L.barcodes.filter(b=>b.id!==id); saveL(); renderBC();
