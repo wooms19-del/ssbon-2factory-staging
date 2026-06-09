@@ -702,14 +702,18 @@ async function pp2FinishDay(){
     `※ 실수했을 경우 "종료 취소" 버튼으로 되돌릴 수 있음\n\n` +
     `진행?`
   )) return;
+  // ★ 그날 마지막으로 끝낸 전처리 종료시각 (없으면 현재시각)
+  const _ppToday = (L.preprocess||[]).filter(p => String(p.date||'').slice(0,10)===today && p.end);
+  const _lastEnd = _ppToday.map(p => String(p.end).trim()).filter(Boolean).sort().pop() || (typeof nowHM==='function' ? nowHM() : '');
+  const _finEnd = today + ' ' + _lastEnd;
   for(const th of remaining){
     th._finishedRemainBackup = parseFloat(th.remainKg) || 0;
     th._finishedDate = today;
     th.remainKg = 0;
     const upd = { remainKg: 0, _finishedRemainBackup: th._finishedRemainBackup, _finishedDate: today };
-    // ★ 종료시각 비어있으면 채움 → 일별요약 투입(end 기준)에 정상 반영
+    // ★ 종료시각 비어있으면 그날 마지막 전처리 종료시각으로 채움 → 일별요약 투입 정확
     if(!th.end || String(th.end).trim() === ''){
-      th.end = today + ' ' + (typeof nowHM==='function' ? nowHM() : '');
+      th.end = _finEnd;
       upd.end = th.end;
     }
     if(th.fbId && typeof fbUpdate==='function'){
