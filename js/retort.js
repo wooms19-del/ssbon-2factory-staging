@@ -328,87 +328,119 @@ async function rtEditProd(fbId){
   rec.product=v.trim(); renderRetort();
 }
 
-/* ── CCP 점검표 엑셀 — 실물 양식(원본 템플릿)에 데이터 주입 ── */
-function _rtXset(xml,ref,val,newS){
-  const re=new RegExp('<c r="'+ref+'"([^>]*?)(/>|>[\\s\\S]*?</c>)');
-  if(!re.test(xml)) return xml;
-  return xml.replace(re,(m0,attrs)=>{
-    let st=(attrs.match(/s="\d+"/)||[''])[0];
-    if(newS!=null) st='s="'+newS+'"';
-    const esc=String(val).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-    return '<c r="'+ref+'" '+st+' t="inlineStr"><is><t xml:space="preserve">'+esc+'</t></is></c>';
-  });
-}
-// styles.xml에 base xf 복제 + shrinkToFit 추가, 새 인덱스 반환
-function _rtAddShrink(z, dec, enc, baseIdx){
-  let st=dec.decode(z['xl/styles.xml']);
-  const xfs=st.match(/<cellXfs count="(\d+)">([\s\S]*?)<\/cellXfs>/);
-  if(!xfs) return null;
-  const cnt=parseInt(xfs[1]);
-  const all=xfs[2].match(/<xf\b[^>]*\/>|<xf\b[^>]*>[\s\S]*?<\/xf>/g);
-  if(!all||!all[baseIdx]) return null;
-  let base=all[baseIdx], nx;
-  if(/<alignment/.test(base)) nx=base.replace(/<alignment/,'<alignment shrinkToFit="1"');
-  else if(base.endsWith('/>')) nx=base.replace('<xf','<xf applyAlignment="1"').replace(/\/>$/,'><alignment shrinkToFit="1"/></xf>');
-  else nx=base.replace('</xf>','<alignment shrinkToFit="1"/></xf>');
-  st=st.replace('<cellXfs count="'+cnt+'">','<cellXfs count="'+(cnt+1)+'">').replace('</cellXfs>',nx+'</cellXfs>');
-  z['xl/styles.xml']=enc.encode(st);
-  return cnt;
-}
-async function _rtFillTemplate(tplPath, outName, rows, is3B, dateTxt){
-  const buf=await (await fetch(tplPath)).arrayBuffer();
-  const z=fflate.unzipSync(new Uint8Array(buf));
-  const dec=new TextDecoder(), enc=new TextEncoder();
-  let xml=dec.decode(z['xl/worksheets/sheet1.xml']);
-  const CIRC='\u20DD';  // 글자 뒤 결합 동그라미
-  // 제품명 칸 자동축소 스타일 (긴 제품명 잘림 방지)
-  const prodBase = is3B ? 27 : 57;
-  const shrinkIdx = _rtAddShrink(z, dec, enc, prodBase);
-  xml=_rtXset(xml,'E6',dateTxt);
-  rows.forEach((r,i)=>{
-    const R=24+i; if(R>34) return;
-    const min=_rtMin(r.t2,r.t3);
-    const judge=_rtJudge(r.ccp,min,r.temp);
-    xml=_rtXset(xml,'A'+R,r.machine||'');
-    if(is3B){
-      // 구분 = 살균 조건 A/B (해당 조건에 동그라미). 배치는 시스템 데이터로만 보관
-      const cond=_rt3bCond(min, r.temp);
-      xml=_rtXset(xml,'B'+R, cond==='B' ? ('A / B'+CIRC) : ('A'+CIRC+' / B'));
-      xml=_rtXset(xml,'D'+R,r.product||'', shrinkIdx);
+/* ── CCP 점검표 — 인쇄(PDF) ───────────────────────────────── */
+// CCP 점검표 인쇄용 HTML 생성 (A4 세로, 원본 양식 재현)
+function _rtCcpHtml(is3B, rows, dateStr){
+  const [yy,mm,dd]=dateStr.split('-');
+  const dateTxt=`${yy} 년 &nbsp; ${parseInt(mm)} 월 &nbsp; ${parseInt(dd)} 일`;
+  const judgeCell=(judge)=>{
+    const a=judge==='적합'?'<span class="cir">적</span>':'적';
+    const b=judge==='부적합'?'<span class="cir">부</span>':'부';
+    return `${a} <span class="bar">│</span> ${b}`;
+  };
+  const condCell=(min,temp)=>{
+    const cond=(temp>=121&&min>=18&&!(temp>=95&&min>=30))?'B':'A';
+    const a=cond==='A'?'<span class="cir">A</span>':'A';
+    const b=cond==='B'?'<span class="cir">B</span>':'B';
+    return `${a} <span class="bar">/</span> ${b}`;
+  };
+  let bodyRows='';
+  const TOTAL=Math.max(11, rows.length);
+  for(let i=0;i<TOTAL;i++){
+    const r=rows[i];
+    if(r){
+      const min=_rtMin(r.t2,r.t3), judge=_rtJudge(r.ccp,min,r.temp);
+      if(is3B){
+        bodyRows+=`<tr><td>${r.machine}</td><td>${condCell(min,r.temp)}</td><td class="pname">${r.product||''}</td><td>${r.t2||''}</td><td>${r.t3||''}</td><td>${min}분</td><td>${r.temp}℃</td><td>${judgeCell(judge)}</td><td></td></tr>`;
+      } else {
+        bodyRows+=`<tr><td>${r.machine}</td><td class="pname" colspan="2">${r.product||''}</td><td>${r.t2||''}</td><td>${r.t3||''}</td><td>${min}분</td><td>${r.temp}℃</td><td>${judgeCell(judge)}</td><td></td></tr>`;
+      }
     } else {
-      xml=_rtXset(xml,'C'+R,r.product||'', shrinkIdx);
+      bodyRows+= is3B
+        ? `<tr><td></td><td>A <span class="bar">/</span> B</td><td></td><td></td><td></td><td>분</td><td>℃</td><td>적 <span class="bar">│</span> 부</td><td></td></tr>`
+        : `<tr><td></td><td colspan="2"></td><td></td><td></td><td>분</td><td>℃</td><td>적 <span class="bar">│</span> 부</td><td></td></tr>`;
     }
-    xml=_rtXset(xml,'G'+R,r.t2||''); xml=_rtXset(xml,'K'+R,r.t3||'');
-    xml=_rtXset(xml,'O'+R,min!=null?min+'분':'');
-    xml=_rtXset(xml,'Q'+R,r.temp?r.temp+'℃':'');
-    // 판정: 원본 '적 │ 부' 유지 + 해당 글자에 동그라미
-    let sv='적 │ 부';
-    if(judge==='적합') sv='적'+CIRC+' │ 부';
-    else if(judge==='부적합') sv='적 │ 부'+CIRC;
-    xml=_rtXset(xml,'S'+R,sv);
-  });
-  z['xl/worksheets/sheet1.xml']=enc.encode(xml);
-  const blob=new Blob([fflate.zipSync(z)],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
-  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
-  a.download=outName;
-  document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(a.href);
+  }
+  const limitRows = is3B
+    ? `<tr><td class="lab" rowspan="2">한계기준</td><td>구분</td><td colspan="2">살균온도</td><td colspan="2">살균시간</td><td colspan="3">비고</td></tr>
+       <tr><td>A / B</td><td colspan="2">A: 95℃이상 / B: 121℃</td><td colspan="2">A: 30분↑ / B: 18분↑</td><td colspan="3"></td></tr>`
+    : `<tr><td class="lab">한계기준</td><td>멸균 온도</td><td colspan="3">121℃</td><td>멸균시간</td><td colspan="3">18분 이상</td></tr>`;
+  const head = is3B
+    ? `<tr><th>호기</th><th>구분</th><th>제품명</th><th>시작</th><th>종료</th><th>살균시간</th><th>살균온도</th><th>판정</th><th>서명</th></tr>`
+    : `<tr><th>멸균기<br>No.</th><th colspan="2">제품명</th><th>시작</th><th>종료</th><th>멸균시간</th><th>멸균온도</th><th>판정</th><th>서명</th></tr>`;
+  const title=is3B?'CCP-3B(살균공정) 점검표':'CCP-2B(멸균공정) 점검표';
+  const docNo=is3B?'PBⅡ-HI-04-02':'PBⅡ-HI-04-01';
+  const method=`${is3B?'살균':'멸균'}온도 : 설비의 판넬 온도계를 이용하여 온도를 확인한 후 기록한다.<br>${is3B?'살균':'멸균'}시간 : 온도가 기준 이상 확인된 시점부터 공정이 종료되는데 걸리는 시간을 설비 자체 판넬 타이머를 확인하여 측정하고 기록한다.`;
+  return `<div class="sheet">
+    <table class="hdr"><tr>
+      <td class="logo" rowspan="2">BON</td>
+      <td class="ttl" rowspan="2">${title}</td>
+      <td class="gj">결재</td><td>작성</td><td>검토</td><td>승인</td>
+    </tr><tr><td></td><td></td><td></td><td></td></tr>
+    <tr><td class="docno" colspan="6">${docNo}</td></tr></table>
+    <table class="meta">
+      <tr><td class="lab">점검일자</td><td class="date">${dateTxt}</td><td class="lab">점검자</td><td></td></tr>
+    </table>
+    <table class="lim">${limitRows}</table>
+    <table class="lim">
+      <tr><td class="lab">주　기</td><td class="lt">매 작업시 마다</td></tr>
+      <tr><td class="lab">방　법</td><td class="lt">${method}</td></tr>
+    </table>
+    <table class="care">
+      <tr><td class="lab" rowspan="3">개선조치방법</td><td class="sub">한계기준<br>이탈 시 (초과)</td><td class="lt">공정을 중단하고 HACCP팀장에게 보고한다. 제품을 육안으로 확인하여 제품검사기준에 따라 폐기 또는 정상제품으로 처리. 이탈사항 및 개선조치사항을 모니터링 일지에 기록한다.</td></tr>
+      <tr><td class="sub">한계기준<br>이탈 시 (미달)</td><td class="lt">공정을 중단하고 HACCP팀장에게 보고한다. 설비의 온도 및 시간을 조절하여 재가열한 후 제품을 육안으로 확인하여 제품검사기준에 따라 폐기 또는 정상제품으로 처리. 이탈사항 및 개선조치사항을 모니터링 일지에 기록한다.</td></tr>
+      <tr><td class="sub">시설·설비<br>고장 시</td><td class="lt">기기 고장 시 HACCP팀장에게 보고 후 단시간에 수리가 가능한 경우 공정품을 보관하였다가 기기가 정상작동하면 재가열한다. 단시간에 수리가 불가능한 경우 공정품을 폐기한다. 이탈사항 및 개선조치사항을 모니터링 일지에 기록한다.</td></tr>
+    </table>
+    <table class="rec"><thead>${head}</thead><tbody>${bodyRows}</tbody></table>
+    <table class="foot">
+      <tr><td class="lab">이탈내용</td><td class="lab">개선조치 및 결과</td><td class="lab">조치자</td><td class="lab">확인</td></tr>
+      <tr><td class="bk"></td><td class="bk"></td><td class="bk"></td><td class="bk"></td></tr>
+    </table>
+  </div>`;
 }
+
+const _RT_CCP_CSS = `*{margin:0;padding:0;box-sizing:border-box;font-family:'Malgun Gothic','맑은 고딕',sans-serif}
+body{background:#fff}
+.sheet{width:190mm;margin:0 auto;padding:4mm;page-break-after:always}
+table{width:100%;border-collapse:collapse;table-layout:fixed}
+td,th{border:0.6px solid #333;padding:2px 4px;font-size:9px;text-align:center;vertical-align:middle;word-break:keep-all}
+.hdr td{height:14px}
+.hdr .logo{width:18%;color:#2c7a4b;font-weight:bold;font-size:18px;border:none}
+.hdr .ttl{font-size:16px;font-weight:bold}
+.hdr .gj{width:6%;background:#f0f0f0}
+.hdr .docno{text-align:left;font-size:8px;border:none;padding-top:1px}
+.meta .lab,.lim .lab,.care .lab,.foot .lab{background:#eaeaea;font-weight:bold;width:14%}
+.meta .date{font-weight:bold;font-size:11px}
+.lim .lt,.care .lt{text-align:left;line-height:1.5}
+.care .sub{background:#f5f5f5;width:14%;font-size:8.5px}
+.rec th{background:#eaeaea;font-weight:bold;height:18px}
+.rec td{height:20px}
+.rec .pname{font-weight:bold;text-align:left;padding-left:6px;overflow:hidden;white-space:nowrap}
+.foot .lab{height:16px}
+.foot .bk{height:30px}
+.cir{display:inline-block;border:1.5px solid #c00;border-radius:50%;width:15px;height:15px;line-height:12px;color:#c00;font-weight:bold}
+.bar{color:#999}
+@page{size:A4 portrait;margin:6mm}
+`;
 async function rtDownloadCcp(){
   try{
     const dEl=document.getElementById('rt_ccp_date');
     const dateStr=(dEl&&dEl.value)||tod();
-    toast('점검표 생성중...','i');
+    toast('점검표 준비중...','i');
     const recs=(await fbGetByDate('retort', dateStr)).filter(r=>r.t2&&r.t3)
       .sort((a,b)=>String(a.t2||'').localeCompare(String(b.t2||'')));
     const r2b=recs.filter(r=>!_rtIs3B(r.ccp));
     const r3b=recs.filter(r=>_rtIs3B(r.ccp));
     if(!r2b.length && !r3b.length){ toast('해당 날짜에 완료된 회차가 없습니다','d'); return; }
-    if(r2b.length>11||r3b.length>11) alert('회차가 11건을 넘어 양식 초과분은 점검표에서 제외됩니다.');
-    const [yy,mm,dd]=dateStr.split('-');
-    const dateTxt=yy+' 년   '+parseInt(mm)+' 월   '+parseInt(dd)+' 일';
-    if(r2b.length) await _rtFillTemplate('assets/ccp2b.xlsx','CCP-2B_점검표_'+dateStr+'.xlsx', r2b, false, dateTxt);
-    if(r3b.length) await _rtFillTemplate('assets/ccp3b.xlsx','CCP-3B_점검표_'+dateStr+'.xlsx', r3b, true, dateTxt);
-    toast('CCP 점검표 다운로드 ✓','s');
+    let body='';
+    if(r2b.length) body+=_rtCcpHtml(false, r2b, dateStr);
+    if(r3b.length) body+=_rtCcpHtml(true,  r3b, dateStr);
+    const w=window.open('', '_blank');
+    if(!w){ alert('팝업이 차단되었습니다. 팝업 허용 후 다시 시도하세요.'); return; }
+    w.document.write('<!doctype html><html><head><meta charset="utf-8"><title>CCP 점검표 '+dateStr+'</title><style>'+_RT_CCP_CSS+'</style></head><body>'+body+'</body></html>');
+    w.document.close();
+    w.focus();
+    setTimeout(()=>{ w.print(); }, 350);
   }catch(e){
     console.error('[CCP 점검표]',e);
     alert('점검표 생성 실패: '+e.message);
