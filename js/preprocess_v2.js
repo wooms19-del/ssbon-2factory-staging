@@ -706,12 +706,14 @@ async function pp2FinishDay(){
     th._finishedRemainBackup = parseFloat(th.remainKg) || 0;
     th._finishedDate = today;
     th.remainKg = 0;
+    const upd = { remainKg: 0, _finishedRemainBackup: th._finishedRemainBackup, _finishedDate: today };
+    // ★ 종료시각 비어있으면 채움 → 일별요약 투입(end 기준)에 정상 반영
+    if(!th.end || String(th.end).trim() === ''){
+      th.end = today + ' ' + (typeof nowHM==='function' ? nowHM() : '');
+      upd.end = th.end;
+    }
     if(th.fbId && typeof fbUpdate==='function'){
-      try { await fbUpdate('thawing', th.fbId, {
-        remainKg: 0,
-        _finishedRemainBackup: th._finishedRemainBackup,
-        _finishedDate: today,
-      }); }
+      try { await fbUpdate('thawing', th.fbId, upd); }
       catch(e){ console.error('thawing 종료 실패', e); }
     }
   }
