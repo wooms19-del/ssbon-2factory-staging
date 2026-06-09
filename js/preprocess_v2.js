@@ -301,6 +301,24 @@ function pp2ValidateRow(d){
   return null;
 }
 
+// ★ 차감 직전 방혈 최신화 (어제+오늘 서버 재조회) — 연속/동시 저장 시 중복 차감 방지
+async function pp2ReloadThawing(){
+  const today = (typeof tod==='function') ? tod() : new Date().toISOString().slice(0,10);
+  const dy = new Date(); dy.setDate(dy.getDate()-1);
+  const yest = dy.getFullYear()+'-'+String(dy.getMonth()+1).padStart(2,'0')+'-'+String(dy.getDate()).padStart(2,'0');
+  try {
+    if(typeof fbGetByDate !== 'function') return;
+    const [a, b] = await Promise.all([fbGetByDate('thawing', today), fbGetByDate('thawing', yest)]);
+    const fresh = [...(a||[]), ...(b||[])];
+    // 오늘·어제 날짜 thawing은 서버 최신으로 교체, 그 외 날짜는 메모리 유지
+    L.thawing = (L.thawing||[]).filter(t => {
+      const d = String(t.date||'').slice(0,10);
+      return d !== today && d !== yest;
+    }).concat(fresh);
+    if(typeof saveL==='function') saveL();
+  } catch(e){ console.warn('[pp2] 방혈 재조회 실패, 캐시 사용:', e && e.message); }
+}
+
 function pp2FifoDeduct(type, totalKg){
   const today = (typeof tod==='function') ? tod() : new Date().toISOString().slice(0,10);
   const candidates = (L.thawing||[])
@@ -375,6 +393,9 @@ async function pp2SaveOne(idx){
   if(workers <= 0){ toast('인원 입력 필요','d'); return; }
 
   tr.dataset.saved = '1';
+
+  // ★ 차감 직전 방혈 잔량을 서버에서 최신화 (중복 차감 방지 핵심)
+  await pp2ReloadThawing();
 
   const totalDeduct = d.kg + d.waste;
   const {touches, shortage} = pp2FifoDeduct(d.type, totalDeduct);
@@ -575,6 +596,8 @@ async function pp2EditSave(id){
   if(d.workers <= 0){ toast('인원 입력 필요','d'); return; }
   // 1) 기존 touches 복원
   await pp2RestoreTouches(rec);
+  // ★ 복원 반영된 방혈 최신화 후 재차감 (중복 차감 방지)
+  await pp2ReloadThawing();
   // 2) 새 FIFO 차감
   const totalDeduct = d.kg + d.waste;
   const {touches, shortage} = pp2FifoDeduct(d.type, totalDeduct);
