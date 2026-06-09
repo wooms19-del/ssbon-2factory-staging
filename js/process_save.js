@@ -70,6 +70,27 @@ async function saveP(type){
     // 전처리 record가 어느 thawing record를 건드렸는지 추적 (삭제 시 정확한 복원 위해)
     // 형식: [{thFbId, thId, cart, deductKg, prevEnd}]
     const thawingTouches = [];
+    // ★★ 중복/초과 차감 방지 (2026-06-09): 차감 전 라이브 잔량 사전 검증
+    //    화면 스냅샷이 오래돼 이미 빈 대차를 골랐거나, 다른 케이지가 먼저 쓴 경우
+    //    → 음수 방지로 슬쩍 넘어가던 버그로 차감 누락 발생. 여기서 막는다.
+    const _needByCart = {};
+    const _overflow = [];
+    for(const rec of wagons){
+      if(!rec) continue;
+      let dk = mxDeduct[rec.id] || 0;
+      if(!dk){ const k=document.querySelector('.pp-wagon-kg[data-id="'+rec.id+'"]'); dk=parseFloat(k&&k.value)||0; }
+      if(!dk) continue;
+      const key = rec.fbId || (String(rec.cart)+'|'+String(rec.date||'').slice(0,10));
+      _needByCart[key] = (_needByCart[key]||0) + dk;
+      const cur = rec.remainKg!==undefined ? rec.remainKg : rec.totalKg;
+      if(_needByCart[key] > cur + 0.5){
+        _overflow.push('· '+(rec.cart||'?')+'번 대차: 요청 '+r2(_needByCart[key]).toFixed(2)+'kg > 남은 양 '+r2(cur).toFixed(2)+'kg');
+      }
+    }
+    if(_overflow.length){
+      alert('⚠️ 방혈 잔량이 부족하여 저장을 중단했습니다.\n\n'+_overflow.join('\n')+'\n\n다른 케이지가 먼저 사용했거나 화면이 오래된 상태일 수 있습니다.\n[새로고침] 후 현재 잔량을 확인하고 대차를 다시 선택해주세요.');
+      return;
+    }
     // ★ for...of로 변경 (forEach(async)는 await 안 먹음 → silent fail 원인)
     for(const rec of wagons){
       if(!rec) continue;
