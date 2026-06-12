@@ -958,6 +958,22 @@ body{display:flex;flex-direction:column;font-family:-apple-system,BlinkMacSystem
         </label>
 
         <label style="display:flex;flex-direction:column;gap:3px">
+          <span>📦 제품 · 수량(EA)</span>
+          <div style="display:flex;gap:4px">
+            <select id="ttt-prod" onchange="tttQtyCalc()" style="height:30px;font-size:12px;padding:0 6px;border:0.5px solid var(--color-border-secondary);border-radius:6px;background:var(--color-background-primary)">
+              <option value="">직접입력</option>
+              <option>시그니처 130g</option>
+              <option>코스트코 170g</option>
+              <option>미니 70g 낱개</option>
+              <option>트레이더스 460g</option>
+              <option>FC 3KG</option>
+              <option>메추리알 180g</option>
+            </select>
+            <input type="number" id="ttt-prod-qty" placeholder="수량" oninput="tttQtyCalc()" style="width:78px;height:30px;font-size:13px;padding:0 8px;border:0.5px solid var(--color-border-secondary);border-radius:6px">
+          </div>
+        </label>
+
+        <label style="display:flex;flex-direction:column;gap:3px">
           <span>원육량 (kg)</span>
           <input type="number" id="ttt-kg" value="1600" min="0" max="6000" step="50" oninput="tttRender()" style="width:90px;height:30px;font-size:13px;padding:0 8px;border:0.5px solid var(--color-border-secondary);border-radius:6px">
         </label>
@@ -1632,6 +1648,6 @@ body{display:flex;flex-direction:column;font-family:-apple-system,BlinkMacSystem
 <script src="js/globals.js?v=1778599476"></script>
 <script src="js/stock.js?v=1780297616"></script>
 <script src="js/timetable.js?v=1778495630"></script>
-<script src="js/timetable_test.js?v=1778560911"></script>
+<script src="js/timetable_test.js?v=1781246804"></script>
 </body>
 </html>

@@ -596,6 +596,35 @@ function tttResetField(id, autoKey) {
 }
 
 // 분석 기간 / 원육 종류 변경 시 → 자동 분석 재실행
+// ── 제품 수량 → 원육량 역산 (내포장 투입 고기 kg/EA) ──
+const TTT_PROD_MASTER = {
+  '시그니처 130g':   0.057,
+  '코스트코 170g':   0.0745,
+  '미니 70g 낱개':   0.046,
+  '트레이더스 460g': 0.20,
+  'FC 3KG':         1.35,
+  '메추리알 180g':   0.06,
+};
+function tttQtyCalc() {
+  const prod = document.getElementById('ttt-prod').value;
+  const qty = parseFloat(document.getElementById('ttt-prod-qty').value);
+  if (!prod || !(qty > 0)) { return; }
+  const meatPerEa = TTT_PROD_MASTER[prod];
+  if (!meatPerEa) return;
+  // FC 제품이면 원육종류 홍두깨(FC)로 자동
+  if (prod === 'FC 3KG') {
+    const ms = document.getElementById('ttt-meat');
+    if (ms && ms.value !== '홍두깨') ms.value = '홍두깨';
+  }
+  const yCrush = (TTT_AUTO.yCrush.val || 96.1) / 100;
+  const yCook  = (TTT_AUTO.yCook.val  || 56.8) / 100;
+  const yPre   = (TTT_AUTO.yPre.val   || 89.3) / 100;
+  // EA × 고기/EA = 내포장 고기(파쇄산출) → ÷수율 역산 → 원육 투입
+  const preIn = qty * meatPerEa / yCrush / yCook / yPre;
+  document.getElementById('ttt-kg').value = Math.round(preIn);
+  tttRender();
+}
+
 async function tttPeriodChange() {
   // 사용자 수정한 입력 초기화
   ['ttt-y-pre','ttt-y-crush','ttt-p-pre','ttt-p-crush','ttt-p-pack'].forEach(id => {
