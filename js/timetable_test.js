@@ -596,8 +596,8 @@ function tttResetField(id, autoKey) {
 }
 
 // 분석 기간 / 원육 종류 변경 시 → 자동 분석 재실행
-// ── 제품 수량 → 원육량 역산 (내포장 투입 고기 kg/EA) ──
-const TTT_MEAT_PER_EA = { fc:1.35, sig:0.057, trader:0.20, mini:0.046 };
+// ── 제품 수량 → 원육량 역산 (내포장 투입 고기 kg/EA, 본서버 정확값) ──
+const TTT_MEAT_PER_EA = { fc:1.35, sig:0.025, trader:0.147, mini:0.024 };
 function ttGetY(id, def){ const e=document.getElementById(id); const v=e?parseFloat(e.value):NaN; return (v>0?v:def)/100; }
 function tttQty1(){
   const q=parseFloat(document.getElementById('ttt-qty1').value);
