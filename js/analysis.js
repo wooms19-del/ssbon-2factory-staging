@@ -2682,6 +2682,13 @@ function renderDailyFromLocal_(d){
   _chDayDir=0;
   const tbody=document.getElementById('pTbl');
   let _prevName = '';
+  // 🧪 테스트용 해동 박스 (전처리 안 탄 샘플) — 별도 행으로 표시. 박스 수만 카운트, 무게 제외.
+  (L.thawing||[]).filter(r=>r.test && String(r.date||'').slice(0,10)===d).forEach(r=>{
+    const _tt=(r.type||'미분류').split(',')[0].trim();
+    const _tn=Array.isArray(r.importCodes)?r.importCodes.length:(parseInt(r.boxes)||1);
+    procRows.push({name:'🧪테스트', type:_tt, origKg:0, in:0, out:0, waste:0, mh:0, h:0, workers:0, boxes:_tn});
+  });
+
   if(tbody) tbody.innerHTML = procRows.map(p => {
     const showName = p.name !== _prevName;
     if(showName) _prevName = p.name;
