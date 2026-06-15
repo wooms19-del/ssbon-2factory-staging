@@ -164,6 +164,19 @@ async function _perfReload(showLoading){
     var th=results[0], pp=results[1], ck=results[2], sh=results[3], pk=results[4], op=results[5], sc=results[6];
 
     var rows = _perfBuildRows(th, pp, ck, sh, pk, op, sc);
+    // 🧪 테스트용 해동 박스(test:true) → 그 날 첫 행 부위 칸에 메모 주입 (박스 수만, 무게는 메모로)
+    (th||[]).filter(function(r){return r.test===true;}).forEach(function(tr){
+      var dd=String(tr.date||'').slice(0,10);
+      var part=(tr.part||tr.type||'').split(',')[0].trim();
+      var bx=(Array.isArray(tr.importCodes)&&tr.importCodes.length)||parseInt(tr.boxes)||0;
+      var kgv=parseFloat(tr.totalKg)||0;
+      var first=rows.find(function(row){return row.date===dd;});
+      if(first){
+        if(part.indexOf('홍두')>=0) first._testHong={bx:bx,kg:kgv};
+        else if(part==='설도') first._testSeo={bx:bx,kg:kgv};
+        else if(part==='우둔') first._testUdun={bx:bx,kg:kgv};
+      }
+    });
     window._perfRows = rows;        // 다운로드용
     window._perfMeta = {ym: ym, lbl: ym.slice(0,4)+'년 '+_perfMonths()[parseInt(ym.slice(5))-1]};
 
@@ -995,6 +1008,11 @@ function _perfRenderTable(rows){
     '트레이','트레이<br>불량','출고<br>박스',
     'FP소스<br>(kg)','FC소스<br>(kg)','메추리<br>알(kg)','파우치<br>합계','박스<br>합계'
   ];
+  var _mkTestBox=function(base, t){
+    var b=(base==null||base==='')?'':String(base);
+    if(t){ return b+'<div style="font-size:10px;color:#1d4ed8;font-weight:700;line-height:1.15;margin-top:1px;white-space:nowrap">🧪테스트 '+t.bx+'박스<br>('+(t.kg>0?t.kg.toFixed(1)+'kg':'무게제외')+')</div>'; }
+    return b;
+  };
   var html='<table class="perf-tbl"><thead><tr>';
   headers.forEach(function(h){ html+='<th>'+h+'</th>'; });
   html+='</tr></thead><tbody>';
@@ -1023,7 +1041,7 @@ function _perfRenderTable(rows){
       ((!isSubRow || r.subRowIdx===0) && r.expDate) ? r.expDate.slice(2).replace(/-/g,'.') : '',
       !isSubRow ? r.product : '',
       r.rmType||'',
-      fmt(r.rmKg), r.boxSeoldo||'', r.boxHongdu||'', r.boxUdun||'',
+      fmt(r.rmKg), _mkTestBox(r.boxSeoldo, r._testSeo), _mkTestBox(r.boxHongdu, r._testHong), _mkTestBox(r.boxUdun, r._testUdun),
       fmt(_ppDisp), fmt(_ckDisp), fmt(_shDisp), fmt(r.sauceKg,1),
       r.innerEa ? r.innerEa.toLocaleString('ko-KR') : '', fmt(r.defPouch,1),
       fmt(r.outerBoxes,1), r.boxDef||'',
