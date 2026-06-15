@@ -128,24 +128,16 @@ function _renderStockShell(){
     f2In[t] = (f2In[t]||0) + b;
     if(d === selDate) f2InDay[t] = (f2InDay[t]||0) + b;
   });
-  _stockData.thawing.forEach(function(r){
-    var od = String(r.date||'').slice(0,10);
-    if(od < START_DATE) return;
-    // ★ end 없어도 start 날짜가 선택일 이전이면 사용으로 카운트 (입력 누락 케이스 자동 정리)
-    var startDay = String(r.start||'').slice(0,10);
-    var isCompleted = !!r.end;  // end 있으면 작업 완료
-    var isPastStart = startDay && startDay < selDate;  // start가 어제 이전이면 끝난 걸로 간주
-    if(!isCompleted && !isPastStart) return;  // 둘 다 아니면 아직 진행중
-    if(od > selDate) return;
-    var types = (r.type||'').split(',').map(function(s){return s.trim();}).filter(Boolean);
-    // ★ 박스 수는 importCodes(실제 스캔된 바코드) 개수 우선, 없으면 boxes 필드 fallback
-    var boxes = (Array.isArray(r.importCodes) && r.importCodes.length) || parseInt(r.boxes,10) || 0;
-    if(!types.length) return;
-    var per = boxes/types.length;
-    types.forEach(function(t){
-      f2Out[t] = (f2Out[t]||0) + per;
-      if(od === selDate) f2OutDay[t] = (f2OutDay[t]||0) + per;
-    });
+  // ★ 재고 차감 = 바코드(해동 시작 = 창고에서 빠진 시점) 기준. 방혈(thawing) 완료 아님.
+  //    당일 찍힌 바코드 = 해동중(inProg)으로 별도 표시. 어제까지 찍힌 바코드 = 재고에서 빠짐.
+  var _prevDay = _dateShift(selDate, -1);
+  (_stockData.barcode || []).forEach(function(b){
+    var d = String(b.date||'').slice(0,10);
+    if(d < START_DATE || d >= selDate) return;  // 어제까지 해동 시작분만 재고 차감
+    var t = String(b.part||'').trim();
+    if(!t) return;
+    f2Out[t] = (f2Out[t]||0) + 1;  // 바코드 1개 = 1박스
+    if(d === _prevDay) f2OutDay[t] = (f2OutDay[t]||0) + 1;  // 전날 해동분 = 당일 재고 변화
   });
   // 해동중 = barcode 컬렉션 기준 (오늘 스캔된 바코드들). 바코드 스캔 시점 = 창고에서 빠진 시점.
   // thawing 레코드 생성 전이라도 바코드만 찍히면 해동중으로 카운트됨.
