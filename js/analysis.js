@@ -364,6 +364,7 @@ async function renderMonthly() {
 
   // ④ thMonth에서 테스트 해동 와건 제거 (해동 날짜·익일 모두 체크)
   const thMonthClean = (thMonth||[]).filter(r => {
+    if(r.test === true) return false;  // 🧪 테스트용 해동 박스는 원육 사용량·수율·차트 등 모든 집계에서 제외 (실적관리 일별실적에만 메모 표시)
     const thD = String(r.date||'').slice(0,10);
     const w   = (r.cart||'').trim();
     if(!w) return true;
