@@ -97,7 +97,7 @@
     var stPg   = document.getElementById('p-stock');
     // ★ 월단위생산량은 36컬럼이라 부모 inner 1080px 제한을 풀어 넓게 표시
     var _innerEl = moPg ? moPg.closest('.inner') : null;
-    if(_innerEl) _innerEl.style.maxWidth = (name==='monthly') ? 'none' : '';
+    if(_innerEl) _innerEl.style.maxWidth = (name==='monthly'||name==='inedible') ? 'none' : '';
     // 선택된 거 켜기
     if(name==='daily'){
       if(perfPg) perfPg.classList.add('on');
