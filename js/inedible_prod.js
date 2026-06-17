@@ -201,8 +201,10 @@
       + '#ipTbl thead th{background:#374151;color:#fff;font-weight:600;position:sticky;top:0;z-index:10;line-height:1.35;font-size:12px;border-color:#1f2937}'
       + '#ipTbl thead th.g-ined{background:#b91c1c}'
       + '#ipTbl thead th.g-prod{background:#0e7490}'
+      + '#ipTbl thead th.g-yield{background:#047857}'
       + '#ipTbl tbody td.c-ined{background:#fef2f2}'
       + '#ipTbl tbody td.c-prod{background:#f0fdfa}'
+      + '#ipTbl tbody td.c-yield{background:#ecfdf5;font-weight:600;color:#065f46}'
       + '#ipTbl tbody tr.sum td{background:#fef9e7;font-weight:700;border-top:2px solid #cbd5e1}'
       + '#ipTbl tbody tr.avg td{background:#eef6ec;font-weight:600}'
       + '#ipTbl tbody td.dt{font-weight:600}'
@@ -400,6 +402,7 @@
   /* ===== 표 ===== */
   function _prodKg(num, den){ return den>0 ? r2(num/den).toFixed(1) : '-'; }
   function _prodEa(num, den){ return den>0 ? r2(num/den).toFixed(2) : '-'; }
+  function _yieldPct(num, den){ return den>0 ? r2(num/den*100).toFixed(1)+'%' : '-'; }
   function _wasteCell(kg, base){
     if(!(kg>0)) return ['-','-'];
     return [kg.toFixed(2), base>0 ? (kg/base*100).toFixed(1)+'%' : '-'];
@@ -422,6 +425,7 @@
       + '<th>생산일자</th><th>원육 종류</th><th>제품명</th><th>원육 무게<br>(KG)</th>'
       + '<th class="g-ined">전처리<br>비가식부(KG)</th><th class="g-ined">전처리<br>비가식부(%)</th>'
       + '<th class="g-ined">파쇄<br>비가식부(KG)</th><th class="g-ined">파쇄<br>비가식부(%)</th>'
+      + '<th class="g-yield">전처리 수율<br>(산출÷원육)</th><th class="g-yield">자숙 수율<br>(자숙÷전처리)</th><th class="g-yield">파쇄 수율<br>(파쇄÷자숙)</th>'
       + '<th class="g-prod">생산성 전처리<br>(kg/인시)</th><th class="g-prod">생산성 자숙<br>(kg/인시)</th>'
       + '<th class="g-prod">생산성 파쇄<br>(kg/인시)</th><th class="g-prod">생산성 포장<br>(EA/인시)</th>'
       + '</tr></thead>';
@@ -440,6 +444,9 @@
         + '<td class="c-ined ip-red">'+ppW[1]+'</td>'
         + '<td class="c-ined ip-red">'+shW[0]+'</td>'
         + '<td class="c-ined ip-red">'+shW[1]+'</td>'
+        + '<td class="c-yield">'+_yieldPct(x.ppKg, x.rmKg)+'</td>'
+        + '<td class="c-yield">'+_yieldPct(x.ckKg, x.ppKg)+'</td>'
+        + '<td class="c-yield">'+_yieldPct(x.shKg, x.ckKg)+'</td>'
         + '<td class="c-prod">'+_prodKg(x.rmKg, x.ppMH)+'</td>'
         + '<td class="c-prod">'+_prodKg(x.ppKg, x.ckMH)+'</td>'
         + '<td class="c-prod">'+_prodKg(x.shKg, x.shMH)+'</td>'
@@ -464,6 +471,9 @@
         + '<td class="ip-red">'+sppW[1]+'</td>'
         + '<td class="ip-red">'+(sw>0?sw.toFixed(2):'-')+'</td>'
         + '<td class="ip-red">'+sshW[1]+'</td>'
+        + '<td>'+_yieldPct(S.ppKg, S.rmKg)+'</td>'
+        + '<td>'+_yieldPct(S.ckKg, S.ppKg)+'</td>'
+        + '<td>'+_yieldPct(S.shKg, S.ckKg)+'</td>'
         + '<td>'+_prodKg(S.rmKg, S.ppMH)+'</td>'
         + '<td>'+_prodKg(S.ppKg, S.ckMH)+'</td>'
         + '<td>'+_prodKg(S.shKg, S.shMH)+'</td>'
@@ -471,7 +481,7 @@
         + '</tr>';
     }
     var foot = rows.length ? ('<tbody>'+body+totRow('sum','합 계',1)+totRow('avg','일 평균',n)+'</tbody>')
-                           : '<tbody><tr><td colspan="12" style="padding:1.5rem;color:#94a3b8">데이터 없음</td></tr></tbody>';
+                           : '<tbody><tr><td colspan="15" style="padding:1.5rem;color:#94a3b8">데이터 없음</td></tr></tbody>';
     tbl.innerHTML = head + foot;
   }
 
