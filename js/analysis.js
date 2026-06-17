@@ -3717,6 +3717,7 @@ function renderPackingChart(dayEntries, opMap, ym) {
 // 일별 원육 사용량 차트
 var _moRmChart = null;
 var _moRmTab = '종합';  // 현재 선택된 탭
+var _moManualOpen = false;  // 수동 입력칸 표시 여부 (기본 숨김 — 보고 스샷 깔끔하게)
 // 부위별 색상 고정 (대표님 헷갈림 방지)
 //   기존: 홍두깨 = 붉은색, 우둔 = 녹색
 //   신규: 설도 = 파란색 (추가된 부위만 새 색)
@@ -3768,6 +3769,7 @@ function _moRenderRmChart(rmByDate, ym, rmByDatePart){
   }
   Object.values(manual).forEach(m => { if(m && m.part && m.kg > 0) partSet.add(m.part); });
   const allParts = [...partSet].sort();
+  window._moRmAllParts = allParts;
 
   // 탭 렌더 (종합 / 각 부위)
   const tabsEl = document.getElementById('mo_rm_tabs');
@@ -4017,8 +4019,16 @@ function _moRerenderRm(){
     _moRenderRmChart(window._moRmByDate, window._moPackingArgs ? window._moPackingArgs.ym : (window._moYm||tod().slice(0,7)), window._moRmByDatePart);
   }
 }
+function _moToggleManual(){
+  _moManualOpen = !_moManualOpen;
+  _moRenderManualUI(window._moYm || tod().slice(0,7), window._moRmAllParts || []);
+}
 function _moRenderManualUI(ym, allParts){
   const el = document.getElementById('mo_rm_manual'); if(!el) return;
+  const btn = document.getElementById('mo_rm_manual_btn');
+  if(btn) btn.style.background = _moManualOpen ? '#1D9E75' : '';
+  if(btn) btn.style.color = _moManualOpen ? '#fff' : '';
+  if(!_moManualOpen){ el.innerHTML = ''; return; }   // 기본 숨김 — 보고 화면 깔끔
   const manual = window._moManualRm || {};
   const parts = (allParts && allParts.length) ? allParts : ['홍두깨','설도'];
   const defPart = parts.indexOf('홍두깨') >= 0 ? '홍두깨' : parts[0];
