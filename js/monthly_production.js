@@ -87,7 +87,7 @@
     var pnav=document.getElementById('pnav');
     if(pnav){
       pnav.querySelectorAll('.ti').forEach(function(t,i){
-        t.classList.toggle('on', (i===0&&name==='daily') || (i===1&&name==='monthly') || (i===2&&name==='stock'));
+        t.classList.toggle('on', (i===0&&name==='daily') || (i===1&&name==='monthly') || (i===2&&name==='stock') || (i===3&&name==='inedible'));
       });
     }
     // ★ 다른 모드(일정표/출퇴근 등) 페이지가 켜져 있을 수 있으니 모든 .pg 먼저 끄기
@@ -109,6 +109,10 @@
     } else if(name==='stock'){
       if(stPg) stPg.classList.add('on');
       if(typeof renderStock === 'function') renderStock();
+    } else if(name==='inedible'){
+      var ipPg = document.getElementById('p-inedible');
+      if(ipPg) ipPg.classList.add('on');
+      if(typeof renderInedibleProd === 'function') renderInedibleProd();
     }
     var ms=document.getElementById('mscroll'); if(ms) ms.scrollTop=0;
   }
