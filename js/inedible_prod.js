@@ -499,6 +499,9 @@
   function ipToggleAnalysis(){ _ipShowAnalysis=!_ipShowAnalysis; _renderShell(); _renderAnalysis(); _renderFilter(); _renderTable(); }
 
   window.renderInedibleProd = renderInedibleProd;
+  window.ipMonthSummary = function(DATA, from, effTo, pendingDates){
+    return _agg(_buildMonthRows(DATA, from, effTo, pendingDates||new Set()));
+  };
   window.ipPrevMonth = ipPrevMonth;
   window.ipNextMonth = ipNextMonth;
   window.ipThisMonth = ipThisMonth;

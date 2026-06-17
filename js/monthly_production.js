@@ -1637,78 +1637,23 @@
         +'<td style="color:'+diffColor(dp)+';font-weight:600">'+arr(dp)+' '+nf(Math.abs(dp),1)+'%p</td>'
         +'<td style="color:'+diffColor(dpct)+';font-weight:600">'+arr(dpct)+' '+nf(Math.abs(dpct),1)+'%</td></tr>';
     }
-    // ── 자동 인사이트 (계산값 기반, 동기간 대비) ──
-    function _pctd(a,b){ return b? (a-b)/b*100 : 0; }
-    function _yp(agg, key){ return agg.rmKg ? agg[key]/agg.rmKg*100 : 0; }
-    var ins=[];
-    if(Math.abs(avgDp)>=5){
-      ins.push('일평균 원육사용량이 동기간 대비 '+(avgD>0?'<span style="color:#15803d;font-weight:600">▲'+nf(Math.abs(avgDp),1)+'%</span>':'<span style="color:#b91c1c;font-weight:600">▼'+nf(Math.abs(avgDp),1)+'%</span>')+' ('+nf(sameAvg,0)+'→'+nf(thisAvg,0)+'kg)로 생산 규모가 '+(avgD>0?'확대':'축소')+'됐습니다.');
-    }
-    var _eaD=_pctd(sum.pkEa, prevSumSame.pkEa), _meatD=_pctd(sum.meatKg, prevSumSame.meatKg);
-    if(sum.pkEa && prevSumSame.pkEa && _eaD<-5 && _meatD>5){
-      ins.push('월 누적 EA(외포장)는 동기간 대비 <span style="color:#b91c1c;font-weight:600">▼'+nf(Math.abs(_eaD),1)+'%</span> 줄었지만 완제품 고기중량은 <span style="color:#15803d;font-weight:600">▲'+nf(_meatD,1)+'%</span> 늘었습니다 — FC 3KG처럼 대용량 제품 비중이 높아 EA(개수)는 단순 비교가 어렵습니다. 실제 생산량은 <b>고기중량</b>으로 보시는 게 정확합니다.');
-    } else if(sum.pkEa && prevSumSame.pkEa && _meatD>5){
-      ins.push('완제품 고기중량이 동기간 대비 <span style="color:#15803d;font-weight:600">▲'+nf(_meatD,1)+'%</span> 늘었습니다.');
-    }
-    [['전처리','ppKg'],['자숙','ckKg'],['파쇄','shKg'],['최종','meatKg']].forEach(function(p){
-      var t=_yp(sum,p[1]), s=_yp(prevSumSame,p[1]), d=t-s;
-      if(s>0 && Math.abs(d)>=1){
-        ins.push('<b>'+p[0]+' 수율</b>이 동기간 대비 '+(d>0?'<span style="color:#15803d;font-weight:600">▲'+nf(d,1)+'%p 상승</span>':'<span style="color:#b91c1c;font-weight:600">▼'+nf(Math.abs(d),1)+'%p 하락</span>')+' ('+nf(s,1)+'% → '+nf(t,1)+'%).');
-      }
-    });
-    var _insHtml = ins.length ? ('<ul class="mpan-ins"><li>'+ins.join('</li><li>')+'</li></ul>') : '<div style="font-size:12.5px;color:#94a3b8">특이사항 없음</div>';
-
-    cmp.innerHTML = ''
-      + '<style>'
-      + '.mpan-card{margin:14px 0;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;background:#fff}'
-      + '.mpan-hd{background:#0f3a4d;color:#fff;padding:10px 14px;font-weight:700;font-size:14px}'
-      + '.mpan-sec{padding:12px 14px;border-bottom:1px solid #f0f0f0}.mpan-sec:last-child{border-bottom:none}'
-      + '.mpan-sec h4{margin:0 0 8px;font-size:13px;color:#0f3a4d;font-weight:700}'
-      + '.mpan-tbl{border-collapse:collapse;font-size:12.5px;width:100%;max-width:920px}'
-      + '.mpan-tbl th,.mpan-tbl td{border:1px solid #e2e8f0;padding:6px 10px;text-align:center}'
-      + '.mpan-tbl th{background:#eef2f7;color:#1e293b;font-weight:600}'
-      + '.mpan-tbl td.l{text-align:left;font-weight:600}'
-      + '.mpan-sum{display:flex;flex-wrap:wrap;gap:10px}'
-      + '.mpan-kpi{flex:1 1 150px;min-width:140px;border:1px solid #e2e8f0;border-radius:7px;padding:10px 12px;background:#f8fafc}'
-      + '.mpan-kpi .k{font-size:11.5px;color:#64748b}.mpan-kpi .v{font-size:17px;font-weight:700;color:#0f172a;margin-top:3px}'
-      + '.mpan-ins{margin:0;padding-left:18px;font-size:13px;line-height:1.9;color:#1f2937}.mpan-ins li{margin:2px 0}'
-      + '.mpan-note{font-size:11.5px;color:#64748b;margin-top:6px;line-height:1.6}'
-      + '</style>'
-      + '<div class="mpan-card">'
-      + '<div class="mpan-hd">📊 '+ymThis.replace('-','년 ')+'월 생산 분석</div>'
-      // ── 이번 달 요약 ──
-      + '<div class="mpan-sec"><h4>이번 달 요약 ('+ndays+'일 기준)</h4>'
-      +   '<div class="mpan-sum">'
-      +     '<div class="mpan-kpi"><div class="k">생산일수</div><div class="v">'+sum.dayCount+'일</div></div>'
-      +     '<div class="mpan-kpi"><div class="k">총 원육사용량</div><div class="v">'+nf(sum.rmKg,0)+' kg</div></div>'
-      +     '<div class="mpan-kpi"><div class="k">일평균 원육</div><div class="v">'+nf(thisAvg,0)+' kg</div></div>'
-      +     '<div class="mpan-kpi"><div class="k">월 누적 EA(외포장)</div><div class="v">'+nf(sum.pkEa,0)+'</div></div>'
-      +     '<div class="mpan-kpi"><div class="k">완제품 고기중량</div><div class="v">'+nf(sum.meatKg,0)+' kg</div></div>'
-      +   '</div></div>'
-      // ── 전월 대비 (동기간) ──
-      + '<div class="mpan-sec"><h4>전월 대비 — '+ymPrev.replace('-','년 ')+'월 동기간('+ndays+'일치) 비교</h4>'
-      +   '<table class="mpan-tbl"><thead><tr>'
-      +     '<th>지표</th><th>'+ymThis.replace('-','년 ')+'월</th>'
-      +     '<th>'+ymPrev.replace('-','년 ')+'월 동기간</th><th>'+ymPrev.replace('-','년 ')+'월 전체</th>'
-      +     '<th>증감 (vs 동기간)</th><th>증감율</th></tr></thead><tbody>'
-      +     '<tr><td class="l">일평균 원육사용량</td>'
-      +       '<td>'+nf(thisAvg,0)+' kg</td><td>'+nf(sameAvg,0)+' kg</td><td>'+nf(fullAvg,0)+' kg</td>'
-      +       '<td style="color:'+diffColor(avgD)+';font-weight:600">'+arr(avgD)+' '+nf(Math.abs(avgD),0)+' kg</td>'
-      +       '<td style="color:'+diffColor(avgDp)+';font-weight:600">'+arr(avgDp)+' '+nf(Math.abs(avgDp),1)+'%</td></tr>'
-      +     rowAbs('월 누적 원육사용량', 'rmKg', 'kg', 0)
-      +     rowAbs('월 누적 EA (외포장)', 'pkEa', '', 0)
-      +     rowAbs('완제품 고기중량', 'meatKg', 'kg', 0)
-      +     rowYield('전처리 수율', 'ppKg')
-      +     rowYield('자숙 수율', 'ckKg')
-      +     rowYield('파쇄 수율', 'shKg')
-      +     rowYield('최종 수율', 'meatKg')
-      +   '</tbody></table>'
-      +   '<div class="mpan-note">※ 동기간 비교 = 이번 달 '+ndays+'일치를 전월 같은 일수(첫 '+ndays+'일)와 비교 — 진행 중인 달을 공정하게 보기 위함입니다. 수율은 원육 대비 누적 기준입니다.</div>'
-      + '</div>'
-      // ── 주목할 점 ──
-      + '<div class="mpan-sec"><h4>주목할 점</h4>'+_insHtml+'</div>'
-      + '</div>';
+    // ── 분석 카드 렌더 (monthly_analysis.js: KPI+차트+동기간 전월대비+인사이트) ──
     cmp.style.display='';
+    if(typeof renderMonthlyAnalysis === 'function'){
+      renderMonthlyAnalysis(cmp, {
+        ymThis: ymThis, ymPrev: ymPrev, ndays: ndays,
+        sum: sum, prevSum: prevSum, prevSumSame: prevSumSame,
+        thisAvg: thisAvg, sameAvg: sameAvg, fullAvg: fullAvg
+      });
+    } else {
+      // 폴백: 모듈 미로딩 시 동기간 비교 표
+      cmp.innerHTML = '<h3>📊 전월 대비 비교</h3><table><thead><tr><th>지표</th><th>'+ymThis.replace('-','년 ')+'월</th><th>'+ymPrev.replace('-','년 ')+'월 동기간 ('+ndays+'일차)</th><th>'+ymPrev.replace('-','년 ')+'월 (전체)</th><th>차이 (vs 동기간)</th><th>증감율</th></tr></thead><tbody>'
+        + rowAbs('월 누적 원육사용량', 'rmKg', 'kg', 0)
+        + rowAbs('월 누적 EA (외포장)', 'pkEa', '', 0)
+        + rowAbs('완제품 고기중량', 'meatKg', 'kg', 0)
+        + rowYield('전처리 수율', 'ppKg') + rowYield('자숙 수율', 'ckKg') + rowYield('파쇄 수율', 'shKg') + rowYield('최종 수율', 'meatKg')
+        + '</tbody></table>';
+    }
   }
 
   /* ===== 엑셀 다운로드 — 화면 그대로 ===== */
