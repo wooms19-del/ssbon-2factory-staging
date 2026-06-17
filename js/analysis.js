@@ -452,6 +452,7 @@ async function renderMonthlyReport(pk, from, effectiveTo, ppMonth, thMonth, opDa
   if(typeof _moRenderRmChart === 'function'){
     _moRenderRmChart(rmByDate, _moYm || tod().slice(0,7), rmByDatePart);
   }
+  if(typeof _moLoadManualRm === 'function') _moLoadManualRm();
 
   // ── 수율 KPI 계산 ─────────────────────────────────────────
   {
@@ -1078,8 +1079,11 @@ function _moWeekdaysOf(ym){
 // 차트용 X축 평일: (생산한 날) + (오늘 이후 미래 평일). 오늘 이전 + 생산 안 한 날은 제외.
 function _moChartWeekdays(ym, producedSet){
   const today = tod();
-  return _moWeekdaysOf(ym).filter(d => {
-    if(producedSet.has(d)) return true;   // 생산한 날 = 무조건 표시
+  // 평일 기본 + 생산한 날(주말 포함)을 합집합으로
+  const base = new Set(_moWeekdaysOf(ym));
+  if(producedSet) producedSet.forEach(d => base.add(d));
+  return [...base].sort().filter(d => {
+    if(producedSet && producedSet.has(d)) return true;   // 생산한 날 = 무조건 표시(주말이어도)
     if(d >= today) return true;            // 오늘 이후 미래 = 표시 (앞으로 채워질 자리)
     return false;                          // 오늘 이전 + 생산 안 함 = 제외
   });
@@ -2098,7 +2102,8 @@ function getThKgByPP_(ppRecs, allThawing, packDate) {
   if(!matched.length){
     if(wagons.length){
       matched=candidates.filter(r=>wagons.includes(_normW(r.cart)));
-    } else {
+    } else if(ppRecs.length){
+      // ★ 전처리가 있는 날만 날짜 폴백 (포장만 있고 생산 없는 날은 전날값 물려받지 않음 → 0)
       matched=allThawing.filter(r=>String(r.date||'').slice(0,10)===packDate);
       if(!matched.length) matched=allThawing.filter(r=>String(r.date||'').slice(0,10)===prevD);
     }
@@ -2137,7 +2142,8 @@ function getThByPartByPP_(ppRecs, allThawing, packDate) {
   if(!matched.length){
     if(wagons.length){
       matched=candidates.filter(r=>wagons.includes(_normW(r.cart)));
-    } else {
+    } else if(ppRecs.length){
+      // ★ 전처리가 있는 날만 날짜 폴백 (포장만 있는 날 제외)
       matched=allThawing.filter(r=>String(r.date||'').slice(0,10)===packDate);
       if(!matched.length) matched=allThawing.filter(r=>String(r.date||'').slice(0,10)===prevD);
     }
@@ -3735,13 +3741,17 @@ function _moRenderRmChart(rmByDate, ym, rmByDatePart){
   const canvas = document.getElementById('mo_rm_chart');
   if(!canvas) return;
   if(_moRmChart){_moRmChart.destroy();_moRmChart=null;}
-  if(!rmByDate || !Object.keys(rmByDate).length) return;
+  rmByDate = rmByDate || {};
+  const manual = window._moManualRm || {};
+  if(!Object.keys(rmByDate).length && !Object.keys(manual).length){ _moRenderManualUI(ym, []); return; }
 
-  // 생산한 날만
-  const producedDates = Object.keys(rmByDate).filter(d => rmByDate[d] > 0).sort();
-  if(!producedDates.length) return;
+  // 생산한 날 + 수동 입력일
+  const producedDates = [...new Set(
+    Object.keys(rmByDate).filter(d => rmByDate[d] > 0).concat(Object.keys(manual))
+  )].sort();
+  if(!producedDates.length){ _moRenderManualUI(ym, []); return; }
 
-  // X축 = 생산한 날 + 오늘 이후 평일
+  // X축 = 생산한 날(+수동일) + 오늘 이후 평일
   const producedSet = new Set(producedDates);
   const weekdays = (typeof _moChartWeekdays === 'function')
     ? _moChartWeekdays(ym, producedSet) : producedDates;
@@ -3756,6 +3766,7 @@ function _moRenderRmChart(rmByDate, ym, rmByDatePart){
       Object.keys(byPart||{}).forEach(p => { if((byPart[p]||0) > 0) partSet.add(p); });
     });
   }
+  Object.values(manual).forEach(m => { if(m && m.part && m.kg > 0) partSet.add(m.part); });
   const allParts = [...partSet].sort();
 
   // 탭 렌더 (종합 / 각 부위)
@@ -3772,6 +3783,8 @@ function _moRenderRmChart(rmByDate, ym, rmByDatePart){
     }).join('');
   }
 
+  _moRenderManualUI(ym, allParts);
+
   // 데이터셋 구성
   const datasets = [];
   let topNumVals;  // 막대 위 합계 라벨용
@@ -3779,9 +3792,15 @@ function _moRenderRmChart(rmByDate, ym, rmByDatePart){
     // 부위별 stacked
     allParts.forEach(part => {
       const data = weekdays.map(d => {
-        const byPart = (rmByDatePart||{})[d] || {};
-        const v = byPart[part] || 0;
-        return v > 0 ? Math.round(v) : null;
+        const realTot = rmByDate[d] || 0;
+        if(realTot > 0){
+          const byPart = (rmByDatePart||{})[d] || {};
+          const v = byPart[part] || 0;
+          return v > 0 ? Math.round(v) : null;
+        }
+        const m = manual[d];   // 실제값 없는 날 → 수동값(부위 일치 시)
+        if(m && m.part === part && m.kg > 0) return Math.round(m.kg);
+        return null;
       });
       datasets.push({
         type:'bar', label: part, data,
@@ -3789,14 +3808,25 @@ function _moRenderRmChart(rmByDate, ym, rmByDatePart){
         borderRadius: 2, stack: 'rm'
       });
     });
-    topNumVals = weekdays.map(d => rmByDate[d] && rmByDate[d] > 0 ? Math.round(rmByDate[d]) : null);
+    topNumVals = weekdays.map(d => {
+      const realTot = rmByDate[d] || 0;
+      if(realTot > 0) return Math.round(realTot);
+      const m = manual[d];
+      return (m && m.kg > 0) ? Math.round(m.kg) : null;
+    });
   } else if(_moRmTab !== '종합'){
     // 특정 부위만
     const part = _moRmTab;
     const data = weekdays.map(d => {
-      const byPart = (rmByDatePart||{})[d] || {};
-      const v = byPart[part] || 0;
-      return v > 0 ? Math.round(v) : null;
+      const realTot = rmByDate[d] || 0;
+      if(realTot > 0){
+        const byPart = (rmByDatePart||{})[d] || {};
+        const v = byPart[part] || 0;
+        return v > 0 ? Math.round(v) : null;
+      }
+      const m = manual[d];
+      if(m && m.part === part && m.kg > 0) return Math.round(m.kg);
+      return null;
     });
     datasets.push({
       type:'bar', label: part, data,
@@ -3806,13 +3836,20 @@ function _moRenderRmChart(rmByDate, ym, rmByDatePart){
     topNumVals = data.slice();
   } else {
     // 부위 데이터 없음 — 옛 방식 단일 막대
-    const rmVals = weekdays.map(d => rmByDate[d] && rmByDate[d] > 0 ? Math.round(rmByDate[d]) : null);
+    const rmVals = weekdays.map(d => {
+      const realTot = rmByDate[d] || 0;
+      if(realTot > 0) return Math.round(realTot);
+      const m = manual[d];
+      return (m && m.kg > 0) ? Math.round(m.kg) : null;
+    });
     datasets.push({ type:'bar', label:'원육 사용량', data: rmVals, backgroundColor: '#1D9E75dd', borderRadius: 3 });
     topNumVals = rmVals;
   }
 
-  // 평균선 — 현재 탭에 해당하는 값 기준
-  const _curVals = topNumVals.filter(v => v != null && v > 0);
+  // 평균선 — 현재 탭에 해당하는 값 기준 (★ 수동 입력일은 평균에서 제외: 실제 생산일 rmByDate>0 만)
+  const _curVals = weekdays
+    .map((d,i) => (rmByDate[d] > 0) ? topNumVals[i] : null)
+    .filter(v => v != null && v > 0);
   const _curAvg = _curVals.length ? Math.round(_curVals.reduce((s,v)=>s+v,0) / _curVals.length) : null;
   if(_curAvg != null){
     datasets.push({
@@ -3972,6 +4009,81 @@ function _moSetRmTab(tab){
   if(typeof _moRenderRmChart === 'function' && window._moRmByDate){
     _moRenderRmChart(window._moRmByDate, window._moPackingArgs ? window._moPackingArgs.ym : (window._moYm||tod().slice(0,7)), window._moRmByDatePart);
   }
+}
+
+// ── 일별 원육 사용량: 수동 입력 (표시 전용, 다른 집계엔 미반영) ──
+function _moRerenderRm(){
+  if(typeof _moRenderRmChart === 'function' && window._moRmByDate){
+    _moRenderRmChart(window._moRmByDate, window._moPackingArgs ? window._moPackingArgs.ym : (window._moYm||tod().slice(0,7)), window._moRmByDatePart);
+  }
+}
+function _moRenderManualUI(ym, allParts){
+  const el = document.getElementById('mo_rm_manual'); if(!el) return;
+  const manual = window._moManualRm || {};
+  const parts = (allParts && allParts.length) ? allParts : ['홍두깨','설도'];
+  const defPart = parts.indexOf('홍두깨') >= 0 ? '홍두깨' : parts[0];
+  const partOpts = parts.map(p => `<option value="${p}"${p===defPart?' selected':''}>${p}</option>`).join('');
+  const entries = Object.keys(manual).sort();
+  let listHtml = '';
+  if(entries.length){
+    listHtml = '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:7px">' + entries.map(d => {
+      const m = manual[d] || {};
+      return `<span style="display:inline-flex;align-items:center;gap:6px;font-size:11px;background:#fff;border:1px solid #cbd5e1;border-radius:12px;padding:3px 9px">${d.slice(5)} · ${m.part||'-'} · ${Math.round(m.kg||0).toLocaleString()}kg <span onclick="_moDelManualRm('${d}')" title="삭제" style="cursor:pointer;color:#dc2626;font-weight:700">✕</span></span>`;
+    }).join('') + '</div>';
+  }
+  el.innerHTML =
+      '<div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:8px 10px">'
+    + '<span style="font-size:11.5px;color:#475569;font-weight:700">수동 입력</span>'
+    + '<input type="date" id="mo_rm_m_date" value="'+tod()+'" style="font-size:12px;padding:4px 6px;border:1px solid #cbd5e1;border-radius:5px">'
+    + '<select id="mo_rm_m_part" style="font-size:12px;padding:4px 6px;border:1px solid #cbd5e1;border-radius:5px">'+partOpts+'</select>'
+    + '<input type="number" id="mo_rm_m_kg" placeholder="kg" min="0" style="width:90px;font-size:12px;padding:4px 6px;border:1px solid #cbd5e1;border-radius:5px">'
+    + '<button type="button" onclick="_moSaveManualRm()" style="font-size:12px;padding:5px 12px;border:1px solid #1D9E75;background:#1D9E75;color:#fff;border-radius:5px;cursor:pointer">저장</button>'
+    + '<span style="font-size:10.5px;color:#94a3b8">* 표시 전용 — 수율·월단위·비가식부 등 다른 계산엔 안 들어갑니다</span>'
+    + listHtml
+    + '</div>';
+}
+function _moLoadManualRm(){
+  try {
+    if(typeof db === 'undefined') { window._moManualRm = window._moManualRm || {}; return; }
+    db.collection('_config').doc('manualRm').get().then(function(snap){
+      let obj = {};
+      if(snap && snap.exists){
+        const v = snap.data() || {};
+        if(typeof v.value === 'string'){ try { obj = JSON.parse(v.value) || {}; } catch(e){ obj = {}; } }
+        else if(v.map && typeof v.map === 'object'){ obj = v.map; }
+      }
+      window._moManualRm = obj;
+      _moRerenderRm();
+    }).catch(function(e){ console.warn('[manualRm] load', e); window._moManualRm = window._moManualRm || {}; });
+  } catch(e){ console.warn('[manualRm] load', e); window._moManualRm = window._moManualRm || {}; }
+}
+function _moPersistManualRm(){
+  try {
+    if(typeof db === 'undefined') return;
+    db.collection('_config').doc('manualRm').set({ value: JSON.stringify(window._moManualRm||{}), updatedAt: new Date().toISOString() })
+      .catch(function(e){ console.warn('[manualRm] save', e); });
+  } catch(e){ console.warn('[manualRm] save', e); }
+}
+function _moSaveManualRm(){
+  const dEl = document.getElementById('mo_rm_m_date');
+  const pEl = document.getElementById('mo_rm_m_part');
+  const kEl = document.getElementById('mo_rm_m_kg');
+  if(!dEl || !kEl) return;
+  const date = dEl.value;
+  const part = (pEl && pEl.value) || '홍두깨';
+  const kg = parseFloat(kEl.value);
+  if(!date){ alert('날짜를 선택하세요'); return; }
+  if(!(kg > 0)){ alert('kg를 입력하세요 (0보다 큰 값)'); return; }
+  window._moManualRm = window._moManualRm || {};
+  window._moManualRm[date] = { part: part, kg: r2(kg) };
+  _moRerenderRm();        // 즉시 화면 반영(메모리)
+  _moPersistManualRm();   // 중앙 저장 (staging은 차단되어 새로고침 시 사라짐)
+}
+function _moDelManualRm(date){
+  if(!window._moManualRm || !window._moManualRm[date]) return;
+  delete window._moManualRm[date];
+  _moRerenderRm();
+  _moPersistManualRm();
 }
 
 async function downloadRmChart(){
