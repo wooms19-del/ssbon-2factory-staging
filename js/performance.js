@@ -7,6 +7,8 @@
 'use strict';
 
 var _perfYm = '';
+var _perfFType = null;   // 원육종류 필터 (null=전체)
+var _perfFProd = null;   // 제품 필터 (null=전체)
 var _perfTimer = null;
 var _perfBusy = false;
 
@@ -122,6 +124,7 @@ function _perfRenderShell(){
         '<button class="btn" onclick="_perfReload(true)" title="새로고침" style="padding:4px 10px">🔄</button>'+
       '</div>'+
       '<div style="margin-top:4px;color:var(--g4);font-size:.75rem">테스트 = 외포장 testRun 자동 식별 / 외포장 미완료 = 완박스 0건 / 30초마다 자동 갱신</div>'+
+      '<div id="perfFilter" style="margin-top:8px"></div>'+
     '</div>'+
     '<div class="pf-card" style="padding:0">'+
       '<div id="perfStatus" style="padding:1rem;text-align:center;color:var(--g4)">데이터 불러오는 중…</div>'+
@@ -211,7 +214,8 @@ async function _perfReload(showLoading){
       }
     }
 
-    _perfRenderTable(rows);
+    _perfRenderFilter(rows);
+    _perfRenderTable(_perfApplyFilter(rows));
   } catch(e){
     console.error(e);
     var st2=document.getElementById('perfStatus');
@@ -221,6 +225,73 @@ async function _perfReload(showLoading){
   }
 }
 window._perfReload = _perfReload;
+
+// ── 원육종류 / 제품 필터 (날짜 블록 단위 — 병합 유지) ──────────────
+function _perfDayMaps(rows){
+  var hasType={}, hasProd={};
+  (rows||[]).forEach(function(r){
+    if(r.isTest) return;
+    var dt=r.date;
+    var t = (r.rmType==='홍두께') ? '홍두깨' : r.rmType;
+    if(t){ (hasType[dt]=hasType[dt]||{})[t]=1; }
+    if(r.boxSeoldo>0){ (hasType[dt]=hasType[dt]||{})['설도']=1; }
+    if(r.boxHongdu>0){ (hasType[dt]=hasType[dt]||{})['홍두깨']=1; }
+    if(r.boxUdun>0){ (hasType[dt]=hasType[dt]||{})['우둔']=1; }
+    if(r.product){ (hasProd[dt]=hasProd[dt]||{})[r.product]=1; }
+  });
+  return {hasType:hasType, hasProd:hasProd};
+}
+function _perfApplyFilter(rows){
+  if(!_perfFType && !_perfFProd) return rows;
+  var m=_perfDayMaps(rows);
+  return (rows||[]).filter(function(r){
+    var tOk = !_perfFType || (m.hasType[r.date] && m.hasType[r.date][_perfFType]);
+    var pOk = !_perfFProd || (m.hasProd[r.date] && m.hasProd[r.date][_perfFProd]);
+    return tOk && pOk;
+  });
+}
+function _perfRenderFilter(rows){
+  var el=document.getElementById('perfFilter'); if(!el) return;
+  var m=_perfDayMaps(rows);
+  var typeSet={}, prodSet={};
+  Object.keys(m.hasType).forEach(function(dt){ Object.keys(m.hasType[dt]).forEach(function(t){ typeSet[t]=1; }); });
+  Object.keys(m.hasProd).forEach(function(dt){ Object.keys(m.hasProd[dt]).forEach(function(p){ prodSet[p]=1; }); });
+  var order={'홍두깨':0,'설도':1,'우둔':2};
+  var types=Object.keys(typeSet).sort(function(a,b){ return (order[a]==null?9:order[a])-(order[b]==null?9:order[b]); });
+  var prods=Object.keys(prodSet).sort();
+  // 현재 선택이 이번 달에 없으면 초기화
+  if(_perfFType && types.indexOf(_perfFType)<0) _perfFType=null;
+  if(_perfFProd && prods.indexOf(_perfFProd)<0) _perfFProd=null;
+  if(!types.length && !prods.length){ el.innerHTML=''; return; }
+  var esc=function(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/'/g,'&#39;').replace(/"/g,'&quot;'); };
+  var chip=function(label, on, onclick){
+    return '<span onclick="'+onclick+'" style="padding:5px 12px;border:1px solid '+(on?'#1F4E79':'#cbd5e1')+';border-radius:14px;background:'+(on?'#1F4E79':'#fff')+';color:'+(on?'#fff':'#334155')+';cursor:pointer;font-size:12.5px;font-weight:'+(on?'600':'400')+';user-select:none">'+esc(label)+'</span>';
+  };
+  var html='';
+  html+='<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:6px">';
+  html+='<span style="font-size:12px;color:#64748b;font-weight:600;margin-right:2px">원육별</span>';
+  html+=chip('전체', _perfFType===null, "_perfSetFType(null)");
+  types.forEach(function(t){ html+=chip(t, _perfFType===t, "_perfSetFType('"+esc(t)+"')"); });
+  html+='</div>';
+  html+='<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">';
+  html+='<span style="font-size:12px;color:#64748b;font-weight:600;margin-right:2px">제품별</span>';
+  html+=chip('전체', _perfFProd===null, "_perfSetFProd(null)");
+  prods.forEach(function(p){ html+=chip(p, _perfFProd===p, "_perfSetFProd('"+esc(p)+"')"); });
+  html+='</div>';
+  el.innerHTML=html;
+}
+function _perfSetFType(t){
+  _perfFType = (t===null||t==='null') ? null : t;
+  _perfRenderFilter(window._perfRows||[]);
+  _perfRenderTable(_perfApplyFilter(window._perfRows||[]));
+}
+function _perfSetFProd(p){
+  _perfFProd = (p===null||p==='null') ? null : p;
+  _perfRenderFilter(window._perfRows||[]);
+  _perfRenderTable(_perfApplyFilter(window._perfRows||[]));
+}
+window._perfSetFType=_perfSetFType;
+window._perfSetFProd=_perfSetFProd;
 
 // ── B방식 역추적 + 일자별 행 빌드 ──────────────────────────
 function _perfBuildRows(th, pp, ck, sh, pk, op, sc){
