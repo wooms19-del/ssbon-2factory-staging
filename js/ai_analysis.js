@@ -786,23 +786,27 @@ function _drawDefChart(data) {
 }
 
 // ── 월별 추이 (최근 여러 달 평균 수율 + 포장 불량률) ──────────────
-async function _aiLoadMonthlyTrend(){
+async function _aiLoadMonthlyTrend(argFrom, argTo, single){
   const wrap = document.getElementById('aiMonthlyWrap');
   if(!wrap) return;
   try {
     if(typeof fbGetRange !== 'function'){ wrap.innerHTML=''; return; }
     const today = (typeof tod === 'function') ? tod() : new Date().toISOString().slice(0,10);
-    // 최근 6개월 (이번 달 포함)
-    const tym = today.slice(0,7).split('-').map(Number);
-    let fy = tym[0], fm = tym[1] - 5;
-    while(fm <= 0){ fm += 12; fy--; }
-    const from = fy + '-' + String(fm).padStart(2,'0') + '-01';
+    const curYm = today.slice(0,7);
+    const monthAdd = (ym, d) => { const p = ym.split('-').map(Number); let yy=p[0], mm=p[1]+d; while(mm<=0){mm+=12;yy--;} while(mm>12){mm-=12;yy++;} return yy+'-'+String(mm).padStart(2,'0'); };
+    let fromYm, toYm;
+    if(single && argFrom){ toYm = argFrom; fromYm = monthAdd(argFrom, -1); }                 // 이 달만 → 그 달 + 전월 자동
+    else if(argFrom && argTo){ fromYm = argFrom; toYm = argTo; if(fromYm > toYm){ const t=fromYm; fromYm=toYm; toYm=t; } }
+    else { toYm = curYm; fromYm = monthAdd(curYm, -5); }                                       // 기본: 최근 6개월
+    const from = fromYm + '-01';
+    const to = toYm + '-31';
+    wrap.innerHTML = '<div style="padding:30px;text-align:center;color:#94a3b8;font-size:13px">월간 데이터를 불러오는 중...</div>';
     const [th, pk, pp, ck, sh] = await Promise.all([
-      fbGetRange('thawing', from, today).catch(()=>[]),
-      fbGetRange('packing', from, today).catch(()=>[]),
-      fbGetRange('preprocess', from, today).catch(()=>[]),
-      fbGetRange('cooking', from, today).catch(()=>[]),
-      fbGetRange('shredding', from, today).catch(()=>[])
+      fbGetRange('thawing', from, to).catch(()=>[]),
+      fbGetRange('packing', from, to).catch(()=>[]),
+      fbGetRange('preprocess', from, to).catch(()=>[]),
+      fbGetRange('cooking', from, to).catch(()=>[]),
+      fbGetRange('shredding', from, to).catch(()=>[])
     ]);
     const products = (typeof L !== 'undefined' && L && Array.isArray(L.products)) ? L.products : [];
     const kgEaOf = pname => { const p = products.find(x => x.name === pname); return p ? (parseFloat(p.kgea)||0) : 0; };
@@ -823,8 +827,7 @@ async function _aiLoadMonthlyTrend(){
     });
     // 생산일수 3일 이상인 달만 (1~2일짜리 blip 제외 → 추이 왜곡 방지)
     const months = Object.keys(mo).filter(ym => Object.keys(mo[ym].days).length >= 3).sort();
-    if(months.length < 2){ wrap.innerHTML = '<div style="padding:28px;text-align:center;color:#94a3b8;font-size:13px">비교할 월 데이터가 아직 부족합니다.<br>(생산일수 3일 이상인 달이 2개 이상 필요)</div>'; return; }
-    const curYm = today.slice(0,7);
+    if(months.length < 2){ wrap.innerHTML = '<div style="padding:28px;text-align:center;color:#94a3b8;font-size:13px">선택한 범위에 비교할 월 데이터가 부족합니다.<br>(생산일수 3일 이상인 달이 2개 이상 필요)</div>'; return; }
     const rows = months.map(ym => ({
       _ym: ym,
       label: ym.slice(2).replace('-','.') + (ym === curYm ? ' (진행중)' : ''),   // 26.05 / 26.06 (진행중)
@@ -1021,17 +1024,17 @@ function _drawMonthlyTrendChart(rows){
     id: 'aiMoTrendLbl',
     afterDatasetsDraw(chart){
       const c = chart.ctx;
-      const bm = chart.getDatasetMeta(0);   // bar: 수율
+      const bm = chart.getDatasetMeta(0);   // bar: 수율 → 막대 안쪽 상단(흰색)
       bm.data.forEach((bar,i)=>{
         const v = chart.data.datasets[0].data[i]; if(v==null) return;
-        c.save(); c.fillStyle='#1e40af'; c.font='600 11px -apple-system,sans-serif';
-        c.textAlign='center'; c.textBaseline='bottom'; c.fillText(v.toFixed(1)+'%', bar.x, bar.y - 3); c.restore();
+        c.save(); c.fillStyle='#ffffff'; c.font='700 11px -apple-system,sans-serif';
+        c.textAlign='center'; c.textBaseline='top'; c.fillText(v.toFixed(1)+'%', bar.x, bar.y + 6); c.restore();
       });
-      const lm = chart.getDatasetMeta(1);   // line: 불량률
+      const lm = chart.getDatasetMeta(1);   // line: 불량률 → 점에서 위로 띄움(막대 라벨과 분리)
       lm.data.forEach((pt,i)=>{
         const v = chart.data.datasets[1].data[i]; if(v==null) return;
         c.save(); c.fillStyle='#be123c'; c.font='600 10px -apple-system,sans-serif';
-        c.textAlign='center'; c.textBaseline='bottom'; c.fillText(v.toFixed(2)+'%', pt.x, pt.y - 7); c.restore();
+        c.textAlign='center'; c.textBaseline='bottom'; c.fillText(v.toFixed(2)+'%', pt.x, pt.y - 10); c.restore();
       });
     }
   };

@@ -58,6 +58,10 @@ function _renderAIPage(el){
   el.dataset.rendered = '1';
   var today = (typeof tod === 'function') ? tod() : new Date().toISOString().slice(0,10);
   var monthAgo = (typeof addDays === 'function') ? addDays(today, -7) : today;
+  var _curYm = today.slice(0,7);
+  var _mp = _curYm.split('-').map(Number), _fy = _mp[0], _fm = _mp[1] - 5;
+  while(_fm <= 0){ _fm += 12; _fy--; }
+  var _moFromDefault = _fy + '-' + String(_fm).padStart(2,'0');   // 최근 6개월 기본
   el.innerHTML = `
     <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:20px;margin-bottom:16px">
       <h2 style="margin:0 0 12px;color:#0f172a;font-size:20px">🤖 AI 분석</h2>
@@ -87,7 +91,21 @@ function _renderAIPage(el){
 
       <!-- 탭 2: 월간 분석 -->
       <div id="aiTabPanel_monthly" style="display:none">
-        <div style="color:#64748b;font-size:13px;margin-bottom:16px">기간 선택과 무관하게, 최근 여러 달의 추이와 월간 보고서를 자동으로 보여줍니다.</div>
+        <div style="color:#64748b;font-size:13px;margin-bottom:12px">월 범위를 골라 추이·보고서를 봅니다. "이 달만"을 켜면 선택한 달과 전월을 비교합니다.</div>
+        <div style="display:flex;gap:10px;align-items:end;flex-wrap:wrap;margin-bottom:16px">
+          <div>
+            <label style="display:block;font-size:12px;color:#475569;margin-bottom:4px">시작월</label>
+            <input type="month" id="aiMoFrom" value="${_moFromDefault}" max="${_curYm}" style="padding:8px;border:1px solid #cbd5e1;border-radius:6px;font-size:14px">
+          </div>
+          <div id="aiMoToBox">
+            <label style="display:block;font-size:12px;color:#475569;margin-bottom:4px">종료월</label>
+            <input type="month" id="aiMoTo" value="${_curYm}" max="${_curYm}" style="padding:8px;border:1px solid #cbd5e1;border-radius:6px;font-size:14px">
+          </div>
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:#334155;cursor:pointer;padding-bottom:8px">
+            <input type="checkbox" id="aiMoSingle" onchange="var t=document.getElementById('aiMoTo'); if(t){t.disabled=this.checked; t.style.opacity=this.checked?0.4:1;}" style="width:15px;height:15px;cursor:pointer"> 이 달만
+          </label>
+          <button onclick="_aiReloadMonthly()" style="padding:9px 18px;background:#6366f1;color:#fff;border:none;border-radius:6px;font-size:14px;font-weight:600;cursor:pointer">조회</button>
+        </div>
         <div id="aiMonthlyWrap"><div style="padding:30px;text-align:center;color:#94a3b8;font-size:13px">월간 데이터를 불러오는 중...</div></div>
       </div>
 
@@ -133,11 +151,25 @@ function _switchAITab(tab){
   if(tab==='chat'){ var input = document.getElementById('aiChatInput'); if(input) input.focus(); }
   if(tab==='monthly' && !window._aiMonthlyLoaded){
     window._aiMonthlyLoaded = true;
-    var go = function(){ if(typeof _aiLoadMonthlyTrend === 'function') _aiLoadMonthlyTrend(); };
-    if(typeof _ensureChartJs === 'function') _ensureChartJs(go); else go();
+    if(typeof _aiReloadMonthly === 'function') _aiReloadMonthly();
   }
 }
 window._switchAITab = _switchAITab;
+
+// 월간 분석: 선택한 월 범위/단일로 추이·보고서 로드
+function _aiReloadMonthly(){
+  var fromEl = document.getElementById('aiMoFrom');
+  var toEl = document.getElementById('aiMoTo');
+  var singleEl = document.getElementById('aiMoSingle');
+  var single = !!(singleEl && singleEl.checked);
+  var fromYm = fromEl ? fromEl.value : '';
+  var toYm = toEl ? toEl.value : '';
+  if(!fromYm){ return; }
+  if(single){ toYm = fromYm; }   // 이 달만: 시작월을 그 달로 (전월은 자동 비교)
+  var go = function(){ if(typeof _aiLoadMonthlyTrend === 'function') _aiLoadMonthlyTrend(fromYm, toYm, single); };
+  if(typeof _ensureChartJs === 'function') _ensureChartJs(go); else go();
+}
+window._aiReloadMonthly = _aiReloadMonthly;
 
 function showTab(mode,tab){
   if(mode==='i') ITAB=tab; else DTAB=tab;
