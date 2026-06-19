@@ -64,6 +64,7 @@ function _renderAIPage(el){
       <!-- 탭 -->
       <div style="display:flex;gap:0;border-bottom:2px solid #e5e7eb;margin-bottom:16px">
         <button id="aiTabReport" onclick="_switchAITab('report')" style="padding:10px 18px;background:none;border:none;border-bottom:2px solid #6366f1;color:#6366f1;font-size:14px;font-weight:600;cursor:pointer;margin-bottom:-2px">📊 기간 분석</button>
+        <button id="aiTabMonthly" onclick="_switchAITab('monthly')" style="padding:10px 18px;background:none;border:none;border-bottom:2px solid transparent;color:#64748b;font-size:14px;font-weight:500;cursor:pointer;margin-bottom:-2px">📈 월간 분석</button>
         <button id="aiTabChat" onclick="_switchAITab('chat')" style="padding:10px 18px;background:none;border:none;border-bottom:2px solid transparent;color:#64748b;font-size:14px;font-weight:500;cursor:pointer;margin-bottom:-2px">💬 챗봇</button>
       </div>
 
@@ -84,7 +85,13 @@ function _renderAIPage(el){
         <div style="font-size:11px;color:#94a3b8;margin-top:8px">최대 35일까지 가능. 기간이 길수록 분석 시간 증가 (10~30초).</div>
       </div>
 
-      <!-- 탭 2: 챗봇 -->
+      <!-- 탭 2: 월간 분석 -->
+      <div id="aiTabPanel_monthly" style="display:none">
+        <div style="color:#64748b;font-size:13px;margin-bottom:16px">기간 선택과 무관하게, 최근 여러 달의 추이와 월간 보고서를 자동으로 보여줍니다.</div>
+        <div id="aiMonthlyWrap"><div style="padding:30px;text-align:center;color:#94a3b8;font-size:13px">월간 데이터를 불러오는 중...</div></div>
+      </div>
+
+      <!-- 탭 3: 챗봇 -->
       <div id="aiTabPanel_chat" style="display:none">
         <div style="color:#64748b;font-size:13px;margin-bottom:12px">공정 데이터/도메인 지식 기반 자유 질문이 가능합니다. 📎 버튼으로 이미지/엑셀/PDF 첨부 가능.</div>
         <div id="aiChatLog" style="background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;padding:12px;height:480px;overflow-y:auto;font-size:14px;line-height:1.5"></div>
@@ -110,34 +117,24 @@ function _renderAIPage(el){
   `;
   // 챗봇 이력 로드
   if(typeof _loadChatHistory === 'function') _loadChatHistory();
+  // 월간 분석 탭은 처음 열 때 1회 로드 (진입할 때마다 최신 데이터로 갱신)
+  window._aiMonthlyLoaded = false;
 }
 
 // 탭 전환
 function _switchAITab(tab){
-  var report = document.getElementById('aiTabPanel_report');
-  var chat = document.getElementById('aiTabPanel_chat');
-  var btnR = document.getElementById('aiTabReport');
-  var btnC = document.getElementById('aiTabChat');
-  if(tab==='chat'){
-    report.style.display = 'none';
-    chat.style.display = 'block';
-    btnR.style.borderBottomColor = 'transparent';
-    btnR.style.color = '#64748b';
-    btnR.style.fontWeight = '500';
-    btnC.style.borderBottomColor = '#6366f1';
-    btnC.style.color = '#6366f1';
-    btnC.style.fontWeight = '600';
-    var input = document.getElementById('aiChatInput');
-    if(input) input.focus();
-  } else {
-    report.style.display = 'block';
-    chat.style.display = 'none';
-    btnC.style.borderBottomColor = 'transparent';
-    btnC.style.color = '#64748b';
-    btnC.style.fontWeight = '500';
-    btnR.style.borderBottomColor = '#6366f1';
-    btnR.style.color = '#6366f1';
-    btnR.style.fontWeight = '600';
+  var panels = { report:'aiTabPanel_report', monthly:'aiTabPanel_monthly', chat:'aiTabPanel_chat' };
+  var btns   = { report:'aiTabReport',       monthly:'aiTabMonthly',       chat:'aiTabChat' };
+  Object.keys(panels).forEach(function(k){
+    var p = document.getElementById(panels[k]); if(p) p.style.display = (k===tab) ? 'block' : 'none';
+    var b = document.getElementById(btns[k]);
+    if(b){ var on = (k===tab); b.style.borderBottomColor = on ? '#6366f1' : 'transparent'; b.style.color = on ? '#6366f1' : '#64748b'; b.style.fontWeight = on ? '600' : '500'; }
+  });
+  if(tab==='chat'){ var input = document.getElementById('aiChatInput'); if(input) input.focus(); }
+  if(tab==='monthly' && !window._aiMonthlyLoaded){
+    window._aiMonthlyLoaded = true;
+    var go = function(){ if(typeof _aiLoadMonthlyTrend === 'function') _aiLoadMonthlyTrend(); };
+    if(typeof _ensureChartJs === 'function') _ensureChartJs(go); else go();
   }
 }
 window._switchAITab = _switchAITab;

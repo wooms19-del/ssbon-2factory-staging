@@ -586,8 +586,6 @@ function _renderAIReport(el, r, from, to, days, recCount, workDays) {
       </div>
       ` : ''}
       
-      <div id="aiMonthlyWrap"></div>
-      
       ${dailyYields.length > 0 ? `
       <div style="margin-bottom:24px">
         <h2 style="font-size:16px;font-weight:500;margin:0 0 12px;color:#0f172a">일별 수율 추이</h2>
@@ -647,7 +645,6 @@ function _renderAIReport(el, r, from, to, days, recCount, workDays) {
     if(dailyYields.length > 0) _drawYieldChart(dailyYields);
     if(partYields.length > 0) _drawPartChart(partYields, partColors);
     if(defectReasons.length > 0) _drawDefChart(defectReasons);
-    if(typeof _aiLoadMonthlyTrend === 'function') _aiLoadMonthlyTrend();
   });
 }
 
@@ -826,7 +823,7 @@ async function _aiLoadMonthlyTrend(){
     });
     // 생산일수 3일 이상인 달만 (1~2일짜리 blip 제외 → 추이 왜곡 방지)
     const months = Object.keys(mo).filter(ym => Object.keys(mo[ym].days).length >= 3).sort();
-    if(months.length < 2){ wrap.innerHTML=''; return; }   // 비교할 달이 2개월 미만이면 생략
+    if(months.length < 2){ wrap.innerHTML = '<div style="padding:28px;text-align:center;color:#94a3b8;font-size:13px">비교할 월 데이터가 아직 부족합니다.<br>(생산일수 3일 이상인 달이 2개 이상 필요)</div>'; return; }
     const curYm = today.slice(0,7);
     const rows = months.map(ym => ({
       _ym: ym,
