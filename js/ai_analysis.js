@@ -586,6 +586,8 @@ function _renderAIReport(el, r, from, to, days, recCount, workDays) {
       </div>
       ` : ''}
       
+      <div id="aiMonthlyWrap"></div>
+      
       ${dailyYields.length > 0 ? `
       <div style="margin-bottom:24px">
         <h2 style="font-size:16px;font-weight:500;margin:0 0 12px;color:#0f172a">일별 수율 추이</h2>
@@ -645,6 +647,7 @@ function _renderAIReport(el, r, from, to, days, recCount, workDays) {
     if(dailyYields.length > 0) _drawYieldChart(dailyYields);
     if(partYields.length > 0) _drawPartChart(partYields, partColors);
     if(defectReasons.length > 0) _drawDefChart(defectReasons);
+    if(typeof _aiLoadMonthlyTrend === 'function') _aiLoadMonthlyTrend();
   });
 }
 
@@ -661,14 +664,34 @@ function _drawYieldChart(data) {
   const ctx = document.getElementById('aiYieldChart');
   if(!ctx) return;
   const colors = data.map(d => d.isAnomaly ? '#F09595' : '#378ADD');
+  const _valLbl = {
+    id: 'aiYieldValLbl',
+    afterDatasetsDraw(chart){
+      const c = chart.ctx;
+      const meta = chart.getDatasetMeta(0);
+      meta.data.forEach((bar,i)=>{
+        const v = chart.data.datasets[0].data[i];
+        if(v==null) return;
+        c.save();
+        c.fillStyle = '#334155';
+        c.font = '600 10px -apple-system,sans-serif';
+        c.textAlign = 'center';
+        c.textBaseline = 'bottom';
+        c.fillText(Math.round(v)+'%', bar.x, bar.y - 2);
+        c.restore();
+      });
+    }
+  };
   new Chart(ctx, {
     type: 'bar',
     data: {
       labels: data.map(d => d.date),
       datasets: [{ data: data.map(d => d.value), backgroundColor: colors, borderRadius: 2 }]
     },
+    plugins: [_valLbl],
     options: {
       responsive: true, maintainAspectRatio: false,
+      layout: { padding: { top: 16 } },
       plugins: { legend: { display: false } },
       scales: {
         y: { ticks: { callback: v => v + '%', font: {size:11} }, grid: { color: 'rgba(0,0,0,0.05)' } },
@@ -681,15 +704,35 @@ function _drawYieldChart(data) {
 function _drawPartChart(data, colors) {
   const ctx = document.getElementById('aiPartChart');
   if(!ctx) return;
+  const _valLbl = {
+    id: 'aiPartValLbl',
+    afterDatasetsDraw(chart){
+      const c = chart.ctx;
+      const meta = chart.getDatasetMeta(0);
+      meta.data.forEach((bar,i)=>{
+        const v = chart.data.datasets[0].data[i];
+        if(v==null) return;
+        c.save();
+        c.fillStyle = '#334155';
+        c.font = '600 11px -apple-system,sans-serif';
+        c.textAlign = 'left';
+        c.textBaseline = 'middle';
+        c.fillText(v.toFixed(1)+'%', bar.x + 5, bar.y);
+        c.restore();
+      });
+    }
+  };
   new Chart(ctx, {
     type: 'bar',
     data: {
       labels: data.map(d => d.part),
       datasets: [{ data: data.map(d => d.value), backgroundColor: colors.slice(0, data.length), borderRadius: 2 }]
     },
+    plugins: [_valLbl],
     options: {
       indexAxis: 'y',
       responsive: true, maintainAspectRatio: false,
+      layout: { padding: { right: 36 } },
       plugins: { legend: { display: false } },
       scales: {
         x: { ticks: { callback: v => v + '%', font: {size:11} } },
@@ -703,12 +746,38 @@ function _drawDefChart(data) {
   const ctx = document.getElementById('aiDefChart');
   if(!ctx) return;
   const colors = ['#F09595','#FAC775','#B4B2A9','#7F77DD','#1D9E75'];
+  const _valLbl = {
+    id: 'aiDefValLbl',
+    afterDatasetsDraw(chart){
+      const c = chart.ctx;
+      const meta = chart.getDatasetMeta(0);
+      const total = chart.data.datasets[0].data.reduce((s,v)=>s+(+v||0),0) || 1;
+      meta.data.forEach((arc,i)=>{
+        const v = chart.data.datasets[0].data[i];
+        if(!v) return;
+        if((v/total) < 0.04) return;   // 너무 작은 조각은 생략
+        const p = arc.getProps(['startAngle','endAngle','innerRadius','outerRadius','x','y'], true);
+        const ang = (p.startAngle + p.endAngle) / 2;
+        const r = (p.innerRadius + p.outerRadius) / 2;
+        const x = p.x + Math.cos(ang) * r;
+        const y = p.y + Math.sin(ang) * r;
+        c.save();
+        c.fillStyle = '#fff';
+        c.font = '700 12px -apple-system,sans-serif';
+        c.textAlign = 'center';
+        c.textBaseline = 'middle';
+        c.fillText(String(v), x, y);
+        c.restore();
+      });
+    }
+  };
   new Chart(ctx, {
     type: 'doughnut',
     data: {
       labels: data.map(d => d.label),
       datasets: [{ data: data.map(d => d.count), backgroundColor: colors.slice(0, data.length), borderWidth: 0 }]
     },
+    plugins: [_valLbl],
     options: {
       responsive: true, maintainAspectRatio: false,
       plugins: {
@@ -719,8 +788,91 @@ function _drawDefChart(data) {
   });
 }
 
-// ============================================================
-// 💬 챗봇 기능 (Firestore 대화 이력 저장)
+// ── 월별 추이 (최근 여러 달 평균 수율 + 포장 불량률) ──────────────
+async function _aiLoadMonthlyTrend(){
+  const wrap = document.getElementById('aiMonthlyWrap');
+  if(!wrap) return;
+  try {
+    if(typeof fbGetRange !== 'function'){ wrap.innerHTML=''; return; }
+    const today = (typeof tod === 'function') ? tod() : new Date().toISOString().slice(0,10);
+    // 최근 6개월 (이번 달 포함)
+    const tym = today.slice(0,7).split('-').map(Number);
+    let fy = tym[0], fm = tym[1] - 5;
+    while(fm <= 0){ fm += 12; fy--; }
+    const from = fy + '-' + String(fm).padStart(2,'0') + '-01';
+    const [th, pk] = await Promise.all([
+      fbGetRange('thawing', from, today).catch(()=>[]),
+      fbGetRange('packing', from, today).catch(()=>[])
+    ]);
+    const products = (typeof L !== 'undefined' && L && Array.isArray(L.products)) ? L.products : [];
+    const kgEaOf = pname => { const p = products.find(x => x.name === pname); return p ? (parseFloat(p.kgea)||0) : 0; };
+    const mo = {};
+    const _slot = ym => (mo[ym] = mo[ym] || {rmKg:0, pkRawKg:0, ea:0, defect:0});
+    (th||[]).forEach(r => { const ym = String(r.date||'').slice(0,7); if(ym) _slot(ym).rmKg += parseFloat(r.totalKg)||0; });
+    (pk||[]).forEach(r => { const ym = String(r.date||'').slice(0,7); if(!ym) return; const m = _slot(ym); const ea = parseFloat(r.ea)||0; m.pkRawKg += ea * kgEaOf(r.product); m.ea += ea; m.defect += parseInt(r.defect)||0; });
+    const months = Object.keys(mo).filter(ym => mo[ym].ea > 0 || mo[ym].rmKg > 0).sort();
+    if(months.length < 2){ wrap.innerHTML=''; return; }   // 비교할 달이 2개월 미만이면 생략
+    const rows = months.map(ym => ({
+      label: ym.slice(2).replace('-','.'),                 // 26.05
+      yield: mo[ym].rmKg > 0 ? r2(mo[ym].pkRawKg / mo[ym].rmKg * 100) : 0,
+      defect: mo[ym].ea > 0 ? r2(mo[ym].defect / mo[ym].ea * 100) : 0
+    }));
+    wrap.innerHTML =
+        '<div style="margin-bottom:24px">'
+      + '<h2 style="font-size:16px;font-weight:500;margin:0 0 12px;color:#0f172a">월별 추이</h2>'
+      + '<div style="display:flex;flex-wrap:wrap;gap:16px;margin-bottom:8px;font-size:12px;color:#64748b">'
+      + '<span style="display:flex;align-items:center;gap:6px"><span style="width:10px;height:10px;border-radius:2px;background:#378ADD"></span>평균 수율(%)</span>'
+      + '<span style="display:flex;align-items:center;gap:6px"><span style="width:14px;height:3px;border-radius:2px;background:#E11D48"></span>포장 불량률(%)</span>'
+      + '</div>'
+      + '<div style="position:relative;width:100%;height:240px"><canvas id="aiMonthlyChart"></canvas></div>'
+      + '</div>';
+    _drawMonthlyTrendChart(rows);
+  } catch(e){ console.warn('[AI] 월별 추이 실패', e); wrap.innerHTML=''; }
+}
+
+function _drawMonthlyTrendChart(rows){
+  const ctx = document.getElementById('aiMonthlyChart');
+  if(!ctx) return;
+  const _lbl = {
+    id: 'aiMoTrendLbl',
+    afterDatasetsDraw(chart){
+      const c = chart.ctx;
+      const bm = chart.getDatasetMeta(0);   // bar: 수율
+      bm.data.forEach((bar,i)=>{
+        const v = chart.data.datasets[0].data[i]; if(v==null) return;
+        c.save(); c.fillStyle='#1e40af'; c.font='600 11px -apple-system,sans-serif';
+        c.textAlign='center'; c.textBaseline='bottom'; c.fillText(v.toFixed(1)+'%', bar.x, bar.y - 3); c.restore();
+      });
+      const lm = chart.getDatasetMeta(1);   // line: 불량률
+      lm.data.forEach((pt,i)=>{
+        const v = chart.data.datasets[1].data[i]; if(v==null) return;
+        c.save(); c.fillStyle='#be123c'; c.font='600 10px -apple-system,sans-serif';
+        c.textAlign='center'; c.textBaseline='bottom'; c.fillText(v.toFixed(2)+'%', pt.x, pt.y - 7); c.restore();
+      });
+    }
+  };
+  new Chart(ctx, {
+    data: {
+      labels: rows.map(r => r.label),
+      datasets: [
+        { type:'bar', label:'평균 수율(%)', data: rows.map(r => r.yield), backgroundColor:'#378ADD', borderRadius:3, yAxisID:'y', order:2 },
+        { type:'line', label:'포장 불량률(%)', data: rows.map(r => r.defect), borderColor:'#E11D48', backgroundColor:'#E11D48', borderWidth:2, pointRadius:3, pointBackgroundColor:'#E11D48', tension:0.3, yAxisID:'y1', order:1 }
+      ]
+    },
+    plugins: [_lbl],
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      layout: { padding: { top: 20 } },
+      plugins: { legend: { display: false } },
+      scales: {
+        y:  { position:'left',  beginAtZero:true, ticks:{ callback:v=>v+'%', font:{size:11} }, grid:{ color:'rgba(0,0,0,0.05)' } },
+        y1: { position:'right', beginAtZero:true, ticks:{ callback:v=>v+'%', font:{size:11} }, grid:{ display:false } },
+        x:  { ticks:{ font:{size:12} }, grid:{ display:false } }
+      }
+    }
+  });
+}
+
 // ============================================================
 
 const _CHAT_COL = '_ai_chat';  // Firestore 컬렉션
