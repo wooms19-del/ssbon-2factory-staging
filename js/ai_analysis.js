@@ -800,16 +800,22 @@ async function _aiLoadMonthlyTrend(){
     let fy = tym[0], fm = tym[1] - 5;
     while(fm <= 0){ fm += 12; fy--; }
     const from = fy + '-' + String(fm).padStart(2,'0') + '-01';
-    const [th, pk] = await Promise.all([
+    const [th, pk, pp, ck, sh] = await Promise.all([
       fbGetRange('thawing', from, today).catch(()=>[]),
-      fbGetRange('packing', from, today).catch(()=>[])
+      fbGetRange('packing', from, today).catch(()=>[]),
+      fbGetRange('preprocess', from, today).catch(()=>[]),
+      fbGetRange('cooking', from, today).catch(()=>[]),
+      fbGetRange('shredding', from, today).catch(()=>[])
     ]);
     const products = (typeof L !== 'undefined' && L && Array.isArray(L.products)) ? L.products : [];
     const kgEaOf = pname => { const p = products.find(x => x.name === pname); return p ? (parseFloat(p.kgea)||0) : 0; };
     const mo = {};
     const prodM = {};   // {ym: {product: {ea, defect}}}  — 제품별 불량 집중 분석용
-    const _slot = ym => (mo[ym] = mo[ym] || {rmKg:0, pkRawKg:0, ea:0, defect:0, days:{}});
+    const _slot = ym => (mo[ym] = mo[ym] || {rmKg:0, pkRawKg:0, ea:0, defect:0, ppKg:0, ckKg:0, shKg:0, days:{}});
     (th||[]).forEach(r => { const d = String(r.date||'').slice(0,10); const ym = d.slice(0,7); if(ym){ const m = _slot(ym); m.rmKg += parseFloat(r.totalKg)||0; m.days[d] = 1; } });
+    (pp||[]).forEach(r => { const ym = String(r.date||'').slice(0,7); if(ym) _slot(ym).ppKg += parseFloat(r.kg)||0; });
+    (ck||[]).forEach(r => { const ym = String(r.date||'').slice(0,7); if(ym) _slot(ym).ckKg += parseFloat(r.kg)||0; });
+    (sh||[]).forEach(r => { const ym = String(r.date||'').slice(0,7); if(ym) _slot(ym).shKg += parseFloat(r.kg)||0; });
     (pk||[]).forEach(r => {
       const d = String(r.date||'').slice(0,10); const ym = d.slice(0,7); if(!ym) return;
       const m = _slot(ym); const ea = parseFloat(r.ea)||0; const def = parseInt(r.defect)||0;
@@ -836,10 +842,102 @@ async function _aiLoadMonthlyTrend(){
       + '<span style="display:flex;align-items:center;gap:6px"><span style="width:14px;height:3px;border-radius:2px;background:#E11D48"></span>포장 불량률(%)</span>'
       + '</div>'
       + '<div style="position:relative;width:100%;height:240px"><canvas id="aiMonthlyChart"></canvas></div>'
-      + _aiMonthlyComment(rows, prodM, curYm)
-      + '</div>';
+      + '</div>'
+      + _aiBuildReport(rows, mo, prodM, curYm);
     _drawMonthlyTrendChart(rows);
   } catch(e){ console.warn('[AI] 월별 추이 실패', e); wrap.innerHTML=''; }
+}
+
+function _aiBuildReport(rows, mo, prodM, curYm){
+  if(!rows || rows.length < 2) return '';
+  const L = rows[rows.length-1], P = rows[rows.length-2];
+  const ymL = L._ym, ymP = P._ym, mL = mo[ymL], mP = mo[ymP];
+  const y = ymL.slice(0,4), M = parseInt(ymL.slice(5),10), Mp = parseInt(ymP.slice(5),10);
+  const inProg = ymL === curYm;
+  const dateStr = (typeof tod==='function' ? tod() : new Date().toISOString().slice(0,10));
+  const nf = n => Math.round(n).toLocaleString('ko-KR');
+  const f1 = n => (Math.round(n*10)/10).toLocaleString('ko-KR');
+  const daysL = Object.keys(mL.days).length, daysP = Object.keys(mP.days).length;
+
+  const yldL = mL.rmKg>0? r2(mL.pkRawKg/mL.rmKg*100):0, yldP = mP.rmKg>0? r2(mP.pkRawKg/mP.rmKg*100):0;
+  const defL = mL.ea>0? r2(mL.defect/mL.ea*100):0, defP = mP.ea>0? r2(mP.defect/mP.ea*100):0;
+  const ppyL = mL.rmKg>0? r2(mL.ppKg/mL.rmKg*100):0, ppyP = mP.rmKg>0? r2(mP.ppKg/mP.rmKg*100):0;
+  const ckyL = mL.rmKg>0? r2(mL.ckKg/mL.rmKg*100):0, ckyP = mP.rmKg>0? r2(mP.ckKg/mP.rmKg*100):0;
+  const shyL = mL.rmKg>0? r2(mL.shKg/mL.rmKg*100):0, shyP = mP.rmKg>0? r2(mP.shKg/mP.rmKg*100):0;
+
+  const dcell = (cur,prev,goodDir,dec,suf) => {
+    const d = r2(cur-prev);
+    const num = dec ? (Math.round(d*Math.pow(10,dec))/Math.pow(10,dec)).toLocaleString('ko-KR') : nf(d);
+    let cls=''; if(goodDir!==0 && Math.abs(d)>1e-9) cls = ((d>0)===(goodDir>0)) ? 'up' : 'down';
+    return '<td class="'+cls+'">'+(Math.abs(d)<1e-9?'—':((d>0?'+':'')+num+(suf||'')))+'</td>';
+  };
+  const row = (label, cur, prev, dc) => '<tr><td class="l">'+label+'</td><td>'+cur+'</td><td>'+prev+'</td>'+dc+'</tr>';
+
+  const yVerdict = (yldL-yldP)>=0.5 ? '<b class="up">개선</b>되고 있습니다' : (yldL-yldP)<=-0.5 ? '<b class="down">하락</b>했습니다 — 원인 점검 필요' : '전월과 비슷합니다';
+  const dVerdict = (defL-defP)<=-0.2 ? '<b class="up">감소·안정</b>' : (defL-defP)>=0.2 ? '<b class="down">증가</b>' : '비슷한 수준';
+  const inedibleL = r2(100-ppyL), inedibleP = r2(100-ppyP);
+  const ppVerdict = (ppyL-ppyP)<=-1 ? ' 전처리 비가식부가 '+f1(inedibleP)+'% → '+f1(inedibleL)+'%로 늘었습니다 — 원물 품질·손질 상태 점검이 필요합니다.' : (ppyL-ppyP)>=1 ? ' 전처리 비가식부가 줄어 개선됐습니다.' : '';
+
+  const pm = prodM[ymL]||{};
+  const plist = Object.keys(pm).map(p=>({p:p,ea:pm[p].ea,def:pm[p].defect,rate:pm[p].ea>0?r2(pm[p].defect/pm[p].ea*100):0})).filter(x=>x.ea>0).sort((a,b)=>b.rate-a.rate);
+  const prodRows = plist.map(x=>{
+    const cls = x.rate>=3?'down':(x.rate>=2?'':'up');
+    const badge = x.rate>=3?'⚠️ 높음':(x.rate>=2?'🟡 주의':'✅ 양호');
+    return '<tr><td class="l">'+x.p+'</td><td>'+nf(x.ea)+'</td><td>'+nf(x.def)+'</td><td class="'+cls+'">'+x.rate+'%</td><td>'+badge+'</td></tr>';
+  }).join('');
+
+  const css = '<style>'
+    +'.airpt{font-size:13px;color:#0f172a;line-height:1.6;margin-top:14px;border:1px solid #e2e8f0;border-radius:12px;padding:20px 22px;background:#fff}'
+    +'.airpt .rhd{border-bottom:2px solid #1F4E79;padding-bottom:10px;margin-bottom:6px}'
+    +'.airpt .rhd h2{font-size:18px;font-weight:700;margin:0;color:#0f172a}'
+    +'.airpt .rhd p{font-size:12px;color:#64748b;margin:3px 0 0}'
+    +'.airpt h3.sec{font-size:14px;font-weight:700;color:#1F4E79;margin:18px 0 7px}'
+    +'.airpt table{width:100%;border-collapse:collapse;margin:4px 0 2px;font-size:12.5px}'
+    +'.airpt th{background:#f1f5f9;border:1px solid #cbd5e1;padding:6px 8px;font-weight:600;white-space:nowrap}'
+    +'.airpt td{border:1px solid #e2e8f0;padding:6px 8px;text-align:center}'
+    +'.airpt td.l{text-align:left;font-weight:600}'
+    +'.airpt .up{color:#15803d;font-weight:700}.airpt .down{color:#dc2626;font-weight:700}'
+    +'.airpt .box{background:#f0f7ff;border:1px solid #cfe0f5;border-radius:8px;padding:10px 13px;margin:8px 0;font-size:12.5px}'
+    +'.airpt .ftr{border-top:1px solid #e2e8f0;margin-top:18px;padding-top:10px;display:flex;justify-content:space-between;font-size:11px;color:#94a3b8;flex-wrap:wrap;gap:6px}'
+    +'</style>';
+
+  let h = css + '<div class="airpt">';
+  h += '<div class="rhd"><h2>📄 생산 실적 월간 보고서</h2><p>순수본 2공장 · '+y+'년 '+M+'월 실적 기준 (전월 '+Mp+'월 대비)'+(inProg?' · '+M+'월 진행중':'')+' · 작성일 '+dateStr+'</p></div>';
+
+  h += '<h3 class="sec">1. 보고 개요</h3>';
+  h += '<table style="width:auto"><tbody>'
+    + '<tr><td class="l">보고 기간</td><td class="l">'+y+'년 '+M+'월 (전월 '+Mp+'월 대비)</td></tr>'
+    + '<tr><td class="l">생산일수</td><td class="l">당월 '+daysL+'일 / 전월 '+daysP+'일</td></tr>'
+    + '<tr><td class="l">데이터 기준</td><td class="l">스마트팩토리 실적 (방혈·전처리·자숙·파쇄·포장)</td></tr>'
+    + '</tbody></table>';
+
+  h += '<h3 class="sec">2. 생산 실적 요약 (당월 vs 전월)</h3>';
+  h += '<table><thead><tr><th class="l">항목</th><th>당월('+M+'월)</th><th>전월('+Mp+'월)</th><th>증감</th></tr></thead><tbody>';
+  h += row('원육 투입 (kg)', nf(mL.rmKg), nf(mP.rmKg), dcell(mL.rmKg,mP.rmKg,0,0,''));
+  h += row('완제품 원육 (kg)', nf(mL.pkRawKg), nf(mP.pkRawKg), dcell(mL.pkRawKg,mP.pkRawKg,0,0,''));
+  h += row('원육수율 (%)', yldL+'%', yldP+'%', dcell(yldL,yldP,1,2,'%p'));
+  h += row('생산수량 (EA)', nf(mL.ea), nf(mP.ea), dcell(mL.ea,mP.ea,0,0,''));
+  h += row('포장 불량률 (%)', defL+'%', defP+'%', dcell(defL,defP,-1,2,'%p'));
+  h += '</tbody></table>';
+  h += '<div class="box">▶ 당월 원육수율 <b>'+yldL+'%</b> — 전월 대비 '+yVerdict+'. 포장 불량률은 '+dVerdict+' ('+defP+'% → '+defL+'%).</div>';
+
+  h += '<h3 class="sec">3. 공정 수율 분석 (원육 투입 대비 누적)</h3>';
+  h += '<table><thead><tr><th class="l">공정</th><th>당월 산출(kg)</th><th>당월 수율</th><th>전월 수율</th><th>증감</th></tr></thead><tbody>';
+  h += '<tr><td class="l">전처리</td><td>'+nf(mL.ppKg)+'</td><td>'+ppyL+'%</td><td>'+ppyP+'%</td>'+dcell(ppyL,ppyP,1,2,'%p')+'</tr>';
+  h += '<tr><td class="l">자숙</td><td>'+nf(mL.ckKg)+'</td><td>'+ckyL+'%</td><td>'+ckyP+'%</td>'+dcell(ckyL,ckyP,1,2,'%p')+'</tr>';
+  h += '<tr><td class="l">파쇄</td><td>'+nf(mL.shKg)+'</td><td>'+shyL+'%</td><td>'+shyP+'%</td>'+dcell(shyL,shyP,1,2,'%p')+'</tr>';
+  h += '</tbody></table>';
+  h += '<div class="box">▶ 전처리 누적수율 <b>'+ppyL+'%</b> (비가식부 '+f1(inedibleL)+'%).'+ppVerdict+'</div>';
+
+  h += '<h3 class="sec">4. 품질(불량) 분석 — 제품별 ('+M+'월)</h3>';
+  h += '<table><thead><tr><th class="l">제품</th><th>생산 EA</th><th>불량</th><th>불량률</th><th>평가</th></tr></thead><tbody>'+(prodRows||'<tr><td colspan="5">데이터 없음</td></tr>')+'</tbody></table>';
+
+  h += '<h3 class="sec">5. 종합 의견 및 향후 과제</h3>';
+  h += _aiMonthlyComment(rows, prodM, curYm);
+
+  h += '<div class="ftr"><span>순수본 2공장 운영팀</span><span>작성일 '+dateStr+'</span><span>본 자료는 내부 관리용입니다.</span></div>';
+  h += '</div>';
+  return h;
 }
 
 function _aiMonthlyComment(rows, prodM, curYm){
