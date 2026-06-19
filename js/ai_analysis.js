@@ -815,6 +815,7 @@ async function _aiLoadMonthlyTrend(){
     if(months.length < 2){ wrap.innerHTML=''; return; }   // 비교할 달이 2개월 미만이면 생략
     const curYm = today.slice(0,7);
     const rows = months.map(ym => ({
+      _ym: ym,
       label: ym.slice(2).replace('-','.') + (ym === curYm ? ' (진행중)' : ''),   // 26.05 / 26.06 (진행중)
       yield: mo[ym].rmKg > 0 ? r2(mo[ym].pkRawKg / mo[ym].rmKg * 100) : 0,
       defect: mo[ym].ea > 0 ? r2(mo[ym].defect / mo[ym].ea * 100) : 0
@@ -827,9 +828,52 @@ async function _aiLoadMonthlyTrend(){
       + '<span style="display:flex;align-items:center;gap:6px"><span style="width:14px;height:3px;border-radius:2px;background:#E11D48"></span>포장 불량률(%)</span>'
       + '</div>'
       + '<div style="position:relative;width:100%;height:240px"><canvas id="aiMonthlyChart"></canvas></div>'
+      + _aiMonthlyInsights(rows, curYm)
       + '</div>';
     _drawMonthlyTrendChart(rows);
   } catch(e){ console.warn('[AI] 월별 추이 실패', e); wrap.innerHTML=''; }
+}
+
+function _aiMonthlyInsights(rows, curYm){
+  if(!rows || rows.length < 2) return '';
+  const ml = r => parseInt(r._ym.slice(5),10) + '월';
+  const sp = (v,d) => (v>0?'+':'') + (+v).toFixed(d) + '%p';
+  const first = rows[0], last = rows[rows.length-1], prev = rows[rows.length-2];
+  const good = [], watch = [];
+
+  // 원육수율 (높을수록 좋음)
+  const oY = r2(last.yield - first.yield), rY = r2(last.yield - prev.yield);
+  if(oY >= 0.5){
+    let s = '원육수율이 '+ml(first)+' '+first.yield+'% → '+ml(last)+' '+last.yield+'%로 '+sp(oY,1)+' 올랐습니다.';
+    if(rows.length >= 3 && rY <= -0.5) s += ' (다만 '+ml(prev)+'→'+ml(last)+'은 '+sp(rY,1)+'로 주춤)';
+    good.push(s);
+  } else if(oY <= -0.5){
+    watch.push('원육수율이 '+ml(first)+' '+first.yield+'% → '+ml(last)+' '+last.yield+'%로 '+sp(oY,1)+' 떨어졌습니다.');
+  }
+
+  // 포장 불량률 (낮을수록 좋음)
+  const oD = r2(last.defect - first.defect), rD = r2(last.defect - prev.defect);
+  if(oD <= -0.2){
+    let s = '포장 불량률이 '+ml(first)+' '+first.defect+'% → '+ml(last)+' '+last.defect+'%로 '+sp(oD,2)+' 낮아졌습니다.';
+    if(rows.length >= 3 && rD >= 0.2) s += ' (단 '+ml(prev)+'→'+ml(last)+'은 '+sp(rD,2)+'로 다시 올라 점검 필요)';
+    good.push(s);
+  } else if(oD >= 0.2){
+    let s = '포장 불량률이 '+ml(first)+' '+first.defect+'% → '+ml(last)+' '+last.defect+'%로 '+sp(oD,2)+' 높아졌습니다.';
+    watch.push(s);
+  }
+
+  let h = '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:14px 16px;margin-top:12px">';
+  h += '<p style="font-size:13px;font-weight:600;color:#0f172a;margin:0 0 6px">📈 이렇게 변하고 있습니다</p>';
+  if(good.length){
+    h += '<p style="font-size:12.5px;font-weight:700;color:#15803d;margin:8px 0 2px">좋아지는 중</p>';
+    good.forEach(s => h += '<p style="font-size:13px;color:#0f172a;margin:2px 0;line-height:1.6">· '+s+'</p>');
+  }
+  h += '<p style="font-size:12.5px;font-weight:700;color:#dc2626;margin:8px 0 2px">주의 필요</p>';
+  if(watch.length) watch.forEach(s => h += '<p style="font-size:13px;color:#0f172a;margin:2px 0;line-height:1.6">· '+s+'</p>');
+  else h += '<p style="font-size:13px;color:#64748b;margin:2px 0;line-height:1.6">· 특별히 나빠진 지표는 없습니다.</p>';
+  if(last._ym === curYm) h += '<p style="font-size:11px;color:#94a3b8;margin:8px 0 0">※ '+ml(last)+'은 진행중이라 월말까지 수치가 달라질 수 있습니다.</p>';
+  h += '</div>';
+  return h;
 }
 
 function _drawMonthlyTrendChart(rows){
