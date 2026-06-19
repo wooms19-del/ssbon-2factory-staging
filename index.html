@@ -743,11 +743,18 @@ body{display:flex;flex-direction:column;font-family:-apple-system,BlinkMacSystem
         </label>
 
         <label style="display:flex;flex-direction:column;gap:3px">
-          <span>📦 제품 분류</span>
+          <span>📦 제품</span>
+          <select id="tt-product" onchange="ttProductChange()" style="height:30px;font-size:12px;padding:0 8px;border:0.5px solid var(--color-border-secondary);border-radius:6px;background:var(--color-background-primary);max-width:180px">
+            <!-- ttInitProductOptions()가 제품 마스터로 채움 -->
+          </select>
+        </label>
+
+        <label style="display:flex;flex-direction:column;gap:3px">
+          <span>🥩 부위 <span style="font-size:10px;color:var(--color-text-tertiary)">(FC=홍두깨 고정)</span></span>
           <select id="tt-meat" onchange="ttPeriodChange()" style="height:30px;font-size:12px;padding:0 8px;border:0.5px solid var(--color-border-secondary);border-radius:6px;background:var(--color-background-primary)">
-            <option value="홍두깨">FC 제품 (홍두깨)</option>
-            <option value="우둔">비-FC (우둔)</option>
-            <option value="설도">비-FC (설도)</option>
+            <option value="홍두깨">홍두깨</option>
+            <option value="설도">설도</option>
+            <option value="우둔">우둔</option>
           </select>
         </label>
 
@@ -1648,7 +1655,7 @@ body{display:flex;flex-direction:column;font-family:-apple-system,BlinkMacSystem
 <script src="js/stock.js?v=1781485089"></script>
 <script src="js/inedible_prod.js?v=5"></script>
 <script src="js/monthly_analysis.js?v=1"></script>
-<script src="js/timetable.js?v=1778495630"></script>
+<script src="js/timetable.js?v=1781853679"></script>
 <script src="js/timetable_test.js?v=1781251885"></script>
 </body>
 </html>

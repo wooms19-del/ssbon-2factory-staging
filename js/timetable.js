@@ -127,6 +127,7 @@ function ttGetInputs() {
     pPre: get('tt-p-pre', TT_AUTO.pPre.val),
     pCrush: get('tt-p-crush', TT_AUTO.pCrush.val),
     pPackEa: get('tt-p-pack', TT_AUTO.pPackEa.val),
+    productInfo: (typeof ttPrimaryInfo === 'function') ? ttPrimaryInfo() : null,
   };
 }
 
@@ -478,6 +479,7 @@ function ttResetField(id, autoKey) {
 
 // 분석 기간 / 원육 종류 변경 시 → 자동 분석 재실행
 async function ttPeriodChange() {
+  if(typeof ttInitProductOptions === 'function') ttInitProductOptions();
   // 사용자 수정한 입력 초기화
   ['tt-y-pre','tt-y-crush','tt-p-pre','tt-p-crush','tt-p-pack'].forEach(id => {
     const el = document.getElementById(id);
@@ -805,6 +807,70 @@ const TT_PRODUCT_INFO = {
   'mini':   { name: '미니 70g 5개입',  eaPerCart: 1280, retortCycleMin: 120, kgPerEa: 0.046 }, // 5개입 350g 기준
 };
 
+// ── 기본(첫 번째) 제품 선택 처리 ──────────────────────────
+// 제품을 고르면: kg/EA는 제품 마스터에서 자동, 부위는 FC=홍두깨 고정 / 비-FC=설도·우둔 선택
+function ttPrimaryProductList(){
+  // 마스터(L.products)에서 원육 있는 제품만. 없으면 기본 목록.
+  if(typeof L!=='undefined' && L && Array.isArray(L.products) && L.products.length){
+    return L.products.filter(p => !p.noMeat && parseFloat(p.kgea) > 0).map(p => p.name);
+  }
+  return ['FC 장조림 3KG','시그니처 장조림 130g','코스트코 장조림 170g','미니쇠고기장조림 70g 낱개','트레이더스 장조림 460g'];
+}
+function ttInitProductOptions(){
+  const sel = document.getElementById('tt-product');
+  if(!sel || sel.dataset.filled === '1') return;
+  const list = ttPrimaryProductList();
+  // FC 제품을 맨 위로
+  list.sort((a,b)=>(/FC/i.test(b)?1:0)-(/FC/i.test(a)?1:0));
+  sel.innerHTML = list.map(n => '<option value="'+n.replace(/"/g,'&quot;')+'">'+n+'</option>').join('');
+  sel.dataset.filled = '1';
+  ttSyncPartByProduct();
+}
+function ttPrimaryKgEa(pname){
+  if(typeof L!=='undefined' && L && Array.isArray(L.products)){
+    const p = L.products.find(x => x.name === pname);
+    if(p && parseFloat(p.kgea) > 0) return parseFloat(p.kgea);
+  }
+  return /FC/i.test(pname) ? 1.35 : 0.05;
+}
+function ttPrimaryEaPerCart(pname, isFC){
+  if(isFC) return 96;
+  if(/미니|mini/i.test(pname)) return 1280;
+  if(/트레이더스|trader/i.test(pname)) return 380;
+  if(/코스트코|costco/i.test(pname)) return 600;
+  if(/시그니처|sig/i.test(pname)) return 1024;
+  return 1024;
+}
+// 현재 선택 제품의 시뮬용 정보
+function ttPrimaryInfo(){
+  const pname = document.getElementById('tt-product')?.value || 'FC 장조림 3KG';
+  const isFC = /FC/i.test(pname);
+  return { name: pname, isFC: isFC, kgPerEa: ttPrimaryKgEa(pname), eaPerCart: ttPrimaryEaPerCart(pname, isFC), retortCycleMin: isFC ? 150 : 120 };
+}
+// 제품에 맞춰 부위 셀렉트 상태 동기화 (FC면 홍두깨 고정/비활성, 비-FC면 설도·우둔 선택)
+function ttSyncPartByProduct(){
+  const pname = document.getElementById('tt-product')?.value || '';
+  const meatSel = document.getElementById('tt-meat');
+  if(!meatSel) return;
+  if(/FC/i.test(pname)){
+    meatSel.value = '홍두깨';
+    meatSel.disabled = true;
+    meatSel.style.opacity = '0.5';
+  } else {
+    if(meatSel.value === '홍두깨') meatSel.value = '설도';   // 비-FC 기본 설도
+    meatSel.disabled = false;
+    meatSel.style.opacity = '1';
+  }
+}
+// 제품 변경 핸들러 (UI onchange)
+function ttProductChange(){
+  ttSyncPartByProduct();
+  if(typeof ttPeriodChange === 'function') ttPeriodChange();
+  else if(typeof ttRender === 'function') ttRender();
+}
+window.ttProductChange = ttProductChange;
+window.ttInitProductOptions = ttInitProductOptions;
+
 // 두 번째 제품용 inp 구성 (단일 ttSimulate가 그대로 받을 수 있게)
 function ttBuildSecondInp(inp, firstSim) {
   const meat2 = document.getElementById('tt-meat2')?.value || 'trader';
@@ -1009,6 +1075,7 @@ function ttPlanNarrative(inp, sim, slots) {
 
 // ── 메인 렌더링 ──────────────────────────────────────────
 function ttRender() {
+  if(typeof ttInitProductOptions === 'function') ttInitProductOptions();
   let inp = ttGetInputs();
   const dualMode = ttIsDualMode();
   let dualResult = null;  // {sim1, sim2, inp1, inp2, order, pkLines}
