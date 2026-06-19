@@ -709,17 +709,24 @@ function ttSimulate(inp, tankMode) {
   // 단순화: 전처리 끝났으면 → 12:30부터 시작 가능 (파쇄가 1시간 가동했으니까)
   //         전처리 안 끝났으면 → 13:30부터 (모드 A 동일)
   // ── 내포장 시작 시점 ──
-  // 파쇄 산출이 일정량(200kg) 쌓이면 바로 시작 (13:30 고정 없음).
-  // 총원 28명에서 점심 반씩 나눠도 14명 가용 → 파쇄와 병행해 내포장 라인 가동 가능.
-  const PACK_START_MIN_KG = 200;  // 파쇄 산출 누적 이만큼이면 내포장 시작
-  let crushAccumOut = 0;
+  // 실제 파쇄 산출이 200kg 쌓이면 시작. 단 파쇄 산출은 '자숙이 공급한 양' 한도 내에서만 누적.
+  // (자숙 호별 와건 종료 시점에 그 산출이 공급됨) → 파쇄가 첫 산출도 내기 전에 내포장 켜지는 것 방지.
+  const PACK_START_MIN_KG = 200;
+  const cookOutPerTank = tankKgs.map(kg => kg * cookYield / 100);  // 자숙 호별 산출 = 파쇄 투입
   let packStartMin = null;
+  let crushedIn = 0, crushOutAccum = 0;
   for (let t = crushStartMin; t < 28*60; t++) {
+    let supplied = 0;
+    for (let i = 0; i < wagonEndTimes.length; i++) if (wagonEndTimes[i] <= t) supplied += cookOutPerTank[i];
     const w = crushWorkersAt(t);
-    if (w > 0) crushAccumOut += inp.pCrush * w / 60 * (inp.yCrush / 100);
-    if (crushAccumOut >= PACK_START_MIN_KG) { packStartMin = t + 1; break; }
+    if (w > 0) {
+      const canCrush = Math.min(inp.pCrush * w / 60, Math.max(0, supplied - crushedIn));  // 공급 한도 내에서만
+      crushedIn += canCrush;
+      crushOutAccum += canCrush * (inp.yCrush / 100);
+    }
+    if (crushOutAccum >= PACK_START_MIN_KG) { packStartMin = t + 1; break; }
   }
-  if (packStartMin === null) packStartMin = crushStartMin;  // 산출이 적으면 파쇄 시작과 동시
+  if (packStartMin === null) packStartMin = crushEndMin;  // 끝까지 200kg 미만이면 파쇄 종료 시점
   const packWorkersAt = (t) => {
     if (t < packStartMin) return 0;
     return inp.wkPack;
