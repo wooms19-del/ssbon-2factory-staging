@@ -807,13 +807,15 @@ async function _aiLoadMonthlyTrend(){
     const products = (typeof L !== 'undefined' && L && Array.isArray(L.products)) ? L.products : [];
     const kgEaOf = pname => { const p = products.find(x => x.name === pname); return p ? (parseFloat(p.kgea)||0) : 0; };
     const mo = {};
-    const _slot = ym => (mo[ym] = mo[ym] || {rmKg:0, pkRawKg:0, ea:0, defect:0});
-    (th||[]).forEach(r => { const ym = String(r.date||'').slice(0,7); if(ym) _slot(ym).rmKg += parseFloat(r.totalKg)||0; });
-    (pk||[]).forEach(r => { const ym = String(r.date||'').slice(0,7); if(!ym) return; const m = _slot(ym); const ea = parseFloat(r.ea)||0; m.pkRawKg += ea * kgEaOf(r.product); m.ea += ea; m.defect += parseInt(r.defect)||0; });
-    const months = Object.keys(mo).filter(ym => mo[ym].ea > 0 || mo[ym].rmKg > 0).sort();
+    const _slot = ym => (mo[ym] = mo[ym] || {rmKg:0, pkRawKg:0, ea:0, defect:0, days:{}});
+    (th||[]).forEach(r => { const d = String(r.date||'').slice(0,10); const ym = d.slice(0,7); if(ym){ const m = _slot(ym); m.rmKg += parseFloat(r.totalKg)||0; m.days[d] = 1; } });
+    (pk||[]).forEach(r => { const d = String(r.date||'').slice(0,10); const ym = d.slice(0,7); if(!ym) return; const m = _slot(ym); const ea = parseFloat(r.ea)||0; m.pkRawKg += ea * kgEaOf(r.product); m.ea += ea; m.defect += parseInt(r.defect)||0; m.days[d] = 1; });
+    // 생산일수 3일 이상인 달만 (1~2일짜리 blip 제외 → 추이 왜곡 방지)
+    const months = Object.keys(mo).filter(ym => Object.keys(mo[ym].days).length >= 3).sort();
     if(months.length < 2){ wrap.innerHTML=''; return; }   // 비교할 달이 2개월 미만이면 생략
+    const curYm = today.slice(0,7);
     const rows = months.map(ym => ({
-      label: ym.slice(2).replace('-','.'),                 // 26.05
+      label: ym.slice(2).replace('-','.') + (ym === curYm ? ' (진행중)' : ''),   // 26.05 / 26.06 (진행중)
       yield: mo[ym].rmKg > 0 ? r2(mo[ym].pkRawKg / mo[ym].rmKg * 100) : 0,
       defect: mo[ym].ea > 0 ? r2(mo[ym].defect / mo[ym].ea * 100) : 0
     }));
