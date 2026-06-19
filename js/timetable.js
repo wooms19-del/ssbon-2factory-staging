@@ -517,12 +517,22 @@ function ttSimulate(inp, tankMode) {
   const kgPerEaUsed = (inp.productInfo && inp.productInfo.kgPerEa) ? inp.productInfo.kgPerEa : TT_PACK_KG_PER_POUCH;
   const pouches = Math.floor(packOut / kgPerEaUsed);
 
-  // 전처리 시간
+  // 전처리 시간 (Phase1: 외국인 조출~한국인 합류 / Phase2: 합류 후)
   const phase1Min = Math.max(0, joinMin - startMin);
-  const phase1Kg = inp.pPre * inp.earlyWorkers * (phase1Min / 60);
-  const remainingKg = Math.max(0, preIn - phase1Kg);
-  const phase2Min = remainingKg / (inp.pPre * inp.wkPre) * 60;
-  const preEndMin = joinMin + Math.round(phase2Min);
+  const phase1Cap = inp.pPre * inp.earlyWorkers * (phase1Min / 60);  // 외국인이 합류 전까지 처리 가능한 '능력'
+  let phase1Kg, phase2Min, preEndMin;
+  if (preIn <= phase1Cap) {
+    // 물량이 외국인 능력 이내 → 합류(09:00) 전에 전처리 완료. 실제 완료 시각으로 종료 (능력치 아님)
+    phase1Kg = preIn;
+    phase2Min = 0;
+    preEndMin = startMin + Math.round(preIn / (inp.pPre * inp.earlyWorkers) * 60);
+  } else {
+    // 능력 초과분은 한국인 합류 후 처리
+    phase1Kg = phase1Cap;
+    const remainingKg = preIn - phase1Cap;
+    phase2Min = remainingKg / (inp.pPre * inp.wkPre) * 60;
+    preEndMin = joinMin + Math.round(phase2Min);
+  }
   const preHours = (preEndMin - startMin) / 60;
 
   // 자숙 탱크 분배 (tankMode별)
@@ -699,23 +709,17 @@ function ttSimulate(inp, tankMode) {
   // 단순화: 전처리 끝났으면 → 12:30부터 시작 가능 (파쇄가 1시간 가동했으니까)
   //         전처리 안 끝났으면 → 13:30부터 (모드 A 동일)
   // ── 내포장 시작 시점 ──
-  // 규칙: 13:30 시점에 파쇄 산출 ≥ 200kg이면 13:30 시작
-  //       부족하면 → 200kg 도달할 때까지 대기
-  const PACK_START_BASE = 13*60 + 30;
-  const PACK_START_MIN_KG = 200;  // 산출 누적 200kg 이상
-  // crushStartMin부터 분당 누적 (crushWorkersAt × pCrush × yCrush)
+  // 파쇄 산출이 일정량(200kg) 쌓이면 바로 시작 (13:30 고정 없음).
+  // 총원 28명에서 점심 반씩 나눠도 14명 가용 → 파쇄와 병행해 내포장 라인 가동 가능.
+  const PACK_START_MIN_KG = 200;  // 파쇄 산출 누적 이만큼이면 내포장 시작
   let crushAccumOut = 0;
-  let packStartMin = PACK_START_BASE;
-  let kgAtBase = 0;
+  let packStartMin = null;
   for (let t = crushStartMin; t < 28*60; t++) {
     const w = crushWorkersAt(t);
     if (w > 0) crushAccumOut += inp.pCrush * w / 60 * (inp.yCrush / 100);
-    if (t + 1 === PACK_START_BASE) kgAtBase = crushAccumOut;
-    if (t + 1 >= PACK_START_BASE && crushAccumOut >= PACK_START_MIN_KG) {
-      packStartMin = t + 1;
-      break;
-    }
+    if (crushAccumOut >= PACK_START_MIN_KG) { packStartMin = t + 1; break; }
   }
+  if (packStartMin === null) packStartMin = crushStartMin;  // 산출이 적으면 파쇄 시작과 동시
   const packWorkersAt = (t) => {
     if (t < packStartMin) return 0;
     return inp.wkPack;
@@ -762,15 +766,15 @@ function ttSimulate(inp, tankMode) {
   const NUM_RETORTS = 3;
   const TOTAL_CARTS = 8;
 
-  // EA 균등 분배 (정수 단위, 마지막에 잔여 합산)
-  const eaPerBatch = Math.floor(pouches / retortCycles);
-  const eaRemainder = pouches - eaPerBatch * retortCycles;
+  // EA 분배: 대차 가득(4대차 = MAX_EA_PER_BATCH) 채우고 마지막 회차만 잔여 (풀 우선)
   const batchEa = [];
+  let remEa = pouches;
   for (let i = 0; i < retortCycles; i++) {
-    // 잔여 EA를 마지막 회차에 합산
-    batchEa.push(i === retortCycles - 1 ? eaPerBatch + eaRemainder : eaPerBatch);
+    const e = Math.min(MAX_EA_PER_BATCH, remEa);
+    batchEa.push(e);
+    remEa -= e;
   }
-  // 회차당 대차 수 = ceil(EA / 96), 최대 4
+  // 회차당 대차 수 = ceil(EA / 대차당EA), 최대 4
   const batchCarts = batchEa.map(ea => Math.min(MAX_CARTS_PER_BATCH, Math.ceil(ea / EA_PER_CART)));
 
   const retortStartTimes = [];
