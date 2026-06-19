@@ -1110,11 +1110,18 @@ function ttPlanNarrative(inp, sim, slots) {
     lines.push(`<strong>${inp.joinTime}</strong> · 한국인 합류 없음 (전처리 ${inp.earlyWorkers}명 유지) + 외포장·세팅 병행`);
   }
   lines.push(`<strong>${ttFmt(sim.crushStartMin)}</strong> · 자숙 1호 출하 → <strong style="color:#BA7517">파쇄 ${inp.wkCrush}명 투입 시작</strong>`);
+  if (sim.packStartMin < 13*60+30) {
+    lines.push(`<strong>${ttFmt(sim.packStartMin)}</strong> · 파쇄 산출 누적 → <strong style="color:#7F77DD">내포장 ${inp.wkPack}명 시작</strong> (파쇄와 병행)`);
+  }
   const half1n = Math.ceil(total / 2);
   const half2n = total - half1n;
   lines.push(`<strong>11:30~12:30</strong> · 점심 1차 ${half1n}명 · 작업 ${total - half1n - 1}명 파쇄 + 관리 1명`);
   lines.push(`<strong>12:30~13:30</strong> · 점심 2차 ${half2n}명 · 작업 ${total - half2n - 1}명 파쇄 + 관리 1명`);
-  lines.push(`<strong>13:30~${ttFmt(sim.packEndMin)}</strong> · <strong style="color:#7F77DD">파쇄 ${inp.wkPackPeak}명 + 내포장 ${inp.wkPack}명 + 이송 ${inp.wkTrans}명 풀가동</strong>`);
+  if (sim.packStartMin >= 13*60+30) {
+    lines.push(`<strong>13:30~${ttFmt(sim.packEndMin)}</strong> · <strong style="color:#7F77DD">파쇄 ${inp.wkPackPeak}명 + 내포장 ${inp.wkPack}명 + 이송 ${inp.wkTrans}명 풀가동</strong>`);
+  } else {
+    lines.push(`<strong>13:30~${ttFmt(sim.packEndMin)}</strong> · <strong style="color:#BA7517">파쇄 풀가동 ${inp.wkPackPeak}명</strong> + 내포장 ${inp.wkPack}명 + 이송 ${inp.wkTrans}명`);
+  }
   lines.push(`<strong>${ttFmt(sim.packEndMin)}</strong> · 내포장 종료 (그날 작업 끝)`);
   lines.push(`<strong>레토르트</strong> · ${ttFmt(sim.retortStartMin)} 시작 · ${sim.retortCycles}회차 · 최종 ${ttFmt(sim.retortEndMin)}`);
   return lines.join('<br>');
