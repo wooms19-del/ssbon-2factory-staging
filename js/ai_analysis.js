@@ -866,6 +866,30 @@ function _aiBuildReport(rows, mo, prodM, curYm){
   const ckyL = mL.rmKg>0? r2(mL.ckKg/mL.rmKg*100):0, ckyP = mP.rmKg>0? r2(mP.ckKg/mP.rmKg*100):0;
   const shyL = mL.rmKg>0? r2(mL.shKg/mL.rmKg*100):0, shyP = mP.rmKg>0? r2(mP.shKg/mP.rmKg*100):0;
 
+  // ── 범위 모드: 3개월 이상이면 표에 전체 월을 컬럼으로 (2개월/이 달만이면 당월 vs 전월) ──
+  const multi = rows.length >= 3;
+  const months = rows.map(r => r._ym);
+  const moLabel = ym => parseInt(ym.slice(5),10) + '월';
+  const perMo = months.map(ym => { const m = mo[ym]||{}; return {
+    ym, rmKg:m.rmKg||0, pkRawKg:m.pkRawKg||0, ea:m.ea||0, ppKg:m.ppKg||0, ckKg:m.ckKg||0, shKg:m.shKg||0, byPart:m.byPart||{},
+    yld: m.rmKg>0 ? r2(m.pkRawKg/m.rmKg*100) : 0,
+    def: m.ea>0 ? r2(m.defect/m.ea*100) : 0,
+    ppy: m.rmKg>0 ? r2(m.ppKg/m.rmKg*100) : 0,
+    cky: m.rmKg>0 ? r2(m.ckKg/m.rmKg*100) : 0,
+    shy: m.rmKg>0 ? r2(m.shKg/m.rmKg*100) : 0
+  }; });
+  const mtable = (headLabel, metricRows) => {
+    let t = '<table><thead><tr><th class="l">'+headLabel+'</th>';
+    months.forEach(ym => t += '<th>'+moLabel(ym)+(ym===curYm?' <span style="font-weight:400;font-size:10px;color:#94a3b8">(진행중)</span>':'')+'</th>');
+    t += '</tr></thead><tbody>';
+    metricRows.forEach(mr => {
+      t += '<tr><td class="l">'+mr.label+'</td>';
+      mr.vals.forEach((v,i) => t += '<td'+(mr.cls&&mr.cls[i]?' class="'+mr.cls[i]+'"':'')+'>'+v+'</td>');
+      t += '</tr>';
+    });
+    return t + '</tbody></table>';
+  };
+
   const dcell = (cur,prev,goodDir,dec,suf) => {
     const d = r2(cur-prev);
     const num = dec ? (Math.round(d*Math.pow(10,dec))/Math.pow(10,dec)).toLocaleString('ko-KR') : nf(d);
@@ -903,56 +927,98 @@ function _aiBuildReport(rows, mo, prodM, curYm){
     +'</style>';
 
   let h = css + '<div class="airpt">';
-  h += '<div class="rhd"><h2>📄 생산 실적 월간 보고서</h2><p>순수본 2공장 · '+y+'년 '+M+'월 실적 기준 (전월 '+Mp+'월 대비)'+(inProg?' · '+M+'월 진행중':'')+' · 작성일 '+dateStr+'</p></div>';
+  const _sub = multi
+    ? ('순수본 2공장 · '+y+'년 '+moLabel(months[0])+'~'+moLabel(months[months.length-1])+' 추이 ('+months.length+'개월)'+(inProg?' · '+M+'월 진행중':'')+' · 작성일 '+dateStr)
+    : ('순수본 2공장 · '+y+'년 '+M+'월 실적 기준 (전월 '+Mp+'월 대비)'+(inProg?' · '+M+'월 진행중':'')+' · 작성일 '+dateStr);
+  h += '<div class="rhd"><h2>📄 생산 실적 월간 보고서</h2><p>'+_sub+'</p></div>';
 
   h += '<h3 class="sec">1. 보고 개요</h3>';
   h += '<table style="width:auto"><tbody>'
-    + '<tr><td class="l">보고 기간</td><td class="l">'+y+'년 '+M+'월 (전월 '+Mp+'월 대비)</td></tr>'
-    + '<tr><td class="l">생산일수</td><td class="l">당월 '+daysL+'일 / 전월 '+daysP+'일</td></tr>'
+    + '<tr><td class="l">보고 기간</td><td class="l">'+(multi ? (y+'년 '+moLabel(months[0])+'~'+moLabel(months[months.length-1])+'월 ('+months.length+'개월)') : (y+'년 '+M+'월 (전월 '+Mp+'월 대비)'))+'</td></tr>'
+    + '<tr><td class="l">생산일수</td><td class="l">'+(multi ? months.map(ym=>moLabel(ym)+' '+Object.keys((mo[ym]||{days:{}}).days).length+'일').join(' · ') : ('당월 '+daysL+'일 / 전월 '+daysP+'일'))+'</td></tr>'
     + '<tr><td class="l">데이터 기준</td><td class="l">스마트팩토리 실적 (방혈·전처리·자숙·파쇄·포장)</td></tr>'
     + '</tbody></table>';
 
-  h += '<h3 class="sec">2. 생산 실적 요약 (당월 vs 전월)</h3>';
-  h += '<table><thead><tr><th class="l">항목</th><th>당월('+M+'월)</th><th>전월('+Mp+'월)</th><th>증감</th></tr></thead><tbody>';
-  h += row('원육 투입 (kg)', nf(mL.rmKg), nf(mP.rmKg), dcell(mL.rmKg,mP.rmKg,0,0,''));
-  h += row('완제품 원육 (kg)', nf(mL.pkRawKg), nf(mP.pkRawKg), dcell(mL.pkRawKg,mP.pkRawKg,0,0,''));
-  h += row('원육수율 (%)', yldL+'%', yldP+'%', dcell(yldL,yldP,1,2,'%p'));
-  h += row('생산수량 (EA)', nf(mL.ea), nf(mP.ea), dcell(mL.ea,mP.ea,0,0,''));
-  h += row('포장 불량률 (%)', defL+'%', defP+'%', dcell(defL,defP,-1,2,'%p'));
-  h += '</tbody></table>';
-  h += '<div class="box">▶ 당월 원육수율 <b>'+yldL+'%</b> — 전월 대비 '+yVerdict+'. 포장 불량률은 '+dVerdict+' ('+defP+'% → '+defL+'%).</div>';
+  h += '<h3 class="sec">2. 생산 실적 요약'+(multi ? ' ('+moLabel(months[0])+'~'+moLabel(months[months.length-1])+'월)' : ' (당월 vs 전월)')+'</h3>';
+  if(multi){
+    h += mtable('항목', [
+      {label:'원육 투입 (kg)', vals: perMo.map(x=>nf(x.rmKg))},
+      {label:'완제품 원육 (kg)', vals: perMo.map(x=>nf(x.pkRawKg))},
+      {label:'원육수율 (%)', vals: perMo.map(x=>x.yld+'%')},
+      {label:'생산수량 (EA)', vals: perMo.map(x=>nf(x.ea))},
+      {label:'포장 불량률 (%)', vals: perMo.map(x=>x.def+'%')}
+    ]);
+  } else {
+    h += '<table><thead><tr><th class="l">항목</th><th>당월('+M+'월)</th><th>전월('+Mp+'월)</th><th>증감</th></tr></thead><tbody>';
+    h += row('원육 투입 (kg)', nf(mL.rmKg), nf(mP.rmKg), dcell(mL.rmKg,mP.rmKg,0,0,''));
+    h += row('완제품 원육 (kg)', nf(mL.pkRawKg), nf(mP.pkRawKg), dcell(mL.pkRawKg,mP.pkRawKg,0,0,''));
+    h += row('원육수율 (%)', yldL+'%', yldP+'%', dcell(yldL,yldP,1,2,'%p'));
+    h += row('생산수량 (EA)', nf(mL.ea), nf(mP.ea), dcell(mL.ea,mP.ea,0,0,''));
+    h += row('포장 불량률 (%)', defL+'%', defP+'%', dcell(defL,defP,-1,2,'%p'));
+    h += '</tbody></table>';
+  }
+  h += '<div class="box">▶ '+(multi?moLabel(ymL)+' ':'당월 ')+'원육수율 <b>'+yldL+'%</b> — 전월('+Mp+'월) 대비 '+yVerdict+'. 포장 불량률은 '+dVerdict+' ('+defP+'% → '+defL+'%).</div>';
 
   h += '<h3 class="sec">3. 공정 수율 분석 (원육 투입 대비 누적)</h3>';
-  h += '<table><thead><tr><th class="l">공정</th><th>당월 산출(kg)</th><th>당월 수율</th><th>전월 수율</th><th>증감</th></tr></thead><tbody>';
-  h += '<tr><td class="l">전처리</td><td>'+nf(mL.ppKg)+'</td><td>'+ppyL+'%</td><td>'+ppyP+'%</td>'+dcell(ppyL,ppyP,1,2,'%p')+'</tr>';
-  h += '<tr><td class="l">자숙</td><td>'+nf(mL.ckKg)+'</td><td>'+ckyL+'%</td><td>'+ckyP+'%</td>'+dcell(ckyL,ckyP,1,2,'%p')+'</tr>';
-  h += '<tr><td class="l">파쇄</td><td>'+nf(mL.shKg)+'</td><td>'+shyL+'%</td><td>'+shyP+'%</td>'+dcell(shyL,shyP,1,2,'%p')+'</tr>';
-  h += '</tbody></table>';
-  h += '<div class="box">▶ 전처리 누적수율 <b>'+ppyL+'%</b> (비가식부 '+f1(inedibleL)+'%).'+ppVerdict+'</div>';
+  if(multi){
+    h += mtable('공정 수율(%)', [
+      {label:'전처리', vals: perMo.map(x=>x.ppy+'%')},
+      {label:'자숙', vals: perMo.map(x=>x.cky+'%')},
+      {label:'파쇄', vals: perMo.map(x=>x.shy+'%')}
+    ]);
+  } else {
+    h += '<table><thead><tr><th class="l">공정</th><th>당월 산출(kg)</th><th>당월 수율</th><th>전월 수율</th><th>증감</th></tr></thead><tbody>';
+    h += '<tr><td class="l">전처리</td><td>'+nf(mL.ppKg)+'</td><td>'+ppyL+'%</td><td>'+ppyP+'%</td>'+dcell(ppyL,ppyP,1,2,'%p')+'</tr>';
+    h += '<tr><td class="l">자숙</td><td>'+nf(mL.ckKg)+'</td><td>'+ckyL+'%</td><td>'+ckyP+'%</td>'+dcell(ckyL,ckyP,1,2,'%p')+'</tr>';
+    h += '<tr><td class="l">파쇄</td><td>'+nf(mL.shKg)+'</td><td>'+shyL+'%</td><td>'+shyP+'%</td>'+dcell(shyL,shyP,1,2,'%p')+'</tr>';
+    h += '</tbody></table>';
+  }
+  h += '<div class="box">▶ '+moLabel(ymL)+' 전처리 누적수율 <b>'+ppyL+'%</b> (비가식부 '+f1(inedibleL)+'%).'+ppVerdict+'</div>';
 
   // 부위별 전처리 비가식부 (홍두깨 등 — 진짜 손실 부위 식별)
   (function(){
-    const ps = {}; Object.keys(mL.byPart||{}).forEach(p=>ps[p]=1); Object.keys(mP.byPart||{}).forEach(p=>ps[p]=1);
+    const ps = {}; months.forEach(ym => Object.keys((mo[ym]||{byPart:{}}).byPart||{}).forEach(p=>ps[p]=1));
     const order = ['홍두깨','홍두께','설도','우둔'];
     const parts = Object.keys(ps).sort((a,b)=>{ const ia=order.indexOf(a), ib=order.indexOf(b); return (ia<0?99:ia)-(ib<0?99:ib); });
-    const inedOf = (m,p) => { const b=(m.byPart||{})[p]; return (b && b.rmKg>0) ? r2((b.rmKg-b.ppKg)/b.rmKg*100) : null; };
-    let pr = '';
-    parts.forEach(p=>{
-      const il = inedOf(mL,p), ip = inedOf(mP,p); if(il==null && ip==null) return;
-      const bL = (mL.byPart||{})[p] || {rmKg:0};
-      let dc = '<td>—</td>';
-      if(il!=null && ip!=null){ const d = r2(il-ip); const cls = d>0?'down':(d<0?'up':''); dc = '<td class="'+cls+'">'+(Math.abs(d)<1e-9?'—':((d>0?'+':'')+d+'%p'))+'</td>'; }
-      const warn = (il!=null && il>=8) ? ' ⚠️' : '';
-      pr += '<tr><td class="l">'+p+warn+'</td><td>'+nf(bL.rmKg)+'</td><td'+(il!=null&&il>=8?' class="down"':'')+'>'+(il==null?'—':il+'%')+'</td><td>'+(ip==null?'—':ip+'%')+'</td>'+dc+'</tr>';
-    });
-    if(pr){
-      h += '<div style="font-size:13px;font-weight:600;color:#1F4E79;margin:14px 0 4px">▷ 부위별 전처리 비가식부 <span style="font-weight:400;color:#64748b;font-size:11px">(높을수록 원육 손실 큼)</span></div>';
-      h += '<table><thead><tr><th class="l">부위</th><th>당월 원육(kg)</th><th>당월 비가식%</th><th>전월 비가식%</th><th>증감</th></tr></thead><tbody>'+pr+'</tbody></table>';
+    const inedOf = (m,p) => { const b=((m||{}).byPart||{})[p]; return (b && b.rmKg>0) ? r2((b.rmKg-b.ppKg)/b.rmKg*100) : null; };
+    if(!parts.length) return;
+    const hdr = '<div style="font-size:13px;font-weight:600;color:#1F4E79;margin:14px 0 4px">▷ 부위별 전처리 비가식부 <span style="font-weight:400;color:#64748b;font-size:11px">(높을수록 원육 손실 큼)</span></div>';
+    if(multi){
+      const mrows = parts.map(p => {
+        const vals = months.map(ym => { const il = inedOf(mo[ym],p); return il==null?'—':il+'%'; });
+        const cls = months.map(ym => { const il = inedOf(mo[ym],p); return (il!=null && il>=8) ? 'down' : ''; });
+        const anyWarn = months.some(ym => { const il=inedOf(mo[ym],p); return il!=null && il>=8; });
+        return { label: p + (anyWarn?' ⚠️':''), vals, cls };
+      });
+      h += hdr + mtable('부위 (비가식%)', mrows);
+    } else {
+      let pr = '';
+      parts.forEach(p=>{
+        const il = inedOf(mL,p), ip = inedOf(mP,p); if(il==null && ip==null) return;
+        const bL = (mL.byPart||{})[p] || {rmKg:0};
+        let dc = '<td>—</td>';
+        if(il!=null && ip!=null){ const d = r2(il-ip); const cls = d>0?'down':(d<0?'up':''); dc = '<td class="'+cls+'">'+(Math.abs(d)<1e-9?'—':((d>0?'+':'')+d+'%p'))+'</td>'; }
+        const warn = (il!=null && il>=8) ? ' ⚠️' : '';
+        pr += '<tr><td class="l">'+p+warn+'</td><td>'+nf(bL.rmKg)+'</td><td'+(il!=null&&il>=8?' class="down"':'')+'>'+(il==null?'—':il+'%')+'</td><td>'+(ip==null?'—':ip+'%')+'</td>'+dc+'</tr>';
+      });
+      if(pr) h += hdr + '<table><thead><tr><th class="l">부위</th><th>당월 원육(kg)</th><th>당월 비가식%</th><th>전월 비가식%</th><th>증감</th></tr></thead><tbody>'+pr+'</tbody></table>';
     }
   })();
 
-  h += '<h3 class="sec">4. 품질(불량) 분석 — 제품별 ('+M+'월)</h3>';
-  h += '<table><thead><tr><th class="l">제품</th><th>생산 EA</th><th>불량</th><th>불량률</th><th>평가</th></tr></thead><tbody>'+(prodRows||'<tr><td colspan="5">데이터 없음</td></tr>')+'</tbody></table>';
+  if(multi){
+    const prodAll = {}; months.forEach(ym => Object.keys(prodM[ym]||{}).forEach(p=>prodAll[p]=1));
+    const prodList = Object.keys(prodAll);
+    const mrows = prodList.map(p => {
+      const vals = months.map(ym => { const x=(prodM[ym]||{})[p]; return (x && x.ea>0) ? r2(x.defect/x.ea*100)+'%' : '—'; });
+      const cls = months.map(ym => { const x=(prodM[ym]||{})[p]; if(!x||!(x.ea>0)) return ''; const r=r2(x.defect/x.ea*100); return r>=3?'down':(r<2?'up':''); });
+      return { label:p, vals, cls };
+    });
+    h += '<h3 class="sec">4. 품질(불량) 분석 — 제품별 불량률 ('+moLabel(months[0])+'~'+moLabel(months[months.length-1])+'월)</h3>';
+    h += mtable('제품 (불량률)', mrows);
+  } else {
+    h += '<h3 class="sec">4. 품질(불량) 분석 — 제품별 ('+M+'월)</h3>';
+    h += '<table><thead><tr><th class="l">제품</th><th>생산 EA</th><th>불량</th><th>불량률</th><th>평가</th></tr></thead><tbody>'+(prodRows||'<tr><td colspan="5">데이터 없음</td></tr>')+'</tbody></table>';
+  }
 
   h += '<h3 class="sec">5. 종합 의견 및 향후 과제</h3>';
   h += _aiMonthlyComment(rows, mo, prodM, curYm);
