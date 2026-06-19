@@ -807,9 +807,17 @@ async function _aiLoadMonthlyTrend(){
     const products = (typeof L !== 'undefined' && L && Array.isArray(L.products)) ? L.products : [];
     const kgEaOf = pname => { const p = products.find(x => x.name === pname); return p ? (parseFloat(p.kgea)||0) : 0; };
     const mo = {};
+    const prodM = {};   // {ym: {product: {ea, defect}}}  — 제품별 불량 집중 분석용
     const _slot = ym => (mo[ym] = mo[ym] || {rmKg:0, pkRawKg:0, ea:0, defect:0, days:{}});
     (th||[]).forEach(r => { const d = String(r.date||'').slice(0,10); const ym = d.slice(0,7); if(ym){ const m = _slot(ym); m.rmKg += parseFloat(r.totalKg)||0; m.days[d] = 1; } });
-    (pk||[]).forEach(r => { const d = String(r.date||'').slice(0,10); const ym = d.slice(0,7); if(!ym) return; const m = _slot(ym); const ea = parseFloat(r.ea)||0; m.pkRawKg += ea * kgEaOf(r.product); m.ea += ea; m.defect += parseInt(r.defect)||0; m.days[d] = 1; });
+    (pk||[]).forEach(r => {
+      const d = String(r.date||'').slice(0,10); const ym = d.slice(0,7); if(!ym) return;
+      const m = _slot(ym); const ea = parseFloat(r.ea)||0; const def = parseInt(r.defect)||0;
+      m.pkRawKg += ea * kgEaOf(r.product); m.ea += ea; m.defect += def; m.days[d] = 1;
+      const pn = r.product || '기타';
+      const ps = ((prodM[ym] = prodM[ym] || {})[pn] = (prodM[ym][pn] || {ea:0, defect:0}));
+      ps.ea += ea; ps.defect += def;
+    });
     // 생산일수 3일 이상인 달만 (1~2일짜리 blip 제외 → 추이 왜곡 방지)
     const months = Object.keys(mo).filter(ym => Object.keys(mo[ym].days).length >= 3).sort();
     if(months.length < 2){ wrap.innerHTML=''; return; }   // 비교할 달이 2개월 미만이면 생략
@@ -828,50 +836,85 @@ async function _aiLoadMonthlyTrend(){
       + '<span style="display:flex;align-items:center;gap:6px"><span style="width:14px;height:3px;border-radius:2px;background:#E11D48"></span>포장 불량률(%)</span>'
       + '</div>'
       + '<div style="position:relative;width:100%;height:240px"><canvas id="aiMonthlyChart"></canvas></div>'
-      + _aiMonthlyInsights(rows, curYm)
+      + _aiMonthlyComment(rows, prodM, curYm)
       + '</div>';
     _drawMonthlyTrendChart(rows);
   } catch(e){ console.warn('[AI] 월별 추이 실패', e); wrap.innerHTML=''; }
 }
 
-function _aiMonthlyInsights(rows, curYm){
+function _aiMonthlyComment(rows, prodM, curYm){
   if(!rows || rows.length < 2) return '';
   const ml = r => parseInt(r._ym.slice(5),10) + '월';
   const sp = (v,d) => (v>0?'+':'') + (+v).toFixed(d) + '%p';
   const first = rows[0], last = rows[rows.length-1], prev = rows[rows.length-2];
-  const good = [], watch = [];
+  const inProg = last._ym === curYm;
+  const dYo = r2(last.yield - first.yield), dYr = r2(last.yield - prev.yield);
+  const dDo = r2(last.defect - first.defect), dDr = r2(last.defect - prev.defect);
+  const recent = rows.slice(-3);
 
-  // 원육수율 (높을수록 좋음)
-  const oY = r2(last.yield - first.yield), rY = r2(last.yield - prev.yield);
-  if(oY >= 0.5){
-    let s = '원육수율이 '+ml(first)+' '+first.yield+'% → '+ml(last)+' '+last.yield+'%로 '+sp(oY,1)+' 올랐습니다.';
-    if(rows.length >= 3 && rY <= -0.5) s += ' (다만 '+ml(prev)+'→'+ml(last)+'은 '+sp(rY,1)+'로 주춤)';
-    good.push(s);
-  } else if(oY <= -0.5){
-    watch.push('원육수율이 '+ml(first)+' '+first.yield+'% → '+ml(last)+' '+last.yield+'%로 '+sp(oY,1)+' 떨어졌습니다.');
-  }
+  // ── 현황 시퀀스 ──
+  const ySeq = recent.map(r => ml(r)+' '+r.yield+'%').join(' → ');
+  const dSeq = recent.map(r => ml(r)+' '+r.defect+'%').join(' → ');
+  const yTrend = dYo>=0.5 ? '회복·상승세' : dYo<=-0.5 ? '하락세' : '대체로 보합';
+  const dTrend = dDo<=-0.2 ? '안정세' : dDo>=0.2 ? '상승세' : '보합';
 
-  // 포장 불량률 (낮을수록 좋음)
-  const oD = r2(last.defect - first.defect), rD = r2(last.defect - prev.defect);
-  if(oD <= -0.2){
-    let s = '포장 불량률이 '+ml(first)+' '+first.defect+'% → '+ml(last)+' '+last.defect+'%로 '+sp(oD,2)+' 낮아졌습니다.';
-    if(rows.length >= 3 && rD >= 0.2) s += ' (단 '+ml(prev)+'→'+ml(last)+'은 '+sp(rD,2)+'로 다시 올라 점검 필요)';
-    good.push(s);
-  } else if(oD >= 0.2){
-    let s = '포장 불량률이 '+ml(first)+' '+first.defect+'% → '+ml(last)+' '+last.defect+'%로 '+sp(oD,2)+' 높아졌습니다.';
-    watch.push(s);
+  // ── 제품별 불량률 (최근 달) — '유독 높은 라인'을 잡는다 (건수 아님: 물량 많으면 건수만 큼) ──
+  const pm = prodM[last._ym] || {};
+  const plist = Object.keys(pm).map(p => ({ p:p, ea:pm[p].ea, def:pm[p].defect, rate: pm[p].ea>0 ? r2(pm[p].defect/pm[p].ea*100) : 0 })).filter(x => x.ea>0);
+  const cmp = plist.filter(x => x.ea >= 500);   // 물량 충분한 제품만 비교(소량 노이즈 제외)
+  let worst=null, othersRate=0, worstMult=0;
+  if(cmp.length>=2){
+    cmp.sort((a,b)=>b.rate-a.rate);
+    worst = cmp[0];
+    const others = cmp.slice(1), oEa = others.reduce((s,x)=>s+x.ea,0), oDef = others.reduce((s,x)=>s+x.def,0);
+    othersRate = oEa>0 ? r2(oDef/oEa*100) : 0;
+    worstMult = othersRate>0 ? r2(worst.rate/othersRate) : 0;
   }
+  const badProd = !!(worst && othersRate>0 && worst.rate>=3 && worst.rate >= othersRate*1.5);
 
-  let h = '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:14px 16px;margin-top:12px">';
-  h += '<p style="font-size:13px;font-weight:600;color:#0f172a;margin:0 0 6px">📈 이렇게 변하고 있습니다</p>';
-  if(good.length){
-    h += '<p style="font-size:12.5px;font-weight:700;color:#15803d;margin:8px 0 2px">좋아지는 중</p>';
-    good.forEach(s => h += '<p style="font-size:13px;color:#0f172a;margin:2px 0;line-height:1.6">· '+s+'</p>');
+  // ── 짚어볼 점 / 액션 ──
+  const focus=[], actions=[];
+  if(badProd){
+    focus.push(ml(last)+' 제품별 불량률 — <b>'+worst.p+' '+worst.rate+'%</b>로 유독 높습니다 (나머지 제품 평균 '+othersRate+'%, 약 '+worstMult+'배). 불량 '+worst.def+'건.');
+    actions.push('<b>'+worst.p+'</b> 포장 라인 집중 점검 — 불량률이 다른 제품의 '+worstMult+'배. 실링·마킹·충진부터 확인');
   }
-  h += '<p style="font-size:12.5px;font-weight:700;color:#dc2626;margin:8px 0 2px">주의 필요</p>';
-  if(watch.length) watch.forEach(s => h += '<p style="font-size:13px;color:#0f172a;margin:2px 0;line-height:1.6">· '+s+'</p>');
-  else h += '<p style="font-size:13px;color:#64748b;margin:2px 0;line-height:1.6">· 특별히 나빠진 지표는 없습니다.</p>';
-  if(last._ym === curYm) h += '<p style="font-size:11px;color:#94a3b8;margin:8px 0 0">※ '+ml(last)+'은 진행중이라 월말까지 수치가 달라질 수 있습니다.</p>';
+  if(dDr>=0.2){
+    focus.push('최근 '+ml(prev)+'('+prev.defect+'%) → '+ml(last)+'('+last.defect+'%) 전체 불량률이 '+sp(dDr,2)+' 다시 올랐습니다.');
+    actions.push(ml(last)+' 불량률 반등 — '+(inProg?'월말까지 ':'')+'실링 상태·작업자 교대 점검');
+  } else if(dDo<=-0.2){
+    focus.push('전체 불량률은 '+ml(first)+' '+first.defect+'% → '+ml(last)+' '+last.defect+'%로 '+sp(dDo,2)+' 안정됐습니다.');
+  }
+  if(dYr<=-0.5){
+    focus.push(ml(last)+' 수율이 전월比 '+sp(dYr,1)+' 떨어졌습니다 — 세부 원인은 데이터로 단정 못 합니다. 비가식부·생산성 화면에서 부위별·공정별 손실 확인이 필요합니다.');
+    actions.push('수율 하락 추적: 비가식부·생산성 탭에서 전처리/자숙/파쇄 손실 부위 확인');
+  } else if(dYo>=0.5){
+    focus.push('수율은 '+ml(first)+' '+first.yield+'% → '+ml(last)+' '+last.yield+'%로 '+sp(dYo,1)+' 개선됐습니다'+(dYr<=-0.3?' (다만 '+ml(prev)+'→'+ml(last)+'은 다소 주춤)':'')+'.');
+  }
+  if(!actions.length) actions.push('현 추세 유지 — 다음 달 수율·불량률이 이 수준을 지키는지 확인');
+
+  // ── 결론 한 줄 ──
+  let concl;
+  if(badProd) concl = '불량률이 <b>'+worst.p+'</b>에서 유독 높습니다('+worst.rate+'%). 이 라인부터 잡아야 전체가 내려갑니다.';
+  else if(dDr>=0.2) concl = '불량률이 다시 고개를 들고 있어 포장 실링 공정 점검이 우선입니다.';
+  else if(dYo>=0.5 && dDo<=-0.2) concl = '수율↑·불량률↓ 둘 다 개선 흐름 — 이번 달 진행분이 이대로 유지되는지만 보면 됩니다.';
+  else if(dYo<=-0.5) concl = '수율이 떨어지는 추세 — 공정별 손실 부위부터 확인해야 합니다.';
+  else concl = '큰 이상 신호는 없습니다. 현 수준 유지 여부를 다음 달에 확인하면 됩니다.';
+
+  // ── HTML ──
+  const sec = (label,color) => '<p style="font-size:12px;font-weight:700;color:'+color+';margin:10px 0 3px;letter-spacing:.02em">'+label+'</p>';
+  const line = s => '<p style="font-size:13px;color:#0f172a;margin:2px 0;line-height:1.65">· '+s+'</p>';
+  let h = '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:15px 17px;margin-top:12px">';
+  h += '<p style="font-size:13.5px;font-weight:700;color:#0f172a;margin:0">🧑‍🏭 생산관리자 코멘트</p>';
+  h += sec('현황','#475569');
+  h += line('수율: '+ySeq+'  <span style="color:#64748b">('+yTrend+')</span>');
+  h += line('불량률: '+dSeq+'  <span style="color:#64748b">('+dTrend+')</span>');
+  h += sec('짚어볼 점','#b45309');
+  if(focus.length) focus.forEach(s => h += line(s)); else h += line('특별히 두드러진 신호는 없습니다.');
+  h += sec('이렇게 하시죠','#1d4ed8');
+  actions.forEach((s,i) => h += line('<b>'+(i+1)+'.</b> '+s));
+  h += '<div style="margin-top:11px;padding:9px 12px;background:#0f172a;border-radius:7px"><p style="font-size:13px;color:#fff;margin:0;line-height:1.55"><b>결론</b> &nbsp;'+concl+'</p></div>';
+  if(inProg) h += '<p style="font-size:11px;color:#94a3b8;margin:9px 0 0">※ '+ml(last)+'은 진행중이라 월말까지 수치가 달라질 수 있습니다. 원인은 데이터로 짚이는 것만 적었고, 단정 못 하는 건 확인 화면을 안내했습니다.</p>';
+  else h += '<p style="font-size:11px;color:#94a3b8;margin:9px 0 0">※ 원인은 데이터로 짚이는 것만 적었고, 단정 못 하는 건 확인 화면을 안내했습니다.</p>';
   h += '</div>';
   return h;
 }
