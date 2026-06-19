@@ -812,9 +812,10 @@ async function _aiLoadMonthlyTrend(argFrom, argTo, single){
     const kgEaOf = pname => { const p = products.find(x => x.name === pname); return p ? (parseFloat(p.kgea)||0) : 0; };
     const mo = {};
     const prodM = {};   // {ym: {product: {ea, defect}}}  — 제품별 불량 집중 분석용
-    const _slot = ym => (mo[ym] = mo[ym] || {rmKg:0, pkRawKg:0, ea:0, defect:0, ppKg:0, ckKg:0, shKg:0, days:{}});
-    (th||[]).forEach(r => { const d = String(r.date||'').slice(0,10); const ym = d.slice(0,7); if(ym){ const m = _slot(ym); m.rmKg += parseFloat(r.totalKg)||0; m.days[d] = 1; } });
-    (pp||[]).forEach(r => { const ym = String(r.date||'').slice(0,7); if(ym) _slot(ym).ppKg += parseFloat(r.kg)||0; });
+    const _slot = ym => (mo[ym] = mo[ym] || {rmKg:0, pkRawKg:0, ea:0, defect:0, ppKg:0, ckKg:0, shKg:0, days:{}, byPart:{}});
+    const _part = (m, p) => (m.byPart[p] = m.byPart[p] || {rmKg:0, ppKg:0});
+    (th||[]).forEach(r => { const d = String(r.date||'').slice(0,10); const ym = d.slice(0,7); if(!ym) return; const m = _slot(ym); const kg = parseFloat(r.totalKg)||0; m.rmKg += kg; m.days[d] = 1; if(r.type) _part(m, r.type).rmKg += kg; });
+    (pp||[]).forEach(r => { const ym = String(r.date||'').slice(0,7); if(!ym) return; const m = _slot(ym); const kg = parseFloat(r.kg)||0; m.ppKg += kg; if(r.type) _part(m, r.type).ppKg += kg; });
     (ck||[]).forEach(r => { const ym = String(r.date||'').slice(0,7); if(ym) _slot(ym).ckKg += parseFloat(r.kg)||0; });
     (sh||[]).forEach(r => { const ym = String(r.date||'').slice(0,7); if(ym) _slot(ym).shKg += parseFloat(r.kg)||0; });
     (pk||[]).forEach(r => {
@@ -929,90 +930,133 @@ function _aiBuildReport(rows, mo, prodM, curYm){
   h += '</tbody></table>';
   h += '<div class="box">▶ 전처리 누적수율 <b>'+ppyL+'%</b> (비가식부 '+f1(inedibleL)+'%).'+ppVerdict+'</div>';
 
+  // 부위별 전처리 비가식부 (홍두깨 등 — 진짜 손실 부위 식별)
+  (function(){
+    const ps = {}; Object.keys(mL.byPart||{}).forEach(p=>ps[p]=1); Object.keys(mP.byPart||{}).forEach(p=>ps[p]=1);
+    const order = ['홍두깨','홍두께','설도','우둔'];
+    const parts = Object.keys(ps).sort((a,b)=>{ const ia=order.indexOf(a), ib=order.indexOf(b); return (ia<0?99:ia)-(ib<0?99:ib); });
+    const inedOf = (m,p) => { const b=(m.byPart||{})[p]; return (b && b.rmKg>0) ? r2((b.rmKg-b.ppKg)/b.rmKg*100) : null; };
+    let pr = '';
+    parts.forEach(p=>{
+      const il = inedOf(mL,p), ip = inedOf(mP,p); if(il==null && ip==null) return;
+      const bL = (mL.byPart||{})[p] || {rmKg:0};
+      let dc = '<td>—</td>';
+      if(il!=null && ip!=null){ const d = r2(il-ip); const cls = d>0?'down':(d<0?'up':''); dc = '<td class="'+cls+'">'+(Math.abs(d)<1e-9?'—':((d>0?'+':'')+d+'%p'))+'</td>'; }
+      const warn = (il!=null && il>=8) ? ' ⚠️' : '';
+      pr += '<tr><td class="l">'+p+warn+'</td><td>'+nf(bL.rmKg)+'</td><td'+(il!=null&&il>=8?' class="down"':'')+'>'+(il==null?'—':il+'%')+'</td><td>'+(ip==null?'—':ip+'%')+'</td>'+dc+'</tr>';
+    });
+    if(pr){
+      h += '<div style="font-size:13px;font-weight:600;color:#1F4E79;margin:14px 0 4px">▷ 부위별 전처리 비가식부 <span style="font-weight:400;color:#64748b;font-size:11px">(높을수록 원육 손실 큼)</span></div>';
+      h += '<table><thead><tr><th class="l">부위</th><th>당월 원육(kg)</th><th>당월 비가식%</th><th>전월 비가식%</th><th>증감</th></tr></thead><tbody>'+pr+'</tbody></table>';
+    }
+  })();
+
   h += '<h3 class="sec">4. 품질(불량) 분석 — 제품별 ('+M+'월)</h3>';
   h += '<table><thead><tr><th class="l">제품</th><th>생산 EA</th><th>불량</th><th>불량률</th><th>평가</th></tr></thead><tbody>'+(prodRows||'<tr><td colspan="5">데이터 없음</td></tr>')+'</tbody></table>';
 
   h += '<h3 class="sec">5. 종합 의견 및 향후 과제</h3>';
-  h += _aiMonthlyComment(rows, prodM, curYm);
+  h += _aiMonthlyComment(rows, mo, prodM, curYm);
 
   h += '<div class="ftr"><span>순수본 2공장 운영팀</span><span>작성일 '+dateStr+'</span><span>본 자료는 내부 관리용입니다.</span></div>';
   h += '</div>';
   return h;
 }
 
-function _aiMonthlyComment(rows, prodM, curYm){
+function _aiMonthlyComment(rows, mo, prodM, curYm){
   if(!rows || rows.length < 2) return '';
   const ml = r => parseInt(r._ym.slice(5),10) + '월';
   const sp = (v,d) => (v>0?'+':'') + (+v).toFixed(d) + '%p';
   const first = rows[0], last = rows[rows.length-1], prev = rows[rows.length-2];
   const inProg = last._ym === curYm;
+  const mL = (mo && mo[last._ym]) || {}, mP = (mo && mo[prev._ym]) || {};
+
   const dYo = r2(last.yield - first.yield), dYr = r2(last.yield - prev.yield);
-  const dDo = r2(last.defect - first.defect), dDr = r2(last.defect - prev.defect);
-  const recent = rows.slice(-3);
+  const dDr = r2(last.defect - prev.defect);
+  const ppyL = mL.rmKg>0 ? r2(mL.ppKg/mL.rmKg*100) : 0, ppyP = mP.rmKg>0 ? r2(mP.ppKg/mP.rmKg*100) : 0;
+  const dPP = r2(ppyL - ppyP);                 // 전처리 누적수율 증감 (음수=하락=나쁨)
+  const inedL = r2(100-ppyL), inedP = r2(100-ppyP);
 
-  // ── 현황 시퀀스 ──
-  const ySeq = recent.map(r => ml(r)+' '+r.yield+'%').join(' → ');
-  const dSeq = recent.map(r => ml(r)+' '+r.defect+'%').join(' → ');
-  const yTrend = dYo>=0.5 ? '회복·상승세' : dYo<=-0.5 ? '하락세' : '대체로 보합';
-  const dTrend = dDo<=-0.2 ? '안정세' : dDo>=0.2 ? '상승세' : '보합';
+  // 부위별 비가식 + 최악 부위
+  const inedPart = (m,p) => { const b=(m.byPart||{})[p]; return (b && b.rmKg>0) ? r2((b.rmKg-b.ppKg)/b.rmKg*100) : null; };
+  const parts = {}; Object.keys(mL.byPart||{}).forEach(p=>parts[p]=1); Object.keys(mP.byPart||{}).forEach(p=>parts[p]=1);
+  let worstPart=null, worstIned=-1, worstPrev=null, worstShare=0;
+  Object.keys(parts).forEach(p=>{
+    const il = inedPart(mL,p); if(il==null) return;
+    if(il > worstIned){ worstIned=il; worstPart=p; worstPrev=inedPart(mP,p); const b=(mL.byPart||{})[p]; worstShare = mL.rmKg>0 ? r2(b.rmKg/mL.rmKg*100) : 0; }
+  });
+  const worstWorsening = (worstPart && worstPrev!=null && (worstIned - worstPrev) >= 1);
 
-  // ── 제품별 불량률 (최근 달) — '유독 높은 라인'을 잡는다 (건수 아님: 물량 많으면 건수만 큼) ──
+  // 제품별 불량 최악 라인
   const pm = prodM[last._ym] || {};
   const plist = Object.keys(pm).map(p => ({ p:p, ea:pm[p].ea, def:pm[p].defect, rate: pm[p].ea>0 ? r2(pm[p].defect/pm[p].ea*100) : 0 })).filter(x => x.ea>0);
-  const cmp = plist.filter(x => x.ea >= 500);   // 물량 충분한 제품만 비교(소량 노이즈 제외)
-  let worst=null, othersRate=0, worstMult=0;
-  if(cmp.length>=2){
-    cmp.sort((a,b)=>b.rate-a.rate);
-    worst = cmp[0];
-    const others = cmp.slice(1), oEa = others.reduce((s,x)=>s+x.ea,0), oDef = others.reduce((s,x)=>s+x.def,0);
-    othersRate = oEa>0 ? r2(oDef/oEa*100) : 0;
-    worstMult = othersRate>0 ? r2(worst.rate/othersRate) : 0;
-  }
-  const badProd = !!(worst && othersRate>0 && worst.rate>=3 && worst.rate >= othersRate*1.5);
+  const cmp = plist.filter(x => x.ea >= 500);
+  let prodWorst=null, othersRate=0, prodMult=0;
+  if(cmp.length>=2){ cmp.sort((a,b)=>b.rate-a.rate); prodWorst=cmp[0]; const o=cmp.slice(1), oe=o.reduce((s,x)=>s+x.ea,0), od=o.reduce((s,x)=>s+x.def,0); othersRate=oe>0?r2(od/oe*100):0; prodMult=othersRate>0?r2(prodWorst.rate/othersRate):0; }
+  const badProd = !!(prodWorst && othersRate>0 && prodWorst.rate>=3 && prodWorst.rate>=othersRate*1.5);
 
-  // ── 짚어볼 점 / 액션 ──
+  // 심각도 — 1순위: 전처리(원육 손실)
+  const preprocessProblem = (dPP <= -1.5) || (worstIned >= 10 && worstWorsening);
+
+  // 현황 시퀀스
+  const recent = rows.slice(-3);
+  const ySeq = recent.map(r => ml(r)+' '+r.yield+'%').join(' → ');
+  const dSeq = recent.map(r => ml(r)+' '+r.defect+'%').join(' → ');
+  const ppSeq = recent.map(r => { const m = mo && mo[r._ym]; const y = (m && m.rmKg>0) ? r2(m.ppKg/m.rmKg*100) : null; return ml(r)+' '+(y==null?'-':y+'%'); }).join(' → ');
+
   const focus=[], actions=[];
-  if(badProd){
-    focus.push(ml(last)+' 제품별 불량률 — <b>'+worst.p+' '+worst.rate+'%</b>로 유독 높습니다 (나머지 제품 평균 '+othersRate+'%, 약 '+worstMult+'배). 불량 '+worst.def+'건.');
-    actions.push('<b>'+worst.p+'</b> 포장 라인 집중 점검 — 불량률이 다른 제품의 '+worstMult+'배. 실링·마킹·충진부터 확인');
+  // [1순위] 전처리 / 부위
+  if(preprocessProblem){
+    focus.push('<b>전처리 누적수율이 '+ppyP+'% → '+ppyL+'% ('+sp(dPP,2)+') 떨어졌습니다.</b> 비가식부(버려지는 원육)가 '+inedP+'% → '+inedL+'%로 늘었다는 뜻 — 원육 손실 = 돈입니다.');
+    if(worstPart) focus.push('부위별로 보면 <b>'+worstPart+'</b>가 가장 심합니다 — 비가식부 '+(worstPrev==null?'':worstPrev+'% → ')+worstIned+'%'+(worstWorsening?' (자체 손실이 늘고 있음)':'')+', 당월 원육의 '+worstShare+'% 차지'+(worstShare>=60?' (비중까지 커져 전체를 더 끌어내림)':'')+'.');
+    actions.push('<b>'+(worstPart||'전처리')+' 원물 품질·손질 점검</b> — 입고 원물이 나쁜지, 손질에서 과하게 깎이는지 현장 확인 (어느 쪽인지는 데이터로 단정 불가)');
+  } else if(dPP <= -0.5){
+    focus.push('전처리 누적수율이 '+ppyP+'% → '+ppyL+'%로 소폭 하락('+sp(dPP,2)+'). 비가식부 '+inedL+'%, 추이 주시 필요.');
+  } else if(dPP >= 1){
+    focus.push('전처리 누적수율이 '+sp(dPP,2)+' 개선됐습니다 (비가식부 '+inedL+'%).');
   }
-  if(dDr>=0.2){
-    focus.push('최근 '+ml(prev)+'('+prev.defect+'%) → '+ml(last)+'('+last.defect+'%) 전체 불량률이 '+sp(dDr,2)+' 다시 올랐습니다.');
-    actions.push(ml(last)+' 불량률 반등 — '+(inProg?'월말까지 ':'')+'실링 상태·작업자 교대 점검');
-  } else if(dDo<=-0.2){
-    focus.push('전체 불량률은 '+ml(first)+' '+first.defect+'% → '+ml(last)+' '+last.defect+'%로 '+sp(dDo,2)+' 안정됐습니다.');
+  // [2순위] 최종 원육수율 (전처리 문제로 이미 설명되면 생략)
+  if(dYr <= -0.5 && !preprocessProblem){
+    focus.push(ml(last)+' 원육수율이 전월比 '+sp(dYr,1)+' 하락 — 공정별 손실 부위 확인 필요.');
+  } else if(dYo >= 0.5 && !preprocessProblem){
+    focus.push('원육수율은 '+first.yield+'% → '+last.yield+'%로 '+sp(dYo,1)+' 개선 흐름.');
   }
-  if(dYr<=-0.5){
-    focus.push(ml(last)+' 수율이 전월比 '+sp(dYr,1)+' 떨어졌습니다 — 세부 원인은 데이터로 단정 못 합니다. 비가식부·생산성 화면에서 부위별·공정별 손실 확인이 필요합니다.');
-    actions.push('수율 하락 추적: 비가식부·생산성 탭에서 전처리/자숙/파쇄 손실 부위 확인');
-  } else if(dYo>=0.5){
-    focus.push('수율은 '+ml(first)+' '+first.yield+'% → '+ml(last)+' '+last.yield+'%로 '+sp(dYo,1)+' 개선됐습니다'+(dYr<=-0.3?' (다만 '+ml(prev)+'→'+ml(last)+'은 다소 주춤)':'')+'.');
+  // [3순위] 불량 — 작은 이슈로 명시
+  if(badProd || dDr>=0.2){
+    let s = '불량률('+last.defect+'%)은 전처리에 비하면 작은 이슈입니다.';
+    if(badProd) s += ' 그래도 <b>'+prodWorst.p+'</b>가 '+prodWorst.rate+'%로 유독 높으니(다른 제품 '+othersRate+'%) 챙길 값어치는 있습니다.';
+    else if(dDr>=0.2) s += ' '+ml(prev)+'→'+ml(last)+' '+sp(dDr,2)+' 반등했으니 가볍게 점검.';
+    s += ' (기계·파우치 안착 등 작업 변수일 수 있음)';
+    focus.push(s);
+    if(badProd) actions.push(prodWorst.p+' 라인 불량 점검(실링·파우치 안착) — 단, 전처리 다음 우선순위');
   }
-  if(!actions.length) actions.push('현 추세 유지 — 다음 달 수율·불량률이 이 수준을 지키는지 확인');
+  if(!focus.length) focus.push('전처리·수율·불량 모두 큰 이상 신호는 없습니다.');
+  if(!actions.length) actions.push('현 추세 유지 — 다음 달 전처리 수율·불량률이 이 수준을 지키는지 확인');
 
-  // ── 결론 한 줄 ──
+  // 결론 (심각도 순)
   let concl;
-  if(badProd) concl = '불량률이 <b>'+worst.p+'</b>에서 유독 높습니다('+worst.rate+'%). 이 라인부터 잡아야 전체가 내려갑니다.';
-  else if(dDr>=0.2) concl = '불량률이 다시 고개를 들고 있어 포장 실링 공정 점검이 우선입니다.';
-  else if(dYo>=0.5 && dDo<=-0.2) concl = '수율↑·불량률↓ 둘 다 개선 흐름 — 이번 달 진행분이 이대로 유지되는지만 보면 됩니다.';
-  else if(dYo<=-0.5) concl = '수율이 떨어지는 추세 — 공정별 손실 부위부터 확인해야 합니다.';
-  else concl = '큰 이상 신호는 없습니다. 현 수준 유지 여부를 다음 달에 확인하면 됩니다.';
+  if(preprocessProblem && worstPart) concl = '지금 가장 큰 문제는 <b>'+worstPart+' 전처리</b>입니다 (비가식부 '+inedL+'%대). 불량률보다 여기 원육 손실부터 잡아야 합니다.';
+  else if(preprocessProblem) concl = '지금 가장 큰 문제는 <b>전처리 수율 하락</b>입니다. 원육 손실부터 잡아야 합니다.';
+  else if(dPP <= -0.5) concl = '전처리 수율이 흔들리고 있어 부위별 손실을 먼저 봐야 합니다.';
+  else if(badProd) concl = '큰 공정 이슈는 없고, '+prodWorst.p+' 불량률만 챙기면 됩니다.';
+  else if(dYo>=0.5 && dPP>=0) concl = '전반적으로 안정적입니다 — 현 수준 유지 여부만 확인하면 됩니다.';
+  else concl = '큰 이상 신호는 없습니다. 다음 달 추이를 확인하면 됩니다.';
 
-  // ── HTML ──
-  const sec = (label,color) => '<p style="font-size:12px;font-weight:700;color:'+color+';margin:10px 0 3px;letter-spacing:.02em">'+label+'</p>';
-  const line = s => '<p style="font-size:13px;color:#0f172a;margin:2px 0;line-height:1.65">· '+s+'</p>';
+  // HTML
+  const sec = (label,color) => '<p style="font-size:12px;font-weight:700;color:'+color+';margin:11px 0 3px;letter-spacing:.02em">'+label+'</p>';
+  const line = s => '<p style="font-size:13px;color:#0f172a;margin:3px 0;line-height:1.65">· '+s+'</p>';
   let h = '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:15px 17px;margin-top:12px">';
   h += '<p style="font-size:13.5px;font-weight:700;color:#0f172a;margin:0">🧑‍🏭 생산관리자 코멘트</p>';
   h += sec('현황','#475569');
-  h += line('수율: '+ySeq+'  <span style="color:#64748b">('+yTrend+')</span>');
-  h += line('불량률: '+dSeq+'  <span style="color:#64748b">('+dTrend+')</span>');
-  h += sec('짚어볼 점','#b45309');
-  if(focus.length) focus.forEach(s => h += line(s)); else h += line('특별히 두드러진 신호는 없습니다.');
+  h += line('원육수율: '+ySeq);
+  h += line('전처리수율: '+ppSeq+'  <span style="color:#64748b">(당월 비가식부 '+inedL+'%)</span>');
+  h += line('불량률: '+dSeq);
+  h += sec('짚어볼 점 (우선순위 순)','#b45309');
+  focus.forEach(s => h += line(s));
   h += sec('이렇게 하시죠','#1d4ed8');
   actions.forEach((s,i) => h += line('<b>'+(i+1)+'.</b> '+s));
   h += '<div style="margin-top:11px;padding:9px 12px;background:#0f172a;border-radius:7px"><p style="font-size:13px;color:#fff;margin:0;line-height:1.55"><b>결론</b> &nbsp;'+concl+'</p></div>';
-  if(inProg) h += '<p style="font-size:11px;color:#94a3b8;margin:9px 0 0">※ '+ml(last)+'은 진행중이라 월말까지 수치가 달라질 수 있습니다. 원인은 데이터로 짚이는 것만 적었고, 단정 못 하는 건 확인 화면을 안내했습니다.</p>';
-  else h += '<p style="font-size:11px;color:#94a3b8;margin:9px 0 0">※ 원인은 데이터로 짚이는 것만 적었고, 단정 못 하는 건 확인 화면을 안내했습니다.</p>';
+  if(inProg) h += '<p style="font-size:11px;color:#94a3b8;margin:9px 0 0">※ '+ml(last)+'은 진행중이라 월말까지 수치가 달라질 수 있습니다. 원인은 데이터로 짚이는 것만 적었고, 단정 못 하는 건 현장·확인 화면을 안내했습니다.</p>';
+  else h += '<p style="font-size:11px;color:#94a3b8;margin:9px 0 0">※ 원인은 데이터로 짚이는 것만 적었고, 단정 못 하는 건 현장·확인 화면을 안내했습니다.</p>';
   h += '</div>';
   return h;
 }
