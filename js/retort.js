@@ -414,3 +414,96 @@ async function rtDownloadCcp(){
     alert('점검표 생성 실패: '+e.message);
   }
 }
+
+/* ── CCP 점검표 PDF — 실물 양식 PDF(원본 변환)에 데이터 오버레이 (수정불가, 해썹용) ── */
+const RT_PDF_COORDS = {
+  '2b': { form:'assets/ccp2b_form.pdf',
+    cx:{A:39.6,C:107.4,G:196.7,K:282.5,O:367.5,Q:424.2,S:467.0},
+    rowY:[379.0,354.7,330.5,306.2,282.0,257.7,233.5,209.2,185.0,160.7,136.5],
+    e6:{cx:243.0,y:686.3} },
+  '3b': { form:'assets/ccp3b_form.pdf',
+    cx:{A:27.7,B:55.5,D:120.3,G:209.2,K:292.4,O:374.7,Q:429.6,S:471.2},
+    rowY:[365.3,341.8,318.3,294.8,271.3,247.8,224.3,200.8,177.3,153.8,130.3],
+    e6:{cx:246.7,y:689.0} }
+};
+let _rtPdfLibReady=null, _rtCcpFontBytes=null;
+function _rtLoadPdfLib(){
+  if(_rtPdfLibReady) return _rtPdfLibReady;
+  _rtPdfLibReady=new Promise((res,rej)=>{
+    const add=(url,ready,cb)=>{ if(ready()){cb();return;} const s=document.createElement('script'); s.src=url; s.onload=cb; s.onerror=()=>rej(new Error('스크립트 로드 실패: '+url)); document.head.appendChild(s); };
+    add('https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js', ()=>window.PDFLib, ()=>{
+      add('https://cdn.jsdelivr.net/npm/@pdf-lib/fontkit@1.1.1/dist/fontkit.umd.min.js', ()=>window.fontkit, ()=>res());
+    });
+  });
+  return _rtPdfLibReady;
+}
+async function _rtCcpFont(){ if(_rtCcpFontBytes) return _rtCcpFontBytes; _rtCcpFontBytes=await (await fetch('assets/NotoKR-ccp.ttf')).arrayBuffer(); return _rtCcpFontBytes; }
+
+async function _rtFillPdfForm(key, outName, rows, is3B, dateTxt){
+  const cfg=RT_PDF_COORDS[key];
+  const { PDFDocument, rgb }=window.PDFLib;
+  const pdf=await PDFDocument.load(await (await fetch(cfg.form)).arrayBuffer());
+  pdf.registerFontkit(window.fontkit);
+  const font=await pdf.embedFont(await _rtCcpFont(), {subset:true});
+  const pg=pdf.getPages()[0];
+  const FS=9, cx=cfg.cx;
+  const W=(t,fs)=>font.widthOfTextAtSize(t,fs);
+  const ctext=(x,y,t,fs=FS)=>{ if(t==='') return; pg.drawText(String(t),{x:x-W(String(t),fs)/2,y,size:fs,font,color:rgb(0,0,0)}); };
+  const circle=(x,y)=>pg.drawEllipse({x,y:y+4,xScale:7,yScale:8,borderColor:rgb(0,0,0),borderWidth:1.1});
+  // 점검일자
+  pg.drawText(dateTxt,{x:cfg.e6.cx-W(dateTxt,10)/2,y:cfg.e6.y,size:10,font});
+  rows.forEach((r,i)=>{
+    if(i>10) return;
+    const y=cfg.rowY[i];
+    const min=_rtMin(r.t2,r.t3);
+    const judge=_rtJudge(r.ccp,min,r.temp);
+    ctext(cx.A,y,r.machine||'');
+    if(is3B){
+      ctext(cx.D,y,r.product||'',7.5);
+      const cond=_rt3bCond(min,r.temp);
+      const sb='A  /  B', x0=cx.B-W(sb,FS)/2;
+      pg.drawText(sb,{x:x0,y,size:FS,font});
+      const ax=x0+W('A',FS)/2, bbx=x0+W('A  /  ',FS)+W('B',FS)/2;
+      circle(cond==='B'?bbx:ax, y);
+    } else {
+      ctext(cx.C,y,r.product||'',8);
+    }
+    if(r.t2) ctext(cx.G,y,r.t2);
+    if(r.t3) ctext(cx.K,y,r.t3);
+    if(min!=null) ctext(cx.O,y,min+'분');
+    if(r.temp) ctext(cx.Q,y,r.temp+'℃');
+    // 판정 (적 │ 부 + 해당 동그라미)
+    const s='적   │   부', sx0=cx.S-W(s,FS)/2;
+    pg.drawText(s,{x:sx0,y,size:FS,font});
+    if(judge){
+      const jeok=sx0+W('적',FS)/2, bu=sx0+W('적   │   ',FS)+W('부',FS)/2;
+      circle(judge==='부적합'?bu:jeok, y);
+    }
+  });
+  const blob=new Blob([await pdf.save()],{type:'application/pdf'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=outName;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(a.href);
+}
+
+async function rtDownloadCcpPdf(){
+  try{
+    const dEl=document.getElementById('rt_ccp_date');
+    const dateStr=(dEl&&dEl.value)||tod();
+    toast('PDF 점검표 생성중...','i');
+    await _rtLoadPdfLib();
+    const recs=(await fbGetByDate('retort', dateStr)).filter(r=>r.t2&&r.t3)
+      .sort((a,b)=>String(a.t2||'').localeCompare(String(b.t2||'')));
+    const r2b=recs.filter(r=>!_rtIs3B(r.ccp));
+    const r3b=recs.filter(r=>_rtIs3B(r.ccp));
+    if(!r2b.length && !r3b.length){ toast('해당 날짜에 완료된 회차가 없습니다','d'); return; }
+    if(r2b.length>11||r3b.length>11) alert('회차가 11건을 넘어 양식 초과분은 점검표에서 제외됩니다.');
+    const [yy,mm,dd]=dateStr.split('-');
+    const dateTxt=yy+' 년    '+parseInt(mm)+' 월    '+parseInt(dd)+' 일';
+    if(r2b.length) await _rtFillPdfForm('2b','CCP-2B_점검표_'+dateStr+'.pdf', r2b, false, dateTxt);
+    if(r3b.length) await _rtFillPdfForm('3b','CCP-3B_점검표_'+dateStr+'.pdf', r3b, true, dateTxt);
+    toast('CCP 점검표 PDF 다운로드 ✓','s');
+  }catch(e){
+    console.error('[CCP PDF]',e);
+    alert('PDF 점검표 생성 실패: '+e.message);
+  }
+}
