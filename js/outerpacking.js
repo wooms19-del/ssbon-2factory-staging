@@ -127,7 +127,7 @@ function renderOpPending(list) {
             <div style="font-size:15px;font-weight:500" id="op_sbox_${i}">0</div>
           </div>
           <div style="background:var(--bg);border-radius:6px;padding:8px 10px;border:0.5px solid var(--g2)">
-            <div style="font-size:11px;color:var(--g5);margin-bottom:2px">잔여 EA</div>
+            <div style="font-size:11px;color:var(--g5);margin-bottom:2px">잔여(유통 샘플) EA</div>
             <div style="font-size:15px;font-weight:500" id="op_srem_${i}">${item.ea.toLocaleString()}</div>
           </div>
         </div>
@@ -190,7 +190,7 @@ function renderOpPending(list) {
           <span style="font-size:12px;color:#1a7f5a">EA (자동계산)</span>
         </div>
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
-          <span style="font-size:12px;color:var(--g5);min-width:72px">잔여 EA</span>
+          <span style="font-size:12px;color:var(--g5);min-width:72px">잔여(유통 샘플) EA</span>
           <input class="fc" type="number" id="op_rem_${i}" value="${item.ea}"
             style="width:100px;text-align:right;padding:5px 8px"
             oninput="opSyncRem(${i})">
