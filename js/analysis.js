@@ -452,14 +452,16 @@ async function renderMonthlyReport(pk, from, effectiveTo, ppMonth, thMonth, opDa
   if(typeof _moRenderRmChart === 'function'){
     _moRenderRmChart(rmByDate, _moYm || tod().slice(0,7), rmByDatePart);
   }
-  if(typeof _moLoadManualRm === 'function') _moLoadManualRm();
+  if(typeof _moLoadManualRm === 'function') await _moLoadManualRm();
 
   // ── 수율 KPI 계산 ─────────────────────────────────────────
   {
     let moTotRm=0, moTotPkKg=0, moDays=0, moGoodDays=0;
     const dailyYields=[];
     dayEntries.forEach(([date, allR])=>{
-      const dayRm=r2(rmByDate[date]||0);
+      // ★ 방혈(thawing) 0인 날 수동 원육값 폴백 — 수율 계산에 반영 (코스트코 등 방혈 미기록일)
+      const _mrm=(window._moManualRm||{})[date];
+      const dayRm=r2(rmByDate[date]|| (_mrm&&_mrm.kg) ||0);
       if(!dayRm) return;
       const effPkM={};
       allR.forEach(row=>{
@@ -4054,8 +4056,8 @@ function _moRenderManualUI(ym, allParts){
 }
 function _moLoadManualRm(){
   try {
-    if(typeof db === 'undefined') { window._moManualRm = window._moManualRm || {}; return; }
-    db.collection('_config').doc('manualRm').get().then(function(snap){
+    if(typeof db === 'undefined') { window._moManualRm = window._moManualRm || {}; return Promise.resolve(); }
+    return db.collection('_config').doc('manualRm').get().then(function(snap){
       let obj = {};
       if(snap && snap.exists){
         const v = snap.data() || {};
@@ -4065,7 +4067,7 @@ function _moLoadManualRm(){
       window._moManualRm = obj;
       _moRerenderRm();
     }).catch(function(e){ console.warn('[manualRm] load', e); window._moManualRm = window._moManualRm || {}; });
-  } catch(e){ console.warn('[manualRm] load', e); window._moManualRm = window._moManualRm || {}; }
+  } catch(e){ console.warn('[manualRm] load', e); window._moManualRm = window._moManualRm || {}; return Promise.resolve(); }
 }
 function _moPersistManualRm(){
   try {
