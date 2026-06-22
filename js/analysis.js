@@ -465,9 +465,8 @@ async function renderMonthlyReport(pk, from, effectiveTo, ppMonth, thMonth, opDa
       if(!dayRm) return;
       const effPkM={};
       allR.forEach(row=>{
-        const oe=opMap[date+'|'+row.product]||0;
-        const p=L.products.find(x=>x.name===row.product);
-        effPkM[row.product]=oe>0&&p?r2(oe*p.kgea):row.pkKg;
+        // ★ 원육수율=생산(내포장) 기준 — 외포장(출고) 우선 폴백 제거 (샘플/출고지연 왜곡 방지)
+        effPkM[row.product]=row.pkKg;
       });
       const totalAllPk=r2(allR.reduce((s,r)=>s+(effPkM[r.product]||0),0));
       const dayPkKg=totalAllPk;
@@ -493,9 +492,7 @@ async function renderMonthlyReport(pk, from, effectiveTo, ppMonth, thMonth, opDa
       const allR = dayEntry ? dayEntry[1] : [];
       const effPkM = {};
       allR.forEach(row=>{
-        const oe = opMap[date+'|'+row.product]||0;
-        const p = L.products.find(x=>x.name===row.product);
-        effPkM[row.product] = oe>0&&p ? r2(oe*p.kgea) : row.pkKg;
+        effPkM[row.product] = row.pkKg;  // ★ 내포장(생산) 기준
       });
       const pkKg = r2(allR.reduce((s,r)=>s+(effPkM[r.product]||0),0));
       return { idx:i+1, date, rm, ppKg, ckKg, shKg, pkKg };
@@ -700,14 +697,11 @@ function _moRenderRows() {
   const _mainDates = {};
   mpRows.forEach(r => { if(r._isMainRow !== false && r.date) _mainDates[r.date] = true; });
   const disp = mpRows.filter(r => r._isMainRow !== false || !_mainDates[r.date]);
-  const meatOf = r => r2((r.pkEa||0)*(r.kgea||0));   // 완제품 중량(고기 환산) = 월단위 '완제품 고기 중량'
+  const meatOf = r => r2(((r.pkEaInner!=null?r.pkEaInner:r.pkEa)||0)*(r.kgea||0));   // ★ 원육수율=생산(내포장) 기준 — 외포장(출고/샘플누락) 폴백 제거, pkEaInner 사용
   const eaLbl = r => {
-    const ea = r.pkEa||0;
+    const ea = (r.pkEaInner!=null ? r.pkEaInner : (r.pkEa||0));  // ★ 생산(내포장) EA 기준
     if(!ea) return '—';
-    const src = r.pkEaSrc==='외'
-      ? `<span style="font-size:10px;color:#6b7280;margin-left:2px">(외)</span>`
-      : `<span style="font-size:10px;color:#9ca3af;margin-left:2px">(내)</span>`;
-    return ea.toLocaleString()+src;
+    return ea.toLocaleString();
   };
   const yldStyle = y => y==null
     ? ['color:#aaa;','']
@@ -735,7 +729,7 @@ function _moRenderRows() {
       const d = r.date||'';
       if(!byType[key][d]) byType[key][d] = {rm:0, ea:0, meat:0, prods:new Set(), workers:''};
       const c = byType[key][d];
-      c.rm += r.rmKg||0; c.ea += r.pkEa||0; c.meat += meatOf(r);
+      c.rm += r.rmKg||0; c.ea += (r.pkEaInner!=null?r.pkEaInner:(r.pkEa||0)); c.meat += meatOf(r);
       if(r.product) c.prods.add(r.product);
     });
     order.sort((a,b)=>a.localeCompare(b));
@@ -800,7 +794,7 @@ function _moRenderRows() {
         const yld = rm>0 ? meat/rm*100 : null;
         const [yt, yb] = yldStyle(yld);
         const bg = dayBg[ri%2];
-        sRm+=rm; sEa+=r.pkEa||0; sMeat+=meat;
+        sRm+=rm; sEa+=(r.pkEaInner!=null?r.pkEaInner:(r.pkEa||0)); sMeat+=meat;
         const dow = r.date ? ['일','월','화','수','목','금','토'][new Date(r.date).getDay()] : '';
         html.push(`<tr>
           <td style="${vm}${PC}${bg}text-align:center;color:#94a3b8;border-right:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0">${ri+1}</td>
@@ -876,7 +870,7 @@ function _moRenderRows() {
         const t=row.type||'';
         const grp=typeGroups[t];
         const isTypeFirst=(ri===grp.startIdx);
-        totEa += row.pkEa||0;
+        totEa += (row.pkEaInner!=null?row.pkEaInner:(row.pkEa||0));
 
         let cells='';
         if(isFirst){
@@ -922,7 +916,7 @@ function _moRenderRows() {
           meat:    isTypeFirst ? (row.noMeat?'':t) : '',
           workers: isFirst ? workers : '',
           rm:      isTypeFirst ? (grp.rm>0?r2(grp.rm).toFixed(1):'') : '',
-          ea:      row.pkEa||0,
+          ea:      (row.pkEaInner!=null?row.pkEaInner:(row.pkEa||0)),
           pkKg:    meatOf(row)>0 ? meatOf(row).toFixed(1) : '',
           yld:     isFirst ? (dayYld!=null?dayYld.toFixed(1)+'%':'—') : '',
           capa:    isFirst ? capa : '',
@@ -1384,7 +1378,7 @@ async function _moLoadAndRenderPrevCmp(curYld, curRm, curPkKg, curDays) {
       const dayRm=r2(getThKgByPP_(ppDay,_prevThClean,date));
       if(!dayRm) return;
       const effM={};
-      allR.forEach(row=>{const oe=prevOpMap[date+'|'+row.product]||0;const p=L.products.find(x=>x.name===row.product);effM[row.product]=oe>0&&p?r2(oe*p.kgea):row.pkKg;});
+      allR.forEach(row=>{effM[row.product]=row.pkKg;});  // ★ 내포장(생산) 기준
       pRm+=dayRm; pPk+=r2(allR.reduce((s,r)=>s+(effM[r.product]||0),0)); pDays++;
     });
     const pYld=pRm>0?pPk/pRm*100:0;
@@ -1423,9 +1417,7 @@ async function _moLoadAndRenderPrevCmp(curYld, curRm, curPkKg, curDays) {
       if(!dayRm) return;
       const effM = {};
       allR.forEach(row=>{
-        const oe = prevOpMap[date+'|'+row.product]||0;
-        const p = L.products.find(x=>x.name===row.product);
-        effM[row.product] = oe>0&&p ? r2(oe*p.kgea) : row.pkKg;
+        effM[row.product] = row.pkKg;  // ★ 내포장(생산) 기준
       });
       const dayPk = r2(allR.reduce((s,r)=>s+(effM[r.product]||0),0));
       _pYldByIdx.push({ date, yld: dayRm>0 ? dayPk/dayRm*100 : 0 });
@@ -1450,9 +1442,7 @@ async function _moLoadAndRenderPrevCmp(curYld, curRm, curPkKg, curDays) {
       const allR = prevGrouped[date] || [];
       const effM = {};
       allR.forEach(row=>{
-        const oe = prevOpMap[date+'|'+row.product]||0;
-        const p = L.products.find(x=>x.name===row.product);
-        effM[row.product] = oe>0&&p ? r2(oe*p.kgea) : row.pkKg;
+        effM[row.product] = row.pkKg;  // ★ 내포장(생산) 기준
       });
       const pkKg = r2(allR.reduce((s,r)=>s+(effM[r.product]||0),0));
       return { idx:i+1, date, rm, ppKg, ckKg, shKg, pkKg };
