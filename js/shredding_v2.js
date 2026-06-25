@@ -740,7 +740,7 @@ function sh2RenderTodayList(){
           </div>
         </div>
         <div style="font-size:12px;color:var(--g6)">
-          투입 ${(parseFloat(r.kgIn)||0).toFixed(2)}kg → 산출 ${(parseFloat(r.kg)||0).toFixed(2)}kg${(parseFloat(r.kgWashed)||0) > 0 ? ` · 세척 후 ${(parseFloat(r.kgWashed)||0).toFixed(2)}kg` : ''} · 비가식부 ${(parseFloat(r.waste)||0).toFixed(2)}kg · 인원 ${r.workers||0}명
+          투입 ${(parseFloat(r.kgIn)||0).toFixed(2)}kg → 산출(세척전) ${(parseFloat(r.kg)||0).toFixed(2)}kg${(parseFloat(r.kgWashed)||0) > 0 ? ` · 세척후 ${(parseFloat(r.kgWashed)||0).toFixed(2)}kg` : ''} · 비가식부 ${(parseFloat(r.waste)||0).toFixed(2)}kg · 인원 ${r.workers||0}명
         </div>
       </div>
     `).join('')}
