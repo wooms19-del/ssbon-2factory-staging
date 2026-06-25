@@ -727,7 +727,13 @@ function sh2RenderTodayList(){
     <div style="background:#f8fafc;border-radius:6px;padding:8px 12px;margin-bottom:8px;font-size:12px">
       총 ${list.length}건 · 투입 ${totalKgIn.toFixed(2)}kg → 산출 ${totalKg.toFixed(2)}kg · 비가식부 ${totalWaste.toFixed(2)}kg${yieldText}${washedText}
     </div>
-    ${list.map(r => `
+    ${list.map(r => {
+      const kgInN = parseFloat(r.kgIn)||0;
+      const kgN = parseFloat(r.kg)||0;
+      const kgwN = parseFloat(r.kgWashed)||0;
+      const y1 = kgInN > 0 ? (kgN / kgInN * 100).toFixed(1) : '-';
+      const y2 = kgInN > 0 ? (kgwN / kgInN * 100).toFixed(1) : '-';
+      return `
       <div id="sh2RecCard_${r.id}" style="border:1px solid var(--g2);border-radius:8px;padding:10px;margin-bottom:8px">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
           <div>
@@ -740,10 +746,11 @@ function sh2RenderTodayList(){
           </div>
         </div>
         <div style="font-size:12px;color:var(--g6)">
-          투입 ${(parseFloat(r.kgIn)||0).toFixed(2)}kg → 산출(세척전) ${(parseFloat(r.kg)||0).toFixed(2)}kg${(parseFloat(r.kgWashed)||0) > 0 ? ` · 세척후 ${(parseFloat(r.kgWashed)||0).toFixed(2)}kg` : ''} · 비가식부 ${(parseFloat(r.waste)||0).toFixed(2)}kg · 인원 ${r.workers||0}명
+          투입 ${kgInN.toFixed(2)}kg → 산출(세척전) ${kgN.toFixed(2)}kg (수율 ${y1}%)${kgwN > 0 ? ` · 세척후 ${kgwN.toFixed(2)}kg (수율 ${y2}%)` : ''} · 비가식부 ${(parseFloat(r.waste)||0).toFixed(2)}kg · 인원 ${r.workers||0}명
         </div>
       </div>
-    `).join('')}
+    `;
+    }).join('')}
   `;
 }
 
