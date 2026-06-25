@@ -30,7 +30,7 @@ async function sh2Render(){
         </div>
       </div>
       <div style="overflow-x:auto">
-        <table id="sh2_table" style="width:100%;border-collapse:collapse;font-size:14px;min-width:980px">
+        <table id="sh2_table" style="width:100%;border-collapse:collapse;font-size:14px;min-width:1110px">
           <thead>
             <tr style="background:#dc2626;color:#fff">
               <th style="padding:10px 4px;border:1px solid #b91c1c;width:40px;font-size:13px">#</th>
@@ -38,7 +38,8 @@ async function sh2Render(){
               <th style="padding:10px 4px;border:1px solid #b91c1c;width:120px;font-size:13px">산출 와건</th>
               <th style="padding:10px 4px;border:1px solid #b91c1c;width:90px;font-size:13px">시작</th>
               <th style="padding:10px 4px;border:1px solid #b91c1c;width:90px;font-size:13px">종료</th>
-              <th style="padding:10px 4px;border:1px solid #b91c1c;width:130px;font-size:13px">산출 KG</th>
+              <th style="padding:10px 4px;border:1px solid #b91c1c;width:120px;font-size:13px">산출 KG(세척전)</th>
+              <th style="padding:10px 4px;border:1px solid #b91c1c;width:120px;font-size:13px">세척 후 KG</th>
               <th style="padding:10px 4px;border:1px solid #b91c1c;width:80px;font-size:13px">인원</th>
               <th style="padding:10px 4px;border:1px solid #b91c1c;width:80px;font-size:13px">작업시간</th>
               <th style="padding:10px 4px;border:1px solid #b91c1c;width:44px;font-size:13px"></th>
@@ -274,6 +275,11 @@ function sh2AddRow(data){
              onchange="sh2OnCellChange(${idx})">
     </td>
     <td style="border:1px solid #ddd;padding:0">
+      <input class="sh2-kg-washed" type="number" step="0.01" placeholder="0.00" value="${data.kgWashed||''}"
+             style="width:100%;height:42px;border:none;padding:0 8px;background:transparent;font-size:14px;text-align:right"
+             onchange="sh2OnCellChange(${idx})">
+    </td>
+    <td style="border:1px solid #ddd;padding:0">
       <input class="sh2-workers" type="number" placeholder="0" value="${data.workers||''}"
              style="width:100%;height:42px;border:none;padding:0 8px;background:transparent;font-size:14px;text-align:center"
              onchange="sh2OnCellChange(${idx})">
@@ -346,6 +352,7 @@ function sh2GetRowData(idx){
     type: tr.querySelector('.sh2-type').value || '',
     wagonOut: tr.querySelector('.sh2-wagon-out').value.trim(),
     kg: parseFloat(tr.querySelector('.sh2-kg').value) || 0,
+    kgWashed: parseFloat(tr.querySelector('.sh2-kg-washed').value) || 0,
     waste: 0,  // ★ 비가식부는 부위별 카드에서 분배 (sh2SaveAll에서 채움)
     workers: parseInt(tr.querySelector('.sh2-workers').value) || 0,
     start: tr.querySelector('.sh2-start').value.trim(),
@@ -471,6 +478,7 @@ function sh2BuildRecord(d, touches){
     cartOut: '',
     cartOutDist: {},
     kg: parseFloat(d.kg.toFixed(2)),
+    kgWashed: parseFloat((d.kgWashed||0).toFixed(2)),
     waste: parseFloat(d.waste.toFixed(2)),
     workers: d.workers,
     start: d.start,
@@ -700,18 +708,24 @@ function sh2RenderTodayList(){
     .filter(r => r.date === today)
     .sort((a,b) => (a.start||'').localeCompare(b.start||''));
   if(!list.length) return '<div class="emp">데이터 없음</div>';
-  let totalKg = 0, totalKgIn = 0, totalWaste = 0;
+  let totalKg = 0, totalKgIn = 0, totalWaste = 0, totalKgWashed = 0;
   list.forEach(r => {
     totalKg += parseFloat(r.kg)||0;
     totalKgIn += parseFloat(r.kgIn)||0;
     totalWaste += parseFloat(r.waste)||0;
+    totalKgWashed += parseFloat(r.kgWashed)||0;
   });
   const yieldText = totalKgIn > 0
     ? ` · 공정수율 ${(totalKg / totalKgIn * 100).toFixed(2)}%`
     : '';
+  // ★ 세척 후 무게가 입력된 경우에만 나란히 추가 표시 (기존 산출/수율은 그대로)
+  const washedText = totalKgWashed > 0
+    ? ` · 세척 후 산출 ${totalKgWashed.toFixed(2)}kg` +
+      (totalKgIn > 0 ? ` · 세척 후 수율 ${(totalKgWashed / totalKgIn * 100).toFixed(2)}%` : '')
+    : '';
   return `
     <div style="background:#f8fafc;border-radius:6px;padding:8px 12px;margin-bottom:8px;font-size:12px">
-      총 ${list.length}건 · 투입 ${totalKgIn.toFixed(2)}kg → 산출 ${totalKg.toFixed(2)}kg · 비가식부 ${totalWaste.toFixed(2)}kg${yieldText}
+      총 ${list.length}건 · 투입 ${totalKgIn.toFixed(2)}kg → 산출 ${totalKg.toFixed(2)}kg · 비가식부 ${totalWaste.toFixed(2)}kg${yieldText}${washedText}
     </div>
     ${list.map(r => `
       <div id="sh2RecCard_${r.id}" style="border:1px solid var(--g2);border-radius:8px;padding:10px;margin-bottom:8px">
@@ -726,7 +740,7 @@ function sh2RenderTodayList(){
           </div>
         </div>
         <div style="font-size:12px;color:var(--g6)">
-          투입 ${(parseFloat(r.kgIn)||0).toFixed(2)}kg → 산출 ${(parseFloat(r.kg)||0).toFixed(2)}kg · 비가식부 ${(parseFloat(r.waste)||0).toFixed(2)}kg · 인원 ${r.workers||0}명
+          투입 ${(parseFloat(r.kgIn)||0).toFixed(2)}kg → 산출 ${(parseFloat(r.kg)||0).toFixed(2)}kg${(parseFloat(r.kgWashed)||0) > 0 ? ` · 세척 후 ${(parseFloat(r.kgWashed)||0).toFixed(2)}kg` : ''} · 비가식부 ${(parseFloat(r.waste)||0).toFixed(2)}kg · 인원 ${r.workers||0}명
         </div>
       </div>
     `).join('')}
@@ -768,8 +782,12 @@ async function sh2EditRecord(id){
       </div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-bottom:10px">
         <label style="display:flex;flex-direction:column;gap:3px">
-          <span style="font-size:11px;color:#475569;font-weight:600">산출 KG</span>
+          <span style="font-size:11px;color:#475569;font-weight:600">산출 KG(세척전)</span>
           <input id="sh2Ed_kg_${id}" type="number" step="0.01" value="${rec.kg||0}" style="height:34px;padding:0 8px;border:1px solid #94a3b8;border-radius:4px;background:#fff;font-size:13px;text-align:right">
+        </label>
+        <label style="display:flex;flex-direction:column;gap:3px">
+          <span style="font-size:11px;color:#475569;font-weight:600">세척 후 KG</span>
+          <input id="sh2Ed_kgWashed_${id}" type="number" step="0.01" value="${rec.kgWashed||0}" style="height:34px;padding:0 8px;border:1px solid #94a3b8;border-radius:4px;background:#fff;font-size:13px;text-align:right">
         </label>
         <label style="display:flex;flex-direction:column;gap:3px">
           <span style="font-size:11px;color:#475569;font-weight:600">비가식부 KG</span>
@@ -801,6 +819,7 @@ async function sh2EditSave(id){
     start:    document.getElementById('sh2Ed_start_'+id).value.trim(),
     end:      document.getElementById('sh2Ed_end_'+id).value.trim(),
     kg:       parseFloat(document.getElementById('sh2Ed_kg_'+id).value) || 0,
+    kgWashed: parseFloat(document.getElementById('sh2Ed_kgWashed_'+id).value) || 0,
     waste:    parseFloat(document.getElementById('sh2Ed_waste_'+id).value) || 0,
     workers:  parseInt(document.getElementById('sh2Ed_workers_'+id).value) || 0,
   };
@@ -832,6 +851,7 @@ async function sh2EditSave(id){
   rec.wagonOut = d.wagonOut;
   rec.wagonOutDist = { [d.wagonOut]: parseFloat(d.kg.toFixed(2)) };
   rec.kg = parseFloat(d.kg.toFixed(2));
+  rec.kgWashed = parseFloat((d.kgWashed||0).toFixed(2));
   rec.waste = parseFloat(d.waste.toFixed(2));
   rec.workers = d.workers;
   rec.start = d.start;
@@ -846,6 +866,7 @@ async function sh2EditSave(id){
       wagonIn: rec.wagonIn, wagonInDist: rec.wagonInDist, kgIn: rec.kgIn,
       wagonOut: rec.wagonOut, wagonOutDist: rec.wagonOutDist,
       kg: rec.kg, waste: rec.waste, workers: rec.workers,
+      kgWashed: rec.kgWashed,
       start: rec.start, end: rec.end,
       _shTouches: rec._shTouches,
     }); }
