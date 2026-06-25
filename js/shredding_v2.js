@@ -88,28 +88,39 @@ function sh2GetWagonAvail(){
       };
     });
   });
-  // 사용량 = shredding의 wagonIn(콤마 분리) 별 kgIn 비례 분배
+  // 사용량 = 파쇄 차감 기록.
+  // ★ _shTouches(ckId+와건)로 정확 매칭 — 같은 와건번호가 여러 자숙 회차에 걸쳐 있을 때
+  //   모든 차감이 첫 회차 1칸에만 몰려, 다음 회차의 같은 번호 와건이 "바닥 없는 우물"이 되어
+  //   잔량이 과다 표시되던 버그(2026-06-25 발견) 방지.
   (L.shredding||[]).filter(r => r.date === today).forEach(s => {
-    if(!s.wagonInDist){
-      // wagonIn 단일/콤마 단순 처리
+    if(Array.isArray(s._shTouches) && s._shTouches.length){
+      s._shTouches.forEach(t => {
+        const key = `${t.ckId}|${t.wagon}`;
+        if(avail[key]){ avail[key].used += parseFloat(t.deductKg) || 0; return; }
+        // ckId 매칭 실패(해당 자숙 삭제 등) → 와건명 폴백
+        const k = Object.keys(avail).find(k => avail[k].wagon === String(t.wagon));
+        if(k) avail[k].used += parseFloat(t.deductKg) || 0;
+      });
+    } else if(s.wagonInDist){
+      // _shTouches 없는 구버전 레코드 폴백 (와건명 매칭)
+      Object.entries(s.wagonInDist).forEach(([w, kg]) => {
+        const k = Object.keys(avail).find(k => avail[k].wagon === w);
+        if(k) avail[k].used += parseFloat(kg) || 0;
+      });
+    } else {
+      // 최후 폴백: wagonIn 단순(콤마 균등)
       const ws = String(s.wagonIn || '').split(',').map(x => x.trim()).filter(Boolean);
       const kgIn = parseFloat(s.kgIn) || 0;
       if(ws.length === 1){
         const k = Object.keys(avail).find(k => avail[k].wagon === ws[0]);
         if(k) avail[k].used += kgIn;
       } else if(ws.length > 1){
-        // 비례 분배 추정 — 균등
         const each = kgIn / ws.length;
         ws.forEach(w => {
           const k = Object.keys(avail).find(k => avail[k].wagon === w);
           if(k) avail[k].used += each;
         });
       }
-    } else {
-      Object.entries(s.wagonInDist).forEach(([w, kg]) => {
-        const k = Object.keys(avail).find(k => avail[k].wagon === w);
-        if(k) avail[k].used += parseFloat(kg) || 0;
-      });
     }
   });
   const result = [];
