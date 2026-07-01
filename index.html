@@ -73,7 +73,7 @@ body{display:flex;flex-direction:column;font-family:-apple-system,BlinkMacSystem
     <button class="mb" id="schHdBtn" onclick="setModeSchedule()" style="margin-right:4px">📅 일정표</button><button class="mb" id="attHdBtn" onclick="setModeAtt()" style="margin-right:10px">출퇴근</button>
     <button class="mb on" id="modeI" onclick="setMode('i')">입력</button>
     <button class="mb" id="modeD" onclick="setMode('d')">분석</button>
-    <button class="mb" id="modeP" onclick="showPerf()">실적관리</button>
+    <button class="mb" id="modeP" onclick="showPerf()">실적관리</button><button class="mb" id="ppHdBtn" onclick="setModeProdPlan()">📊 생산계획</button>
     <button class="mb" id="modeAI" onclick="setMode('ai')" style="background:#6366f1;color:#fff">🤖 AI 분석</button>
   </div>
 </div>
@@ -121,6 +121,7 @@ body{display:flex;flex-direction:column;font-family:-apple-system,BlinkMacSystem
 
 <!-- ===== 해동기 (바코드 스캔) ===== -->
 <div class="pg" id="p-schedule" style="padding:0"></div>
+<div class="pg" id="p-prodplan" style="padding:0"></div>
 <div class="pg" id="p-performance" style="padding:0"></div>
 <div class="pg" id="p-monthly-prod" style="padding:0"></div>
 <div class="pg" id="p-stock" style="padding:0"></div>
@@ -1641,6 +1642,7 @@ body{display:flex;flex-direction:column;font-family:-apple-system,BlinkMacSystem
 <script src="js/csv_upload.js?v=1778129561"></script>
 <script src="js/daily_report.js?v=1779947223"></script>
 <script src="js/analysis.js?v=1782094485"></script>
+<script src="js/production_plan.js?v=1782893392"></script>
 <script src="js/ai_analysis.js?v=1781851878"></script>
 <script src="js/dashboard.js?v=1779947223"></script>
 <script src="js/trace.js?v=1778809200"></script>
