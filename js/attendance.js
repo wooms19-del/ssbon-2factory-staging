@@ -190,12 +190,13 @@ function attSave(){
 
 function _renderAttAll(){
   _renderAttSummary();
-  ['attInputWrap','attMonthlyWrap','attStaffWrap'].forEach(function(id){var w=document.getElementById(id);if(w)w.style.display='none';});
-  var wrapId={input:'attInputWrap',monthly:'attMonthlyWrap',staff:'attStaffWrap'}[_attSubTab];
+  ['attInputWrap','attMonthlyWrap','attStaffWrap','attReportWrap'].forEach(function(id){var w=document.getElementById(id);if(w)w.style.display='none';});
+  var wrapId={input:'attInputWrap',monthly:'attMonthlyWrap',staff:'attStaffWrap',report:'attReportWrap'}[_attSubTab];
   var w=document.getElementById(wrapId);if(w)w.style.display='';
   if(_attSubTab==='input')_renderAttInput();
   if(_attSubTab==='monthly')_attShowMonthly();  // ★ Firebase prefetch + render
   if(_attSubTab==='staff')_renderAttStaff();
+  if(_attSubTab==='report')_renderAttReport();
 }
 function attShowSubTab(tab,el){
   _attSubTab=tab; _attSelStatus='';
@@ -203,6 +204,114 @@ function attShowSubTab(tab,el){
   if(el)el.classList.add('on');
   var sc=document.getElementById('attStaffCount');if(sc)sc.textContent=_attEmps.length;
   _renderAttAll();
+}
+
+// ============================================================
+// 현황·조출 (파트별 근태현황 + 조출 메시지)
+// ============================================================
+var ATT_PART_ORDER=['실장·파트장','해동/전처리','자숙/소스','파쇄','내포장','외포장','물류','OP파트'];
+
+function _renderAttReport(){
+  var host=document.getElementById('attReportContent'); if(!host)return;
+  // 파트별 그룹
+  var groups={}; ATT_PART_ORDER.forEach(function(p){groups[p]=[];});
+  (_attEmps||[]).forEach(function(e){
+    var p=e.part||'미배치';
+    if(!groups[p])groups[p]=[];
+    groups[p].push(e);
+  });
+  var parts=ATT_PART_ORDER.filter(function(p){return groups[p]&&groups[p].length;});
+  Object.keys(groups).forEach(function(p){if(parts.indexOf(p)<0&&groups[p].length)parts.push(p);});
+
+  // 각 파트 집계
+  function tagOf(name){return _getRec(name).tags||[];}
+  var rowsHtml='', tot={total:0,annual:0,half:0,quarter:0,holiday:0,absent:0,work:0};
+  parts.forEach(function(p){
+    var mem=groups[p], c={total:mem.length,annual:0,half:0,quarter:0,holiday:0,absent:0};
+    var offNames=[];
+    mem.forEach(function(e){
+      var t=tagOf(e.name);
+      if(t.indexOf('annual')>=0){c.annual++; offNames.push(e.name+'(연차)');}
+      else if(t.indexOf('absent')>=0){c.absent++; offNames.push(e.name+'(결근)');}
+      else if(t.indexOf('holiday')>=0){c.holiday++; offNames.push(e.name+'(휴무)');}
+      if(t.indexOf('half-am')>=0||t.indexOf('half-pm')>=0)c.half++;
+      if(t.indexOf('quarter')>=0)c.quarter++;
+    });
+    var work=c.total-c.annual-c.absent-c.holiday;
+    tot.total+=c.total;tot.annual+=c.annual;tot.half+=c.half;tot.quarter+=c.quarter;tot.holiday+=c.holiday;tot.absent+=c.absent;tot.work+=work;
+    function cell(v){return '<td style="text-align:center;padding:6px 4px;border:1px solid var(--g2)">'+(v||'-')+'</td>';}
+    rowsHtml+='<tr>'
+      +'<td style="padding:6px 8px;border:1px solid var(--g2);font-weight:600">'+p+'</td>'
+      +cell(c.total)+cell(c.annual)+cell(c.half)+cell(c.quarter)+cell(c.holiday)+cell(c.absent)
+      +'<td style="text-align:center;padding:6px 4px;border:1px solid var(--g2);font-weight:700;color:#1d4ed8">'+work+'</td>'
+      +'<td style="padding:6px 8px;border:1px solid var(--g2);font-size:11px;color:var(--g5)">'+(offNames.join(', ')||'-')+'</td>'
+      +'</tr>';
+  });
+  var head='<tr style="background:#2A3F5F;color:#fff">'
+    +'<th style="padding:7px 8px;border:1px solid #2A3F5F;text-align:left">파트</th>'
+    +['총원','연차','반차','반반차','휴무','결근','출근'].map(function(h){return '<th style="padding:7px 4px;border:1px solid #2A3F5F">'+h+'</th>';}).join('')
+    +'<th style="padding:7px 8px;border:1px solid #2A3F5F">특이(휴무자)</th></tr>';
+  function tcell(v){return '<td style="text-align:center;padding:6px 4px;border:1px solid var(--g2);font-weight:700">'+(v||'-')+'</td>';}
+  var totRow='<tr style="background:#eef4fb">'
+    +'<td style="padding:6px 8px;border:1px solid var(--g2);font-weight:700">합계</td>'
+    +tcell(tot.total)+tcell(tot.annual)+tcell(tot.half)+tcell(tot.quarter)+tcell(tot.holiday)+tcell(tot.absent)
+    +'<td style="text-align:center;padding:6px 4px;border:1px solid var(--g2);font-weight:700;color:#1d4ed8">'+tot.work+'</td>'
+    +'<td style="border:1px solid var(--g2)"></td></tr>';
+
+  // ── 조출 메시지 ──
+  var msg=_buildEarlyMsg();
+
+  host.innerHTML=
+    '<div style="font-size:14px;font-weight:700;margin:10px 0 6px">'+_attFmtLabel(_attDate)+' 근태현황</div>'
+    +'<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">'
+    +'<thead>'+head+'</thead><tbody>'+rowsHtml+totRow+'</tbody></table></div>'
+    +'<div style="font-size:14px;font-weight:700;margin:16px 0 6px">조출 보고 메시지</div>'
+    +'<textarea id="attEarlyMsg" readonly style="width:100%;height:120px;padding:10px;border:1px solid var(--g2);border-radius:8px;font-size:13px;line-height:1.6;resize:vertical;background:var(--g1)">'+msg+'</textarea>'
+    +'<button class="btn bp bblk" style="width:100%;margin-top:8px" onclick="_attCopyEarly()">📋 조출 메시지 복사</button>';
+}
+
+function _buildEarlyMsg(){
+  // 조출자 = early 태그, 출근시간별 그룹
+  var byTime={};
+  (_attEmps||[]).forEach(function(e){
+    var r=_getRec(e.name), t=r.tags||[];
+    if(t.indexOf('early')>=0){
+      var tm=r.inTime||'05:00';
+      (byTime[tm]=byTime[tm]||[]).push(_attDispName(e));
+    }
+  });
+  var times=Object.keys(byTime).sort();
+  var lines=[_attFmtLabel(_attDate).replace(/\(.*\)/,'')+' 운영팀 조출',''];
+  if(times.length){
+    times.forEach(function(tm){ lines.push(tm+' '+byTime[tm].join(' ')); });
+  }else{
+    lines.push('조출자 없음');
+  }
+  // 휴무/연차/결근자
+  var off=[];
+  (_attEmps||[]).forEach(function(e){
+    var t=_getRec(e.name).tags||[];
+    if(t.indexOf('holiday')>=0)off.push(_attDispName(e)+'(휴무)');
+    else if(t.indexOf('annual')>=0)off.push(_attDispName(e)+'(연차)');
+    else if(t.indexOf('absent')>=0)off.push(_attDispName(e)+'(결근)');
+  });
+  lines.push('');
+  lines.push('휴무자 '+(off.length?off.join(' '):'없습니다.'));
+  return lines.join('\n');
+}
+
+// 표시명: 직책 있으면 이름+직책, 별칭 있으면 별칭 우선
+function _attDispName(e){
+  if(e.nickname)return e.nickname;
+  if(e.position)return e.name+e.position;
+  return e.name;
+}
+
+function _attCopyEarly(){
+  var ta=document.getElementById('attEarlyMsg'); if(!ta)return;
+  ta.select();
+  try{ document.execCommand('copy'); toast('조출 메시지 복사됨 ✓','s'); }
+  catch(e){ if(navigator.clipboard){navigator.clipboard.writeText(ta.value);toast('복사됨 ✓','s');} }
 }
 
 // ─── 현재 직원 레코드 정규화 (tags 배열 방식) ───
