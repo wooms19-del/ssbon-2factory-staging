@@ -252,20 +252,20 @@ async function _renderAttReport(){
     var work=c.total-c.annual-c.absent-c.holiday;
     tot.total+=c.total;tot.annual+=c.annual;tot.half+=c.half;tot.quarter+=c.quarter;tot.holiday+=c.holiday;tot.work+=work;
     function cel(v,strong){return '<td style="text-align:center;padding:6px 4px;border:1px solid var(--g2)'+(strong?';font-weight:700;color:#1d4ed8':'')+'">'+(v||(v===0?'-':'-'))+'</td>';}
-    var gubun = idx===0 ? '<td rowspan="'+parts.length+'" style="text-align:center;padding:6px;border:1px solid var(--g2);font-weight:700;background:#f3f6fb;vertical-align:middle">생산</td>' : '';
+    var gubun = idx===0 ? '<td rowspan="'+(parts.length+1)+'" style="text-align:center;padding:6px;border:1px solid var(--g2);font-weight:700;background:#f3f6fb;vertical-align:middle;width:56px">생산</td>' : '';
     bodyRows+='<tr>'+gubun
-      +'<td style="padding:6px 8px;border:1px solid var(--g2);font-weight:600">'+p+'</td>'
+      +'<td style="text-align:center;padding:6px 8px;border:1px solid var(--g2);font-weight:600;width:130px">'+p+'</td>'
       +cel(c.total)+cel(c.annual)+cel(c.half)+cel(c.quarter)+cel(c.holiday)+cel(work,true)
       +'<td style="padding:6px 8px;border:1px solid var(--g2);font-size:11px;color:var(--g5)">'+(off.join(', ')||'-')+'</td></tr>';
   });
   var head='<tr style="background:#2A3F5F;color:#fff">'
-    +'<th style="padding:7px 6px;border:1px solid #2A3F5F">구분</th>'
-    +'<th style="padding:7px 8px;border:1px solid #2A3F5F">파트</th>'
-    +['총원','연차','반차','반반차','휴무','출근'].map(function(h){return '<th style="padding:7px 4px;border:1px solid #2A3F5F">'+h+'</th>';}).join('')
+    +'<th style="padding:7px 6px;border:1px solid #2A3F5F;width:56px">구분</th>'
+    +'<th style="padding:7px 8px;border:1px solid #2A3F5F;width:130px">파트</th>'
+    +['총원','연차','반차','반반차','휴무','출근'].map(function(h){return '<th style="padding:7px 4px;border:1px solid #2A3F5F;width:64px">'+h+'</th>';}).join('')
     +'<th style="padding:7px 8px;border:1px solid #2A3F5F">휴무자</th></tr>';
   function tcel(v){return '<td style="text-align:center;padding:6px 4px;border:1px solid var(--g2);font-weight:700">'+(v||'-')+'</td>';}
-  var totRow='<tr style="background:#eef4fb"><td style="border:1px solid var(--g2)"></td>'
-    +'<td style="padding:6px 8px;border:1px solid var(--g2);font-weight:700">합계</td>'
+  var totRow='<tr style="background:#eef4fb">'
+    +'<td style="text-align:center;padding:6px 8px;border:1px solid var(--g2);font-weight:700">합계</td>'
     +tcel(tot.total)+tcel(tot.annual)+tcel(tot.half)+tcel(tot.quarter)+tcel(tot.holiday)
     +'<td style="text-align:center;padding:6px 4px;border:1px solid var(--g2);font-weight:700;color:#1d4ed8">'+tot.work+'</td>'
     +'<td style="border:1px solid var(--g2)"></td></tr>';
