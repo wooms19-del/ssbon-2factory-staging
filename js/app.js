@@ -331,7 +331,7 @@ function setModeAtt(){
   document.querySelectorAll('.mb').forEach(function(b){b.classList.remove('on');});
   document.getElementById('attHdBtn').classList.add('on');
   // 모든 nav 숨김
-  ['inav','dnav'].forEach(function(id){
+  ['inav','dnav','pnav'].forEach(function(id){
     var el=document.getElementById(id);
     if(el)el.className='tnav hid';
   });

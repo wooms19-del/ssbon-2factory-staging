@@ -207,109 +207,124 @@ function attShowSubTab(tab,el){
 }
 
 // ============================================================
-// 현황·조출 (파트별 근태현황 + 조출 메시지)
+// 현황·조출 (파트별 근태현황 + 조출 메시지) — 이미지 양식
 // ============================================================
-var ATT_PART_ORDER=['실장·파트장','해동/전처리','자숙/소스','파쇄','내포장','외포장','물류','OP파트'];
+var ATT_PART_ORDER=['실장·파트장','해동/방혈','자숙/배합','파쇄','내포장','외포장','물류','OP','공정QC','기술직선임','AR/도급'];
+var _attReportCfg=null;
 
-function _renderAttReport(){
+async function _attLoadReportCfg(){
+  if(_attReportCfg)return _attReportCfg;
+  _attReportCfg={requiredHeadcount:0, note:''};
+  try{
+    var doc=await firebase.firestore().doc('_config/att_report_config').get();
+    if(doc.exists&&doc.data())_attReportCfg=Object.assign(_attReportCfg,doc.data());
+  }catch(e){}
+  return _attReportCfg;
+}
+async function _attSaveReportCfg(){
+  try{ await firebase.firestore().doc('_config/att_report_config').set(_attReportCfg); toast('저장됨 ✓','s'); }
+  catch(e){ console.error(e); }
+}
+function _attCfgSetRequired(v){ if(!_attReportCfg)return; _attReportCfg.requiredHeadcount=parseInt(v)||0; _attSaveReportCfg(); _renderAttReport(); }
+function _attCfgSetNote(v){ if(!_attReportCfg)return; _attReportCfg.note=v; _attSaveReportCfg(); }
+
+async function _renderAttReport(){
   var host=document.getElementById('attReportContent'); if(!host)return;
+  await _attLoadReportCfg();
   // 파트별 그룹
-  var groups={}; ATT_PART_ORDER.forEach(function(p){groups[p]=[];});
-  (_attEmps||[]).forEach(function(e){
-    var p=e.part||'미배치';
-    if(!groups[p])groups[p]=[];
-    groups[p].push(e);
-  });
-  var parts=ATT_PART_ORDER.filter(function(p){return groups[p]&&groups[p].length;});
-  Object.keys(groups).forEach(function(p){if(parts.indexOf(p)<0&&groups[p].length)parts.push(p);});
+  var groups={};
+  (_attEmps||[]).forEach(function(e){ var p=e.part||'미배치'; (groups[p]=groups[p]||[]).push(e); });
+  var parts=ATT_PART_ORDER.filter(function(p){return (groups[p]&&groups[p].length)||p==='AR/도급';});
+  Object.keys(groups).forEach(function(p){ if(parts.indexOf(p)<0&&groups[p].length)parts.push(p); });
 
-  // 각 파트 집계
   function tagOf(name){return _getRec(name).tags||[];}
-  var rowsHtml='', tot={total:0,annual:0,half:0,quarter:0,holiday:0,absent:0,work:0};
-  parts.forEach(function(p){
-    var mem=groups[p], c={total:mem.length,annual:0,half:0,quarter:0,holiday:0,absent:0};
-    var offNames=[];
+  var tot={total:0,annual:0,half:0,quarter:0,holiday:0,work:0}, bodyRows='';
+  parts.forEach(function(p,idx){
+    var mem=groups[p]||[], c={total:mem.length,annual:0,half:0,quarter:0,holiday:0,absent:0}, off=[];
     mem.forEach(function(e){
       var t=tagOf(e.name);
-      if(t.indexOf('annual')>=0){c.annual++; offNames.push(e.name+'(연차)');}
-      else if(t.indexOf('absent')>=0){c.absent++; offNames.push(e.name+'(결근)');}
-      else if(t.indexOf('holiday')>=0){c.holiday++; offNames.push(e.name+'(휴무)');}
+      if(t.indexOf('annual')>=0){c.annual++; off.push((e.nickname||e.name)+'(연차)');}
+      else if(t.indexOf('absent')>=0){c.absent++; off.push((e.nickname||e.name)+'(결근)');}
+      else if(t.indexOf('holiday')>=0){c.holiday++; off.push((e.nickname||e.name)+'(휴무)');}
       if(t.indexOf('half-am')>=0||t.indexOf('half-pm')>=0)c.half++;
       if(t.indexOf('quarter')>=0)c.quarter++;
     });
     var work=c.total-c.annual-c.absent-c.holiday;
-    tot.total+=c.total;tot.annual+=c.annual;tot.half+=c.half;tot.quarter+=c.quarter;tot.holiday+=c.holiday;tot.absent+=c.absent;tot.work+=work;
-    function cell(v){return '<td style="text-align:center;padding:6px 4px;border:1px solid var(--g2)">'+(v||'-')+'</td>';}
-    rowsHtml+='<tr>'
+    tot.total+=c.total;tot.annual+=c.annual;tot.half+=c.half;tot.quarter+=c.quarter;tot.holiday+=c.holiday;tot.work+=work;
+    function cel(v,strong){return '<td style="text-align:center;padding:6px 4px;border:1px solid var(--g2)'+(strong?';font-weight:700;color:#1d4ed8':'')+'">'+(v||(v===0?'-':'-'))+'</td>';}
+    var gubun = idx===0 ? '<td rowspan="'+parts.length+'" style="text-align:center;padding:6px;border:1px solid var(--g2);font-weight:700;background:#f3f6fb;vertical-align:middle">생산</td>' : '';
+    bodyRows+='<tr>'+gubun
       +'<td style="padding:6px 8px;border:1px solid var(--g2);font-weight:600">'+p+'</td>'
-      +cell(c.total)+cell(c.annual)+cell(c.half)+cell(c.quarter)+cell(c.holiday)+cell(c.absent)
-      +'<td style="text-align:center;padding:6px 4px;border:1px solid var(--g2);font-weight:700;color:#1d4ed8">'+work+'</td>'
-      +'<td style="padding:6px 8px;border:1px solid var(--g2);font-size:11px;color:var(--g5)">'+(offNames.join(', ')||'-')+'</td>'
-      +'</tr>';
+      +cel(c.total)+cel(c.annual)+cel(c.half)+cel(c.quarter)+cel(c.holiday)+cel(work,true)
+      +'<td style="padding:6px 8px;border:1px solid var(--g2);font-size:11px;color:var(--g5)">'+(off.join(', ')||'-')+'</td></tr>';
   });
   var head='<tr style="background:#2A3F5F;color:#fff">'
-    +'<th style="padding:7px 8px;border:1px solid #2A3F5F;text-align:left">파트</th>'
-    +['총원','연차','반차','반반차','휴무','결근','출근'].map(function(h){return '<th style="padding:7px 4px;border:1px solid #2A3F5F">'+h+'</th>';}).join('')
-    +'<th style="padding:7px 8px;border:1px solid #2A3F5F">특이(휴무자)</th></tr>';
-  function tcell(v){return '<td style="text-align:center;padding:6px 4px;border:1px solid var(--g2);font-weight:700">'+(v||'-')+'</td>';}
-  var totRow='<tr style="background:#eef4fb">'
+    +'<th style="padding:7px 6px;border:1px solid #2A3F5F">구분</th>'
+    +'<th style="padding:7px 8px;border:1px solid #2A3F5F">파트</th>'
+    +['총원','연차','반차','반반차','휴무','출근'].map(function(h){return '<th style="padding:7px 4px;border:1px solid #2A3F5F">'+h+'</th>';}).join('')
+    +'<th style="padding:7px 8px;border:1px solid #2A3F5F">휴무자</th></tr>';
+  function tcel(v){return '<td style="text-align:center;padding:6px 4px;border:1px solid var(--g2);font-weight:700">'+(v||'-')+'</td>';}
+  var totRow='<tr style="background:#eef4fb"><td style="border:1px solid var(--g2)"></td>'
     +'<td style="padding:6px 8px;border:1px solid var(--g2);font-weight:700">합계</td>'
-    +tcell(tot.total)+tcell(tot.annual)+tcell(tot.half)+tcell(tot.quarter)+tcell(tot.holiday)+tcell(tot.absent)
+    +tcel(tot.total)+tcel(tot.annual)+tcel(tot.half)+tcel(tot.quarter)+tcel(tot.holiday)
     +'<td style="text-align:center;padding:6px 4px;border:1px solid var(--g2);font-weight:700;color:#1d4ed8">'+tot.work+'</td>'
     +'<td style="border:1px solid var(--g2)"></td></tr>';
 
-  // ── 조출 메시지 ──
-  var msg=_buildEarlyMsg();
+  // 생산동 인원 현황
+  var totalHead=(_attEmps||[]).length;
+  var required=_attReportCfg.requiredHeadcount||totalHead;
+  var rate=required>0?Math.round(totalHead/required*100):100;
+  var statBox=
+    '<div style="border:1px solid var(--g2);border-radius:8px;overflow:hidden;min-width:200px">'
+    +'<div style="background:#fdf3e0;padding:6px 10px;font-weight:700;font-size:13px;border-bottom:1px solid var(--g2)">생산동 인원 현황</div>'
+    +'<div style="display:flex;justify-content:space-between;padding:6px 10px;font-size:13px"><span>총 인원</span><b>'+totalHead+'</b></div>'
+    +'<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 10px;font-size:13px;border-top:1px solid var(--g1)"><span>필요 인원</span>'
+       +'<input type="number" value="'+required+'" onchange="_attCfgSetRequired(this.value)" style="width:60px;text-align:right;border:1px solid var(--g2);border-radius:4px;padding:2px 4px"></div>'
+    +'<div style="display:flex;justify-content:space-between;padding:6px 10px;font-size:13px;border-top:1px solid var(--g1);color:'+(rate>=100?'#1d4ed8':'#dc2626')+'"><span>채용율</span><b>'+rate+'%</b></div>'
+    +'</div>';
+  var noteBox=
+    '<div style="border:1px solid var(--g2);border-radius:8px;overflow:hidden;flex:1;min-width:240px">'
+    +'<div style="background:#fdf3e0;padding:6px 10px;font-weight:700;font-size:13px;border-bottom:1px solid var(--g2)">총원 특이사항</div>'
+    +'<textarea onchange="_attCfgSetNote(this.value)" placeholder="예: 6/30 김미나 회사" style="width:100%;height:70px;border:none;padding:8px 10px;font-size:13px;resize:vertical;background:transparent">'+(_attReportCfg.note||'')+'</textarea>'
+    +'</div>';
 
+  var msg=_buildEarlyMsg();
   host.innerHTML=
     '<div style="font-size:14px;font-weight:700;margin:10px 0 6px">'+_attFmtLabel(_attDate)+' 근태현황</div>'
     +'<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">'
-    +'<thead>'+head+'</thead><tbody>'+rowsHtml+totRow+'</tbody></table></div>'
-    +'<div style="font-size:14px;font-weight:700;margin:16px 0 6px">조출 보고 메시지</div>'
-    +'<textarea id="attEarlyMsg" readonly style="width:100%;height:120px;padding:10px;border:1px solid var(--g2);border-radius:8px;font-size:13px;line-height:1.6;resize:vertical;background:var(--g1)">'+msg+'</textarea>'
+    +'<thead>'+head+'</thead><tbody>'+bodyRows+totRow+'</tbody></table></div>'
+    +'<div style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap">'+statBox+noteBox+'</div>'
+    +'<div style="font-size:14px;font-weight:700;margin:16px 0 6px">조출 보고 메시지 <span style="font-size:11px;color:var(--g5);font-weight:400">(직접 수정 가능)</span></div>'
+    +'<textarea id="attEarlyMsg" style="width:100%;height:130px;padding:10px;border:1px solid var(--g2);border-radius:8px;font-size:13px;line-height:1.6;resize:vertical">'+msg+'</textarea>'
     +'<button class="btn bp bblk" style="width:100%;margin-top:8px" onclick="_attCopyEarly()">📋 조출 메시지 복사</button>';
 }
 
+function _shortDate(d){ // 2026-07-02 → 7/2
+  var p=d.split('-'); return parseInt(p[1])+'/'+parseInt(p[2]);
+}
 function _buildEarlyMsg(){
-  // 조출자 = early 태그, 출근시간별 그룹
   var byTime={};
   (_attEmps||[]).forEach(function(e){
     var r=_getRec(e.name), t=r.tags||[];
-    if(t.indexOf('early')>=0){
-      var tm=r.inTime||'05:00';
-      (byTime[tm]=byTime[tm]||[]).push(_attDispName(e));
-    }
+    if(t.indexOf('early')>=0){ var tm=r.inTime||'05:00'; (byTime[tm]=byTime[tm]||[]).push(_attDispName(e)); }
   });
   var times=Object.keys(byTime).sort();
-  var lines=[_attFmtLabel(_attDate).replace(/\(.*\)/,'')+' 운영팀 조출',''];
-  if(times.length){
-    times.forEach(function(tm){ lines.push(tm+' '+byTime[tm].join(' ')); });
-  }else{
-    lines.push('조출자 없음');
-  }
-  // 휴무/연차/결근자
+  var lines=[_shortDate(_attDate)+' 운영팀 조출',''];
+  if(times.length) times.forEach(function(tm){ lines.push(tm+' '+byTime[tm].join(' ')); });
+  else lines.push('조출자 없음');
   var off=[];
   (_attEmps||[]).forEach(function(e){
     var t=_getRec(e.name).tags||[];
-    if(t.indexOf('holiday')>=0)off.push(_attDispName(e)+'(휴무)');
+    if(t.indexOf('holiday')>=0)off.push(_attDispName(e));
     else if(t.indexOf('annual')>=0)off.push(_attDispName(e)+'(연차)');
     else if(t.indexOf('absent')>=0)off.push(_attDispName(e)+'(결근)');
   });
-  lines.push('');
   lines.push('휴무자 '+(off.length?off.join(' '):'없습니다.'));
   return lines.join('\n');
 }
-
-// 표시명: 직책 있으면 이름+직책, 별칭 있으면 별칭 우선
-function _attDispName(e){
-  if(e.nickname)return e.nickname;
-  if(e.position)return e.name+e.position;
-  return e.name;
-}
-
+function _attDispName(e){ if(e.nickname)return e.nickname; if(e.position)return e.name+e.position; return e.name; }
 function _attCopyEarly(){
-  var ta=document.getElementById('attEarlyMsg'); if(!ta)return;
-  ta.select();
+  var ta=document.getElementById('attEarlyMsg'); if(!ta)return; ta.select();
   try{ document.execCommand('copy'); toast('조출 메시지 복사됨 ✓','s'); }
   catch(e){ if(navigator.clipboard){navigator.clipboard.writeText(ta.value);toast('복사됨 ✓','s');} }
 }
