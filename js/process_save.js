@@ -485,6 +485,7 @@ function renderPL(type){
       editForm = `
     <div id="pkEdit_${r.id}" style="display:none;background:#f8f9fa;border-radius:6px;padding:10px;margin-top:6px;font-size:12px">
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:8px">
+        <div><label style="font-size:11px;color:#1d4ed8;display:block">제품명</label><select class="fc" style="padding:4px 8px;font-size:12px;width:100%" id="pkEd_product_${r.id}">${(L.products||[]).map(p=>`<option ${p.name===r.product?'selected':''}>${p.name}</option>`).join('')}</select></div>
         <div><label style="font-size:11px;color:var(--g5);display:block">설비번호</label><input class="fc" style="padding:4px 8px;font-size:12px;width:100%" id="pkEd_machine_${r.id}" value="${r.machine||''}"></div>
         ${_isNoMeat ? '' : `<div><label style="font-size:11px;color:#72243E;display:block">와건번호</label><input class="fc" style="padding:4px 8px;font-size:12px;width:100%" id="pkEd_wagon_${r.id}" value="${r.wagon||''}" oninput="pkEdRefreshMatrix('${r.id}','wagon')"></div>`}
         ${_isNoMeat ? '' : `<div><label style="font-size:11px;color:#1a56db;display:block">카트번호</label><input class="fc" style="padding:4px 8px;font-size:12px;width:100%" id="pkEd_cart_${r.id}" value="${r.cart||''}" oninput="pkEdRefreshMatrix('${r.id}','cart')"></div>`}
@@ -554,6 +555,7 @@ function pkEdRefreshMatrix(id, kind){
 function savePkEdit(id, fbId) {
   const rec = L.packing.find(r=>r.id===id);
   if(!rec){ toast('기록 없음','d'); return; }
+  const product = document.getElementById('pkEd_product_'+id)?.value || rec.product;
   const machine = document.getElementById('pkEd_machine_'+id)?.value||'';
   // noMeat 제품은 와건/카트 input이 없으므로 기존 값 유지
   const wagonEl = document.getElementById('pkEd_wagon_'+id);
@@ -604,11 +606,11 @@ function savePkEdit(id, fbId) {
     if(Object.keys(tk).length) matrixUpdates.typeKgs = tk;
   }
 
-  Object.assign(rec, {machine, wagon, cart, ea, defect, start, end:end_, workers}, matrixUpdates);
+  Object.assign(rec, {product, machine, wagon, cart, ea, defect, start, end:end_, workers}, matrixUpdates);
   saveL();
   renderPL('packing');
   renderDailyFromLocal_(tod());
-  const updates = Object.assign({machine, wagon, cart, ea, defect, start, end:end_, workers}, matrixUpdates);
+  const updates = Object.assign({product, machine, wagon, cart, ea, defect, start, end:end_, workers}, matrixUpdates);
   if(fbId) {
     fbUpdate('packing', fbId, updates);
   } else {
