@@ -1079,6 +1079,7 @@ function _moChartWeekdays(ym, producedSet){
   const base = new Set(_moWeekdaysOf(ym));
   if(producedSet) producedSet.forEach(d => base.add(d));
   return [...base].sort().filter(d => {
+    if(d.slice(0,7) !== ym) return false;  // 이번 달(ym)이 아니면 제외 — 타 월 생산일 누수 방지
     if(producedSet && producedSet.has(d)) return true;   // 생산한 날 = 무조건 표시(주말이어도)
     if(d >= today) return true;            // 오늘 이후 미래 = 표시 (앞으로 채워질 자리)
     return false;                          // 오늘 이전 + 생산 안 함 = 제외
