@@ -10,9 +10,9 @@ const DEFAULT_EMPS = ['김구식','김수영','임혜경','한채현','김정희
   '유혜선','레티장','김진화','드엉반담','르탄프엉','응우옌반동','응우옌민호앙',
   '응우옌반키','르판하이퐁','판투안안'];
 
-const ATT_SL    = {normal:'정상',checkin:'출근',checkout:'퇴근',early:'조출',overtime:'연장','half-am':'반차(오전)','half-pm':'반차(오후)',quarter:'반반차',annual:'연차',absent:'결근',holiday:'휴무'};
-const ATT_ICON  = {normal:'✅',checkin:'🕘',checkout:'🏃',early:'🌅',overtime:'⏰','half-am':'🌓','half-pm':'🌓',quarter:'🌗',annual:'📅',absent:'❌',holiday:'🏖️'};
-const ATT_COLOR = {normal:'#2e7d32',checkin:'#1a56db',checkout:'#0277bd',early:'#1565c0',overtime:'#e65100','half-am':'#6a1b9a','half-pm':'#6a1b9a',quarter:'#4a148c',annual:'#ad1457',absent:'#b71c1c',holiday:'#0891b2'};
+const ATT_SL    = {normal:'정상',checkin:'출근',checkout:'퇴근',early:'조출',overtime:'연장','half-am':'반차(오전)','half-pm':'반차(오후)',quarter:'반반차','quarter-am':'반반차(오전)','quarter-pm':'반반차(오후)',annual:'연차',absent:'결근',holiday:'휴무'};
+const ATT_ICON  = {normal:'✅',checkin:'🕘',checkout:'🏃',early:'🌅',overtime:'⏰','half-am':'🌓','half-pm':'🌓',quarter:'🌗','quarter-am':'🌗','quarter-pm':'🌗',annual:'📅',absent:'❌',holiday:'🏖️'};
+const ATT_COLOR = {normal:'#2e7d32',checkin:'#1a56db',checkout:'#0277bd',early:'#1565c0',overtime:'#e65100','half-am':'#6a1b9a','half-pm':'#6a1b9a',quarter:'#4a148c','quarter-am':'#4a148c','quarter-pm':'#4a148c',annual:'#ad1457',absent:'#b71c1c',holiday:'#0891b2'};
 // 시간 입력 필요 여부
 const ATT_NEEDS_IN  = {checkin:true,early:true};
 const ATT_NEEDS_OUT = {overtime:true};
@@ -243,11 +243,15 @@ async function _renderAttReport(){
     var mem=groups[p]||[], c={total:mem.length,annual:0,half:0,quarter:0,holiday:0,absent:0}, off=[];
     mem.forEach(function(e){
       var t=tagOf(e.name);
-      if(t.indexOf('annual')>=0){c.annual++; off.push((e.nickname||e.name)+'(연차)');}
-      else if(t.indexOf('absent')>=0){c.absent++; off.push((e.nickname||e.name)+'(결근)');}
-      else if(t.indexOf('holiday')>=0){c.holiday++; off.push((e.nickname||e.name)+'(휴무)');}
-      if(t.indexOf('half-am')>=0||t.indexOf('half-pm')>=0)c.half++;
-      if(t.indexOf('quarter')>=0)c.quarter++;
+      var _nm=(e.nickname||e.name);
+      if(t.indexOf('annual')>=0){c.annual++; off.push(_nm+'(연차)');}
+      else if(t.indexOf('absent')>=0){c.absent++; off.push(_nm+'(결근)');}
+      else if(t.indexOf('holiday')>=0){c.holiday++; off.push(_nm+'(휴무)');}
+      if(t.indexOf('half-am')>=0){c.half++; off.push(_nm+'(반차오전)');}
+      else if(t.indexOf('half-pm')>=0){c.half++; off.push(_nm+'(반차오후)');}
+      if(t.indexOf('quarter-am')>=0){c.quarter++; off.push(_nm+'(반반차오전)');}
+      else if(t.indexOf('quarter-pm')>=0){c.quarter++; off.push(_nm+'(반반차오후)');}
+      else if(t.indexOf('quarter')>=0){c.quarter++; off.push(_nm+'(반반차)');}
     });
     var work=c.total-c.annual-c.absent-c.holiday;
     tot.total+=c.total;tot.annual+=c.annual;tot.half+=c.half;tot.quarter+=c.quarter;tot.holiday+=c.holiday;tot.work+=work;
@@ -318,6 +322,11 @@ function _buildEarlyMsg(){
     if(t.indexOf('holiday')>=0)off.push(_attDispName(e));
     else if(t.indexOf('annual')>=0)off.push(_attDispName(e)+'(연차)');
     else if(t.indexOf('absent')>=0)off.push(_attDispName(e)+'(결근)');
+    if(t.indexOf('half-am')>=0)off.push(_attDispName(e)+'(반차오전)');
+    else if(t.indexOf('half-pm')>=0)off.push(_attDispName(e)+'(반차오후)');
+    if(t.indexOf('quarter-am')>=0)off.push(_attDispName(e)+'(반반차오전)');
+    else if(t.indexOf('quarter-pm')>=0)off.push(_attDispName(e)+'(반반차오후)');
+    else if(t.indexOf('quarter')>=0)off.push(_attDispName(e)+'(반반차)');
   });
   lines.push('휴무자 '+(off.length?off.join(' '):'없습니다.'));
   return lines.join('\n');
@@ -347,13 +356,13 @@ function _isAnnual(name){return _hasTag(name,'annual');}
 function _noTime(name){return _isAbsent(name)||_isAnnual(name);}
 // 태그들에서 주 상태 색 계산
 function _mainColor(tags){
-  var pri=['absent','holiday','annual','early','overtime','half-am','half-pm','quarter','checkin'];
+  var pri=['absent','holiday','annual','early','overtime','half-am','half-pm','quarter','quarter-am','quarter-pm','checkin'];
   for(var i=0;i<pri.length;i++){if(tags.indexOf(pri[i])>=0)return ATT_COLOR[pri[i]];}
   return ATT_COLOR.normal;
 }
 function _mainIcon(tags){
   if(!tags||!tags.length)return ATT_ICON.normal;
-  var pri=['absent','holiday','annual','early','half-am','half-pm','quarter','overtime','checkin'];
+  var pri=['absent','holiday','annual','early','half-am','half-pm','quarter','quarter-am','quarter-pm','overtime','checkin'];
   for(var i=0;i<pri.length;i++){if(tags.indexOf(pri[i])>=0)return ATT_ICON[pri[i]];}
   return ATT_ICON.normal;
 }
@@ -375,7 +384,7 @@ function _renderAttSummary(){
   var el=document.getElementById('attSummary');if(!el)return;
   var raw=localStorage.getItem(_attDateKey(tod()));if(!raw){el.innerHTML='';return;}
   var recs=JSON.parse(raw);
-  var groups={early:[],annual:[],'half-am':[],'half-pm':[],quarter:[],overtime:[],absent:[],holiday:[]};
+  var groups={early:[],annual:[],'half-am':[],'half-pm':[],quarter:[],'quarter-am':[],'quarter-pm':[],overtime:[],absent:[],holiday:[]};
   var totalIn=0,totalAbsent=0,totalHoliday=0;
   _attEmps.forEach(function(e){
     var r=recs[e.name];if(!r)return;
@@ -384,7 +393,7 @@ function _renderAttSummary(){
     else if(tags.indexOf('holiday')>=0){totalHoliday++;groups.holiday.push(e.name);}
     else{
       totalIn++;
-      ['early','half-am','half-pm','quarter','overtime','annual'].forEach(function(k){
+      ['early','half-am','half-pm','quarter','quarter-am','quarter-pm','overtime','annual'].forEach(function(k){
         if(tags.indexOf(k)>=0&&groups[k])groups[k].push({name:e.name,inTime:r.inTime,outTime:r.outTime});
       });
     }
@@ -396,7 +405,7 @@ function _renderAttSummary(){
     +'</div>';
   [{key:'early',icon:'🌅',label:'조출',t:true},{key:'annual',icon:'📅',label:'연차',t:false},
    {key:'half-am',icon:'🌓',label:'반차(오전)',t:false},{key:'half-pm',icon:'🌓',label:'반차(오후)',t:false},
-   {key:'quarter',icon:'🌗',label:'반반차',t:false},{key:'overtime',icon:'⏰',label:'연장',t:true}
+   {key:'quarter-am',icon:'🌗',label:'반반차(오전)',t:false},{key:'quarter-pm',icon:'🌗',label:'반반차(오후)',t:false},{key:'overtime',icon:'⏰',label:'연장',t:true}
   ].forEach(function(row){
     var arr=groups[row.key];if(!arr||!arr.length)return;
     var names=row.t?arr.map(function(x){return x.name+' '+x.inTime;}).join('  '):arr.map(function(x){return typeof x==='string'?x:x.name;}).join('  ');
@@ -416,7 +425,8 @@ function _renderAttInput(){
     {s:'early',icon:'🌅',label:'조출',color:'#1565c0'},
     {s:'half-am',icon:'🌓',label:'반차(오전)',color:'#6a1b9a'},
     {s:'half-pm',icon:'🌓',label:'반차(오후)',color:'#6a1b9a'},
-    {s:'quarter',icon:'🌗',label:'반반차',color:'#4a148c'},
+    {s:'quarter-am',icon:'🌗',label:'반반차(오전)',color:'#4a148c'},
+    {s:'quarter-pm',icon:'🌗',label:'반반차(오후)',color:'#4a148c'},
     {s:'overtime',icon:'⏰',label:'연장',color:'#e65100'},
     {s:'annual',icon:'📅',label:'연차',color:'#ad1457'},
     {s:'absent',icon:'❌',label:'결근',color:'#b71c1c'},
