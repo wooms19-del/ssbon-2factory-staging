@@ -491,6 +491,7 @@ function renderPL(type){
         ${_isNoMeat ? '' : `<div><label style="font-size:11px;color:#1a56db;display:block">카트번호</label><input class="fc" style="padding:4px 8px;font-size:12px;width:100%" id="pkEd_cart_${r.id}" value="${r.cart||''}" oninput="pkEdRefreshMatrix('${r.id}','cart')"></div>`}
         <div><label style="font-size:11px;color:var(--g5);display:block">생산 EA</label><input class="fc" type="number" style="padding:4px 8px;font-size:12px;width:100%" id="pkEd_ea_${r.id}" value="${r.ea||0}"></div>
         <div><label style="font-size:11px;color:var(--g5);display:block">불량 EA</label><input class="fc" type="number" style="padding:4px 8px;font-size:12px;width:100%" id="pkEd_defect_${r.id}" value="${r.defect||0}"></div>
+        <div><label style="font-size:11px;color:var(--g5);display:block">파우치</label><input class="fc" type="number" style="padding:4px 8px;font-size:12px;width:100%" id="pkEd_pouch_${r.id}" value="${r.pouch||0}"></div>
         <div><label style="font-size:11px;color:var(--g5);display:block">시작</label><input class="fc" type="text" inputmode="decimal" maxlength="5" placeholder="HH:MM" style="padding:4px 8px;font-size:12px;width:100%" id="pkEd_start_${r.id}" value="${r.start||''}"></div>
         <div><label style="font-size:11px;color:var(--g5);display:block">종료</label><input class="fc" type="text" inputmode="decimal" maxlength="5" placeholder="HH:MM" style="padding:4px 8px;font-size:12px;width:100%" id="pkEd_end_${r.id}" value="${r.end||''}"></div>
         <div><label style="font-size:11px;color:var(--g5);display:block">인원</label><input class="fc" type="number" style="padding:4px 8px;font-size:12px;width:100%" id="pkEd_workers_${r.id}" value="${r.workers||0}"></div>
@@ -564,6 +565,7 @@ function savePkEdit(id, fbId) {
   const cart    = cartEl ? cartEl.value : (rec.cart || '');
   const ea      = parseFloat(document.getElementById('pkEd_ea_'+id)?.value)||0;
   const defect  = parseFloat(document.getElementById('pkEd_defect_'+id)?.value)||0;
+  const pouch   = parseFloat(document.getElementById('pkEd_pouch_'+id)?.value)||0;
   const start   = document.getElementById('pkEd_start_'+id)?.value||'';
   const end_    = document.getElementById('pkEd_end_'+id)?.value||'';
   const workers = parseFloat(document.getElementById('pkEd_workers_'+id)?.value)||0;
@@ -606,11 +608,11 @@ function savePkEdit(id, fbId) {
     if(Object.keys(tk).length) matrixUpdates.typeKgs = tk;
   }
 
-  Object.assign(rec, {product, machine, wagon, cart, ea, defect, start, end:end_, workers}, matrixUpdates);
+  Object.assign(rec, {product, machine, wagon, cart, ea, defect, pouch, start, end:end_, workers}, matrixUpdates);
   saveL();
   renderPL('packing');
   renderDailyFromLocal_(tod());
-  const updates = Object.assign({product, machine, wagon, cart, ea, defect, start, end:end_, workers}, matrixUpdates);
+  const updates = Object.assign({product, machine, wagon, cart, ea, defect, pouch, start, end:end_, workers}, matrixUpdates);
   if(fbId) {
     fbUpdate('packing', fbId, updates);
   } else {
