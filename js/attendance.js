@@ -472,7 +472,9 @@ function _renderAttInput(){
     else if(_attSelStatus==='overtime')hint='실제 퇴근시간 입력 → 연장시간 자동 계산';
     else if(_attSelStatus==='half-am')hint='오전 반차: 출근 09:00 → 퇴근 13:00 자동';
     else if(_attSelStatus==='half-pm')hint='오후 반차: 출근 13:00 → 퇴근 18:00 자동';
-    else if(_attSelStatus==='quarter')hint='반반차: 출근 09:00 → 퇴근 11:00 자동';
+    else if(_attSelStatus==='quarter')hint='반반차: 출근 09:00 → 퇴근 16:00 자동';
+    else if(_attSelStatus==='quarter-am')hint='반반차(오전): 출근 11:00 → 퇴근 18:00 자동';
+    else if(_attSelStatus==='quarter-pm')hint='반반차(오후): 출근 09:00 → 퇴근 16:00 자동';
     else if(_attSelStatus==='annual')hint='연차: 시간 불필요';
     else if(_attSelStatus==='absent')hint='결근: 시간 불필요';
     else if(_attSelStatus==='holiday')hint='휴무(공휴일 등): 시간 불필요';
@@ -674,6 +676,12 @@ function attApplyChecked(apply){
         else if(tags.indexOf('early')<0) inT='09:00';
         var wh4=_calcWorkHours(tags.concat(['quarter']));
         outT=_attAddH(inT,wh4);
+      }else if(appliedStatus==='quarter-am'){
+        // 반반차(오전) = 앞 2시간 쉬고 11:00 출근
+        inT='11:00'; outT='18:00';
+      }else if(appliedStatus==='quarter-pm'){
+        // 반반차(오후) = 뒤 2시간 일찍 16:00 퇴근
+        inT='09:00'; outT='16:00';
       }else if(appliedStatus==='annual'||appliedStatus==='absent'||appliedStatus==='holiday'){
         inT=''; outT='';
         // 다른 시간 관련 태그 제거
@@ -951,7 +959,7 @@ function _attAddH(t,h){if(!t||t.indexOf(':')<0)return '';var p=t.split(':'),hr=p
 function _calcWorkHours(tags){
   if(tags.indexOf('annual')>=0||tags.indexOf('absent')>=0||tags.indexOf('holiday')>=0)return 0;
   var hasHalf=tags.indexOf('half-am')>=0||tags.indexOf('half-pm')>=0;
-  var hasQtr=tags.indexOf('quarter')>=0;
+  var hasQtr=tags.indexOf('quarter')>=0||tags.indexOf('quarter-am')>=0||tags.indexOf('quarter-pm')>=0;
   // 반차 있으면 기본 4시간, 없으면 9시간 (점심포함)
   var base=hasHalf?4:9;
   if(hasQtr)base-=2; // 반반차 = 2시간 추가 휴가
