@@ -253,7 +253,7 @@ async function _renderAttReport(){
       else if(t.indexOf('quarter-pm')>=0){c.quarter++; off.push(_nm+'(반반차오후)');}
       else if(t.indexOf('quarter')>=0){c.quarter++; off.push(_nm+'(반반차)');}
     });
-    var work=c.total-c.annual-c.absent-c.holiday;
+    var work=c.total-c.annual-c.absent-c.holiday-c.half-c.quarter;
     tot.total+=c.total;tot.annual+=c.annual;tot.half+=c.half;tot.quarter+=c.quarter;tot.holiday+=c.holiday;tot.work+=work;
     function cel(v,strong){return '<td style="text-align:center;padding:6px 4px;border:1px solid var(--g2)'+(strong?';font-weight:700;color:#1d4ed8':'')+'">'+(v||(v===0?'-':'-'))+'</td>';}
     var gubun = idx===0 ? '<td rowspan="'+(parts.length+1)+'" style="text-align:center;padding:6px;border:1px solid var(--g2);font-weight:700;background:#f3f6fb;vertical-align:middle;width:56px">생산</td>' : '';
