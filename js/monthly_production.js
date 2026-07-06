@@ -845,12 +845,15 @@
         _useEst = !!__nonEstDT[d+'|'+t] || !(_thaw > 0);
       }
       if(_isEstGrp && _useEst){
-        var _yld = window._estYields[grp[0].product] || 0;
+        var _cfg = window._estYields[grp[0].product];
+        var _fy = (typeof _cfg === 'number') ? _cfg : ((_cfg && _cfg.final) || 0);
         var _meat = grp.reduce(function(s,r){ return s + (r.pkEa||0) * (r.kgea||0); }, 0);
-        rmTotal = _yld ? _r2(_meat / _yld) : 0;
-        ppItem = {kg:0, hours:0, personHours:0};
-        ckItem = {kg:0, hours:0, personHours:0};
-        shItem = {kg:0, hours:0, personHours:0};
+        rmTotal = _fy ? _r2(_meat / _fy) : 0;
+        // 전처리/자숙/파쇄도 원육 대비 수율로 역산 (가안)
+        var _ppY = (_cfg && _cfg.pp) || 0, _ckY = (_cfg && _cfg.ck) || 0, _shY = (_cfg && _cfg.sh) || 0;
+        ppItem = {kg: _r2(rmTotal * _ppY), hours:0, personHours:0};
+        ckItem = {kg: _r2(rmTotal * _ckY), hours:0, personHours:0};
+        shItem = {kg: _r2(rmTotal * _shY), hours:0, personHours:0};
         grp.forEach(function(r){ r._estRm = true; });
       } else {
         rmTotal = thByDateType[d+'|'+t] || 0;
@@ -935,7 +938,7 @@
           // 단일 row 그룹: 부위 전체 원육/전처리/자숙/파쇄 배정 (i===0과 동일)
           //   (빌드 시 부위 분할값이 아니라 부위 방혈 전체를 대표행에 표시)
           if(_isEstGrp && _useEst){
-            r.rmKg = _r2(rmTotal); r.ppKg = 0; r.ckKg = 0; r.shKg = 0;
+            r.rmKg = _r2(rmTotal); r.ppKg = _r2(ppItem.kg); r.ckKg = _r2(ckItem.kg); r.shKg = _r2(shItem.kg);
           } else {
             r.rmKg = _r2(rmTotal);
             r.ppKg = _r2(ppItem.kg);
@@ -1517,9 +1520,9 @@
         if(__PART_COLS[c[0]]){
           if(grpCnt > 1 && !isGrpFirst) return '';  // 두번째 row부터 부위 컬럼 생략
           var rs = (grpCnt > 1) ? ' rowspan="'+grpCnt+'"' : '';
-          var _isEstCell = (c[0]==='rmKg' && r._estRm);
+          var _isEstCell = (r._estRm && (c[0]==='rmKg'||c[0]==='ppKg'||c[0]==='ckKg'||c[0]==='shKg'));
           var _ovSty = ((r._ovFields && r._ovFields[c[0]]) || _isEstCell) ? ' style="background:#fef3c7"' : '';  // ★ 수정본/가안 셀
-          var _ovTitle = _isEstCell ? ' title="가안 원육 — 완제품 고기중량 ÷ 6월 코스트코 평균수율(57.5%)로 역산. 실제 방혈 미기록분."' : '';
+          var _ovTitle = _isEstCell ? ' title="가안 — 6월 코스트코 평균수율로 역산(실제 방혈·공정 미기록분)"' : '';
           if(typeof v === 'number'){
             return '<td class="'+_grpCls(c, _i_)+'"'+rs+_ovSty+_ovTitle+'>'+fmtCell(v, c)+'</td>';
           }
