@@ -921,6 +921,21 @@
       __byDateG[d].forEach(function(r, i){ r.dateRowIdx = i; });
     });
 
+    // ── 관리자 6월 override: 기초무게 4개만 갈아끼움 (여기가 월단위생산량·월별현황 공용 지점) ──
+    //   비관리자/비오버라이드 날은 adminBase가 원값 반환 → 무영향.
+    //   하루 한 행(단일 제품/부위)일 때만 안전하게 덮음 (다부위 날은 분배 필요 → 건너뜀).
+    if(typeof adminBase === 'function'){
+      var __ovCnt = {};
+      rows.forEach(function(r){ if(r && r.date) __ovCnt[r.date] = (__ovCnt[r.date]||0) + 1; });
+      rows.forEach(function(r){
+        if(!r || !r.date || __ovCnt[r.date] !== 1) return;
+        r.rmKg = adminBase(r.date, 'rm', r.rmKg);
+        r.ppKg = adminBase(r.date, 'pp', r.ppKg);
+        r.ckKg = adminBase(r.date, 'ck', r.ckKg);
+        r.shKg = adminBase(r.date, 'sh', r.shKg);
+      });
+    }
+
     return {
       rows: rows,
       testCount: pk.filter(isTestPk).length
@@ -1053,39 +1068,33 @@
     });
 
     var calcRows = rows0.map(function(r){
-      // ── 관리자 6월 override: 기초무게 4개만 갈아끼움 (비관리자/비오버라이드면 원값) ──
-      var _ovRm = (typeof adminBase==='function') ? adminBase(r.date,'rm',r.rmKg) : r.rmKg;
-      var _ovPp = (typeof adminBase==='function') ? adminBase(r.date,'pp',r.ppKg) : r.ppKg;
-      var _ovCk = (typeof adminBase==='function') ? adminBase(r.date,'ck',r.ckKg) : r.ckKg;
-      var _ovSh = (typeof adminBase==='function') ? adminBase(r.date,'sh',r.shKg) : r.shKg;
       // ★ 그룹(공유 원육) 케이스: 그룹 합산 기준으로 생산성 계산 (두 행 동일 값)
       // 그룹 아니면 자기 행 값 사용 (기존 동작 유지)
       var ppT = (r._grpPpPH !== undefined) ? r._grpPpPH : (r.ppPersonHours || 0);
       var ckT = (r._grpCkPH !== undefined) ? r._grpCkPH : (r.ckPersonHours || 0);
       var shT = (r._grpShPH !== undefined) ? r._grpShPH : (r.shPersonHours || 0);
       var pkT = (r._grpPkPH !== undefined) ? r._grpPkPH : (r.pkPersonHours || 0);
-      var rmForProd = (r._grpRmTotal !== undefined) ? r._grpRmTotal : (_ovRm || 0);
+      var rmForProd = (r._grpRmTotal !== undefined) ? r._grpRmTotal : (r.rmKg || 0);
       var meatKg = r.pkEa * (r.kgea||0);
       var prodKg = r.pkEa * (r.kgTot||0);
-      var rm = _ovRm;
+      var rm = r.rmKg;
       // 그룹 단위 yield: 첫 row만 표시 (둘째 row 이후는 부위 KG가 0이라 자동으로 0)
       var grpMeat = r._grpMeatKg || meatKg;
       return Object.assign({}, r, {
-        rmKg:_ovRm, ppKg:_ovPp, ckKg:_ovCk, shKg:_ovSh,
         meatKg:_r2(meatKg), prodKg:_r2(prodKg),
         prodPp: rmForProd&&ppT?_r2(rmForProd/ppT):0,
         prodCk: rmForProd&&ckT?_r2(rmForProd/ckT):0,
         prodSh: rmForProd&&shT?_r2(rmForProd/shT):0,
         prodPk: rmForProd&&pkT?_r2(rmForProd/pkT):0,
         prodAll: rmForProd&&(ppT+ckT+shT+pkT)?_r2(rmForProd/(ppT+ckT+shT+pkT)):0,
-        yieldRmPp: rm?_r2(_ovPp/rm*100)/100:0,
-        yieldRmCk: rm?_r2(_ovCk/rm*100)/100:0,
-        yieldRmSh: rm?_r2(_ovSh/rm*100)/100:0,
+        yieldRmPp: rm?_r2(r.ppKg/rm*100)/100:0,
+        yieldRmCk: rm?_r2(r.ckKg/rm*100)/100:0,
+        yieldRmSh: rm?_r2(r.shKg/rm*100)/100:0,
         yieldRmPk: rm?_r2(grpMeat/rm*100)/100:0,
-        yieldPp:   rm?_r2(_ovPp/rm*100)/100:0,
-        yieldCk:   _ovPp?_r2(_ovCk/_ovPp*100)/100:0,
-        yieldSh:   _ovCk?_r2(_ovSh/_ovCk*100)/100:0,
-        yieldPk:   _ovSh?_r2(grpMeat/_ovSh*100)/100:0
+        yieldPp:   rm?_r2(r.ppKg/rm*100)/100:0,
+        yieldCk:   r.ppKg?_r2(r.ckKg/r.ppKg*100)/100:0,
+        yieldSh:   r.ckKg?_r2(r.shKg/r.ckKg*100)/100:0,
+        yieldPk:   r.shKg?_r2(grpMeat/r.shKg*100)/100:0
       });
     });
 
