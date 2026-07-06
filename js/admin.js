@@ -141,6 +141,10 @@
       var doc = await db.collection('_config').doc('product_parts').get();
       var data = (doc.exists && doc.data()) ? doc.data() : null;
       if(data && data.parts) window._productParts = data.parts;
+      // 가안 역산용 수율도 로드
+      var doc2 = await db.collection('_config').doc('estimate_yields').get();
+      var d2 = (doc2.exists && doc2.data()) ? doc2.data() : null;
+      if(d2 && d2.yields) window._estYields = d2.yields;
     }catch(e){ window._productPartsLoaded = false; }
   };
 

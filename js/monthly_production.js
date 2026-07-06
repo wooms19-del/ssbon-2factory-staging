@@ -944,6 +944,23 @@
       });
     }
 
+    // ── 가안 원육 역산 ──────────────────────────────────────────
+    //   완제품(포장)은 있는데 상위공정(원육·전처리·자숙·파쇄)이 전무한 날:
+    //   설정된 제품별 수율로 원육을 역산해 가안으로 채움 (실제 미기록분).
+    //   완제품 고기중량 = pkEa(외포장 우선)×kgea → ÷ 수율 = 가안 원육.
+    if(window._estYields){
+      rows.forEach(function(r){
+        if(!r) return;
+        if((r.rmKg||0) || (r.ppKg||0) || (r.ckKg||0) || (r.shKg||0)) return; // 상위공정 하나라도 있으면 스킵
+        var y = window._estYields[r.product];
+        if(!y) return;
+        var meat = (r.pkEa||0) * (r.kgea||0);
+        if(!(meat > 0)) return;
+        r.rmKg = _r2(meat / y);
+        r._estRm = true; // 가안 표식 (색상용)
+      });
+    }
+
     return {
       rows: rows,
       testCount: pk.filter(isTestPk).length
@@ -1472,7 +1489,7 @@
         if(__PART_COLS[c[0]]){
           if(grpCnt > 1 && !isGrpFirst) return '';  // 두번째 row부터 부위 컬럼 생략
           var rs = (grpCnt > 1) ? ' rowspan="'+grpCnt+'"' : '';
-          var _ovSty = (r._ovFields && r._ovFields[c[0]]) ? ' style="background:#fef3c7"' : '';  // ★ 수정본으로 바뀐 셀
+          var _ovSty = ((r._ovFields && r._ovFields[c[0]]) || (c[0]==='rmKg' && r._estRm)) ? ' style="background:#fef3c7"' : '';  // ★ 수정본/가안 셀
           if(typeof v === 'number'){
             return '<td class="'+_grpCls(c, _i_)+'"'+rs+_ovSty+'>'+fmtCell(v, c)+'</td>';
           }
