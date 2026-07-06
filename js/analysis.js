@@ -3755,6 +3755,12 @@ function _moRenderRmChart(rmByDate, ym, rmByDatePart){
   if(typeof adminBase === 'function' && window._isAdmin){
     const _rd = Object.assign({}, rmByDate);
     const _rp = Object.assign({}, rmByDatePart || {});
+    const _mpRows = (window._moGD && window._moGD.mpRows) || [];
+    const _dateProd = {}; _mpRows.forEach(function(r){ if(r && r.date && r.product && !_dateProd[r.date]) _dateProd[r.date] = r.product; });
+    // 제품 → 부위 매핑 (수동입력 부위 + 단일부위 방혈일에서 수집)
+    const _prodPart = {};
+    Object.keys(manual).forEach(function(d){ const pt = manual[d] && manual[d].part; const pr = _dateProd[d]; if(pt && pr && !_prodPart[pr]) _prodPart[pr] = pt; });
+    Object.keys(_rp).forEach(function(d){ const bp = _rp[d] || {}; const ps = Object.keys(bp).filter(function(x){ return bp[x] > 0; }); const pr = _dateProd[d]; if(ps.length === 1 && pr && !_prodPart[pr]) _prodPart[pr] = ps[0]; });
     [...new Set(Object.keys(_rd).concat(Object.keys(manual)))].forEach(function(d){
       const orig = _rd[d] || (manual[d] && manual[d].kg) || 0;
       const ov = adminBase(d, 'rm', orig);
@@ -3765,8 +3771,9 @@ function _moRenderRmChart(rmByDate, ym, rmByDatePart){
       if(parts.length){
         const tot = parts.reduce(function(s,p){ return s + bp[p]; }, 0);
         const np = {}; parts.forEach(function(p){ np[p] = bp[p]/tot*ov; }); _rp[d] = np;
-      } else if(manual[d] && manual[d].part){
-        _rp[d] = {}; _rp[d][manual[d].part] = ov;
+      } else {
+        const pt = (manual[d] && manual[d].part) || _prodPart[_dateProd[d]];
+        if(pt){ _rp[d] = {}; _rp[d][pt] = ov; }
       }
     });
     rmByDate = _rd; rmByDatePart = _rp;
