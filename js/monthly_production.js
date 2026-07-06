@@ -818,11 +818,15 @@
                        'ckKg','ckHours','ckPersonHours','ckWorkers',
                        'shKg','shHours','shPersonHours','shWorkers'];
     var __grpMap = {};
+    var __nonEstDT = {};  // 'date|부위' → 비-가안(일반) 제품이 존재 (방혈 주인 판정용)
     rows.forEach(function(r){
       if(r.noMeat){ r._grpKey = null; return; }
       // ★ 메인 행만 그룹화 (부위별 보조 행은 제외)
       if(r._isMainRow === false) return;
-      var key = r.date + '|' + (r.type || '');
+      var _isEst = window._estYields && window._estYields[r.product];
+      if(!_isEst) __nonEstDT[r.date + '|' + (r.type || '')] = true;
+      // 가안 제품(코스트코 등)은 별도 그룹으로 분리 — 다른 부위 제품과 원육 병합 방지
+      var key = r.date + '|' + (r.type || '') + (_isEst ? '|__EST__|' + r.product : '');
       if(!__grpMap[key]) __grpMap[key] = [];
       r._grpKey = key;
       __grpMap[key].push(r);
@@ -832,10 +836,28 @@
       var parts = key.split('|');
       var d = parts[0], t = parts[1];
       // 부위 전체 데이터 (분배 무시, 직접 조회)
-      var rmTotal = thByDateType[d+'|'+t] || 0;
-      var ppItem  = ppByDT[d+'|'+t] || {kg:0, hours:0, personHours:0};
-      var ckItem  = ckByDT[d+'|'+t] || {kg:0, hours:0, personHours:0};
-      var shItem  = shByDT[d+'|'+t] || {kg:0, hours:0, personHours:0};
+      var rmTotal, ppItem, ckItem, shItem;
+      var _isEstGrp = parts[2] === '__EST__';
+      var _useEst = false;
+      if(_isEstGrp){
+        var _thaw = thByDateType[d+'|'+t] || 0;
+        // 형제(일반) 제품이 같은 부위에 있거나, 그 부위 방혈이 없으면 → 가안 역산
+        _useEst = !!__nonEstDT[d+'|'+t] || !(_thaw > 0);
+      }
+      if(_isEstGrp && _useEst){
+        var _yld = window._estYields[grp[0].product] || 0;
+        var _meat = grp.reduce(function(s,r){ return s + (r.pkEa||0) * (r.kgea||0); }, 0);
+        rmTotal = _yld ? _r2(_meat / _yld) : 0;
+        ppItem = {kg:0, hours:0, personHours:0};
+        ckItem = {kg:0, hours:0, personHours:0};
+        shItem = {kg:0, hours:0, personHours:0};
+        grp.forEach(function(r){ r._estRm = true; });
+      } else {
+        rmTotal = thByDateType[d+'|'+t] || 0;
+        ppItem  = ppByDT[d+'|'+t] || {kg:0, hours:0, personHours:0};
+        ckItem  = ckByDT[d+'|'+t] || {kg:0, hours:0, personHours:0};
+        shItem  = shByDT[d+'|'+t] || {kg:0, hours:0, personHours:0};
+      }
       // 그룹 합산 완제품 고기 (yieldPk 계산용)
       var grpMeatKg = grp.reduce(function(s,r){
         return s + (r.pkEa||0) * (r.kgea||0);
@@ -911,6 +933,7 @@
           }
         } else {
           // 단일 row 그룹: 그대로 두되 _grpMeatKg만 부여
+          if(_isEstGrp && _useEst){ r.rmKg = _r2(rmTotal); r.ppKg = 0; r.ckKg = 0; r.shKg = 0; }  // 가안 원육 역산
           r._grpMeatKg = grpMeatKg;
         }
       });
@@ -941,23 +964,6 @@
         };
         _ap('rmKg','rm'); _ap('ppKg','pp'); _ap('ckKg','ck'); _ap('shKg','sh');
         if(Object.keys(_of).length) r._ovFields = _of;
-      });
-    }
-
-    // ── 가안 원육 역산 ──────────────────────────────────────────
-    //   완제품(포장)은 있는데 상위공정(원육·전처리·자숙·파쇄)이 전무한 날:
-    //   설정된 제품별 수율로 원육을 역산해 가안으로 채움 (실제 미기록분).
-    //   완제품 고기중량 = pkEa(외포장 우선)×kgea → ÷ 수율 = 가안 원육.
-    if(window._estYields){
-      rows.forEach(function(r){
-        if(!r) return;
-        if((r.rmKg||0) || (r.ppKg||0) || (r.ckKg||0) || (r.shKg||0)) return; // 상위공정 하나라도 있으면 스킵
-        var y = window._estYields[r.product];
-        if(!y) return;
-        var meat = (r.pkEa||0) * (r.kgea||0);
-        if(!(meat > 0)) return;
-        r.rmKg = _r2(meat / y);
-        r._estRm = true; // 가안 표식 (색상용)
       });
     }
 
@@ -1489,9 +1495,11 @@
         if(__PART_COLS[c[0]]){
           if(grpCnt > 1 && !isGrpFirst) return '';  // 두번째 row부터 부위 컬럼 생략
           var rs = (grpCnt > 1) ? ' rowspan="'+grpCnt+'"' : '';
-          var _ovSty = ((r._ovFields && r._ovFields[c[0]]) || (c[0]==='rmKg' && r._estRm)) ? ' style="background:#fef3c7"' : '';  // ★ 수정본/가안 셀
+          var _isEstCell = (c[0]==='rmKg' && r._estRm);
+          var _ovSty = ((r._ovFields && r._ovFields[c[0]]) || _isEstCell) ? ' style="background:#fef3c7"' : '';  // ★ 수정본/가안 셀
+          var _ovTitle = _isEstCell ? ' title="가안 원육 — 완제품 고기중량 ÷ 6월 코스트코 평균수율(57.5%)로 역산. 실제 방혈 미기록분."' : '';
           if(typeof v === 'number'){
-            return '<td class="'+_grpCls(c, _i_)+'"'+rs+_ovSty+'>'+fmtCell(v, c)+'</td>';
+            return '<td class="'+_grpCls(c, _i_)+'"'+rs+_ovSty+_ovTitle+'>'+fmtCell(v, c)+'</td>';
           }
           return '<td class="'+_grpCls(c, _i_)+'"'+rs+_ovSty+'>'+(v==null?'-':v)+'</td>';
         }
