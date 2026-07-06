@@ -16,16 +16,18 @@
     ov.innerHTML =
       '<div style="background:#fff;border-radius:12px;padding:22px 24px;width:300px;box-shadow:0 12px 40px rgba(0,0,0,0.25);font-family:-apple-system,BlinkMacSystemFont,\'Segoe UI\',sans-serif">'
       +'<div style="font-weight:700;font-size:15px;margin-bottom:14px;color:#0f172a">🔒 관리자 로그인</div>'
-      +'<input id="_adminPw" type="password" placeholder="비밀번호" style="width:100%;box-sizing:border-box;padding:9px 11px;border:1px solid #cbd5e1;border-radius:8px;font-size:14px;margin-bottom:6px">'
+      +'<input id="_adminId" type="text" autocomplete="username" placeholder="아이디" style="width:100%;box-sizing:border-box;padding:9px 11px;border:1px solid #cbd5e1;border-radius:8px;font-size:14px;margin-bottom:8px">'
+      +'<input id="_adminPw" type="password" autocomplete="current-password" placeholder="비밀번호" style="width:100%;box-sizing:border-box;padding:9px 11px;border:1px solid #cbd5e1;border-radius:8px;font-size:14px;margin-bottom:6px">'
       +'<div id="_adminErr" style="color:#dc2626;font-size:12px;min-height:16px;margin-bottom:8px"></div>'
       +'<div style="display:flex;gap:8px">'
       +'<button onclick="_adminSubmit()" style="flex:1;padding:9px;background:#1d4ed8;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer">로그인</button>'
       +'<button onclick="_adminCloseModal()" style="padding:9px 14px;background:#f1f5f9;color:#334155;border:none;border-radius:8px;font-size:13px;cursor:pointer">취소</button>'
       +'</div></div>';
     document.body.appendChild(ov);
-    var pw = document.getElementById('_adminPw');
-    pw.focus();
-    pw.addEventListener('keydown', function(e){ if(e.key === 'Enter') _adminSubmit(); });
+    document.getElementById('_adminId').focus();
+    ['_adminId','_adminPw'].forEach(function(id){
+      document.getElementById(id).addEventListener('keydown', function(e){ if(e.key === 'Enter') _adminSubmit(); });
+    });
   };
 
   window._adminCloseModal = function(){
@@ -34,20 +36,22 @@
   };
 
   window._adminSubmit = async function(){
-    var el = document.getElementById('_adminPw');
-    var input = el ? el.value : '';
+    var idEl = document.getElementById('_adminId');
+    var pwEl = document.getElementById('_adminPw');
+    var inId = idEl ? idEl.value.trim() : '';
+    var inPw = pwEl ? pwEl.value : '';
     var err = document.getElementById('_adminErr');
-    if(!input){ if(err) err.textContent = '비밀번호를 입력하세요.'; return; }
+    if(!inId || !inPw){ if(err) err.textContent = '아이디와 비밀번호를 입력하세요.'; return; }
     var ok = false;
     try{
       var doc = await db.collection('_config').doc('admin_config').get();
-      var pw = (doc.exists && doc.data()) ? (doc.data().password || '') : '';
-      ok = (input === pw);
+      var data = (doc.exists && doc.data()) ? doc.data() : {};
+      ok = (inId === (data.id || '') && inPw === (data.password || ''));
     }catch(e){
       if(err) err.textContent = '확인 실패. 잠시 후 다시 시도하세요.';
       return;
     }
-    if(!ok){ if(err) err.textContent = '비밀번호가 올바르지 않습니다.'; return; }
+    if(!ok){ if(err) err.textContent = '아이디 또는 비밀번호가 올바르지 않습니다.'; return; }
     window._isAdmin = true;
     sessionStorage.setItem(SS_KEY, '1');
     _adminCloseModal();
