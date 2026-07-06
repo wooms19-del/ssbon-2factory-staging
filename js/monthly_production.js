@@ -864,6 +864,7 @@
       }, 0);
       // 그룹 합산 포장 인시 (생산성 포장/전체 그룹 기준 계산용)
       var grpPkPH = grp.reduce(function(s,r){ return s + (r.pkPersonHours||0); }, 0);
+      if(d==='2026-07-02'){ (window._mpDbg=window._mpDbg||[]).push({key:key,rmTotal:rmTotal,useEst:_useEst,isEst:_isEstGrp,len:grp.length,prods:grp.map(function(x){return x.product+'/rm='+x.rmKg;})}); }
       grp.forEach(function(r, i){
         r._grpSize  = grp.length;
         r._grpFirst = (i===0);
