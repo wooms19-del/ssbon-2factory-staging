@@ -289,7 +289,7 @@ async function _renderAttReport(){
   var noteBox=
     '<div style="border:1px solid var(--g2);border-radius:8px;overflow:hidden;flex:1;min-width:240px">'
     +'<div style="background:#fdf3e0;padding:6px 10px;font-weight:700;font-size:13px;border-bottom:1px solid var(--g2)">총원 특이사항</div>'
-    +'<textarea onchange="_attCfgSetNote(this.value)" placeholder="예: 6/30 김미나 회사" style="width:100%;height:70px;border:none;padding:8px 10px;font-size:13px;resize:vertical;background:transparent">'+(_attReportCfg.note||'')+'</textarea>'
+    +'<textarea onchange="_attCfgSetNote(this.value)" style="width:100%;height:70px;border:none;padding:8px 10px;font-size:13px;resize:vertical;background:transparent">'+(_attReportCfg.note||'')+'</textarea>'
     +'</div>';
 
   var msg=_buildEarlyMsg();
