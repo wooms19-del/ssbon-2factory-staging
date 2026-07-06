@@ -475,6 +475,13 @@ async function renderMonthlyReport(pk, from, effectiveTo, ppMonth, thMonth, opDa
       if(yld>=52) moGoodDays++;
       dailyYields.push({date, yld});
     });
+    // ★ 표(생산일보)와 동일 총계 사용 — 표=KPI 일치 (6월 override 포함)
+    //   goodDays/차트는 기존 per-day 유지, 표시 총계만 표와 통일.
+    if(window._moTableTotals){
+      moTotRm   = window._moTableTotals.totRm;
+      moTotPkKg = window._moTableTotals.totPkKg;
+      moDays    = window._moTableTotals.days;
+    }
     const moAvgYld=moTotRm>0?moTotPkKg/moTotRm*100:0;
     const moLossKg=r2(moTotRm*(0.55-moAvgYld/100));
     _moRenderYieldKPI(moTotRm, moTotPkKg, moAvgYld, moDays, moGoodDays, moLossKg);
@@ -930,6 +937,8 @@ function _moRenderRows() {
   tbody.innerHTML=html.join('')||`<tr><td colspan="11" style="text-align:center;color:#aaa;padding:2rem">데이터 없음</td></tr>`;
 
   const totYld=totRm>0?(totPkKg/totRm*100).toFixed(1)+'%':'—';
+  // ★ KPI 카드가 표(생산일보)와 동일 총계를 쓰도록 stash — 표=KPI 일치, 6월 override 포함
+  window._moTableTotals = { totRm: totRm, totPkKg: totPkKg, days: new Set(disp.map(function(r){return r.date;})).size };
   const modeLbl = mode==='product'?' [제품별]':mode==='part'?' [원육별]':'';
   const cntLbl = mode==='none' ? `(${new Set(disp.map(r=>r.date)).size}일)` : '';
   if(tfoot) tfoot.innerHTML=`<tr style="background:#1e293b;color:#fff;font-weight:700">
