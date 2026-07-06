@@ -588,6 +588,10 @@
         });
         typeList = Object.keys(thTypes).sort(function(a,b){return thTypes[b]-thTypes[a];});
       }
+      // 코스트코 장조림: 방혈/packing에 부위 없으면 설도로 확정 (도메인 룰)
+      if(typeList.length === 0 && !isNoMeat && /코스트코/.test(p.product||'')){
+        typeList = ['설도'];
+      }
       p.type = typeList[0] || null;
       p.typeList = typeList;
       p.isNoMeat = isNoMeat;
@@ -929,10 +933,14 @@
       rows.forEach(function(r){ if(r && r.date) __ovCnt[r.date] = (__ovCnt[r.date]||0) + 1; });
       rows.forEach(function(r){
         if(!r || !r.date || __ovCnt[r.date] !== 1) return;
-        r.rmKg = adminBase(r.date, 'rm', r.rmKg);
-        r.ppKg = adminBase(r.date, 'pp', r.ppKg);
-        r.ckKg = adminBase(r.date, 'ck', r.ckKg);
-        r.shKg = adminBase(r.date, 'sh', r.shKg);
+        var _of = {};
+        var _ap = function(fld, key){
+          var nv = adminBase(r.date, key, r[fld]);
+          if(Math.abs((nv||0) - (r[fld]||0)) > 0.5) _of[fld] = true;  // 의미있게 바뀐 셀만
+          r[fld] = nv;
+        };
+        _ap('rmKg','rm'); _ap('ppKg','pp'); _ap('ckKg','ck'); _ap('shKg','sh');
+        if(Object.keys(_of).length) r._ovFields = _of;
       });
     }
 
@@ -1464,10 +1472,11 @@
         if(__PART_COLS[c[0]]){
           if(grpCnt > 1 && !isGrpFirst) return '';  // 두번째 row부터 부위 컬럼 생략
           var rs = (grpCnt > 1) ? ' rowspan="'+grpCnt+'"' : '';
+          var _ovSty = (r._ovFields && r._ovFields[c[0]]) ? ' style="background:#fef3c7"' : '';  // ★ 수정본으로 바뀐 셀
           if(typeof v === 'number'){
-            return '<td class="'+_grpCls(c, _i_)+'"'+rs+'>'+fmtCell(v, c)+'</td>';
+            return '<td class="'+_grpCls(c, _i_)+'"'+rs+_ovSty+'>'+fmtCell(v, c)+'</td>';
           }
-          return '<td class="'+_grpCls(c, _i_)+'"'+rs+'>'+(v==null?'-':v)+'</td>';
+          return '<td class="'+_grpCls(c, _i_)+'"'+rs+_ovSty+'>'+(v==null?'-':v)+'</td>';
         }
         if(c[0]==='pkEa') {
           var s = v ? Math.round(v).toLocaleString() : '-';

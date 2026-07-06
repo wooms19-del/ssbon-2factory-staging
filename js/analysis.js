@@ -3757,6 +3757,7 @@ function _moRenderRmChart(rmByDate, ym, rmByDatePart){
     const _rp = Object.assign({}, rmByDatePart || {});
     const _mpRows = (window._moGD && window._moGD.mpRows) || [];
     const _dateProd = {}; _mpRows.forEach(function(r){ if(r && r.date && r.product && !_dateProd[r.date]) _dateProd[r.date] = r.product; });
+    const _dateType = {}; _mpRows.forEach(function(r){ if(r && r.date && r.type && !_dateType[r.date]) _dateType[r.date] = r.type; });
     // 제품 → 부위 매핑 (수동입력 부위 + 단일부위 방혈일에서 수집)
     const _prodPart = {};
     Object.keys(manual).forEach(function(d){ const pt = manual[d] && manual[d].part; const pr = _dateProd[d]; if(pt && pr && !_prodPart[pr]) _prodPart[pr] = pt; });
@@ -3772,7 +3773,7 @@ function _moRenderRmChart(rmByDate, ym, rmByDatePart){
         const tot = parts.reduce(function(s,p){ return s + bp[p]; }, 0);
         const np = {}; parts.forEach(function(p){ np[p] = bp[p]/tot*ov; }); _rp[d] = np;
       } else {
-        const pt = (manual[d] && manual[d].part) || _prodPart[_dateProd[d]];
+        const pt = (manual[d] && manual[d].part) || _dateType[d] || _prodPart[_dateProd[d]];
         if(pt){ _rp[d] = {}; _rp[d][pt] = ov; }
       }
     });
