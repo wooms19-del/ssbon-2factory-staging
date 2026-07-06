@@ -59,7 +59,13 @@
   // ─── testRun 판정 (단일 룰) ────────────────────────────
   function _isTestRun(record){
     if(!record) return false;
-    return !!(record.testRun || record.isTest);
+    if(record.testRun || record.isTest) return true;
+    // cart/wagon 이름이 '테스트'인 기록도 테스트로 간주 (기존 화면과 동일)
+    var cart  = (record.cart  != null ? record.cart  : record._cart );
+    var wagon = (record.wagon != null ? record.wagon : record._wagon);
+    if(cart  != null && String(cart ).trim() === '테스트') return true;
+    if(wagon != null && String(wagon).trim() === '테스트') return true;
+    return false;
   }
 
   // ─── Packing 정규화 ────────────────────────────────────

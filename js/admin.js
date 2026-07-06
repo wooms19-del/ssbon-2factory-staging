@@ -6,6 +6,42 @@
   var SS_KEY = 'ssbon_admin_v1'; // sessionStorage — 기기별·탭 세션 한정(다른 기기로 안 번짐)
   window._isAdmin = (sessionStorage.getItem(SS_KEY) === '1');
 
+  // ── 관리자 override (수정본 6월 등) ──────────────────────────
+  // 캐시: { 'YYYY-MM': { 'YYYY-MM-DD': {rm,pp,ck,sh} } }
+  window._adminOv = window._adminOv || {};
+  window._adminOvLoaded = window._adminOvLoaded || {};
+
+  // 해당 월 override를 Firestore에서 1회 로드·캐시
+  window._adminLoadOverride = async function(ym){
+    if(!ym || window._adminOvLoaded[ym]) return;
+    window._adminOvLoaded[ym] = true;
+    try{
+      var docId = 'admin_override_' + ym.replace('-','');
+      var doc = await db.collection('_config').doc(docId).get();
+      var data = (doc.exists && doc.data()) ? doc.data() : null;
+      if(data && Array.isArray(data.days)){
+        var map = {};
+        data.days.forEach(function(d){
+          if(d && d.date) map[d.date] = { rm:d.rm, pp:d.pp, ck:d.ck, sh:d.sh };
+        });
+        window._adminOv[ym] = map;
+      }
+    }catch(e){ window._adminOvLoaded[ym] = false; } // 실패 시 재시도 허용
+  };
+
+  // 관리자면서 그 날짜 override 있으면 수정값, 아니면 원래값 (동기)
+  // field: 'rm'|'pp'|'ck'|'sh'
+  window.adminBase = function(date, field, original){
+    if(!window._isAdmin) return original;
+    var ym = String(date||'').slice(0,7);
+    var m = window._adminOv[ym];
+    if(!m) return original;
+    var r = m[String(date).slice(0,10)];
+    if(!r) return original;
+    var v = r[field];
+    return (v == null) ? original : v;
+  };
+
   // 로그인 모달 열기
   window.adminLogin = function(){
     if(window._isAdmin){ _adminRenderBadge(); return; }
@@ -57,7 +93,10 @@
     _adminCloseModal();
     _adminRenderBadge();
     if(typeof toast === 'function') toast('관리자 모드 ✓','s');
-    if(typeof refreshCurrentTab_ === 'function') refreshCurrentTab_();
+    // 6월 override 로드 후 현재 탭 갱신 (로드 완료돼야 수정본 반영)
+    _adminLoadOverride('2026-06').then(function(){
+      if(typeof refreshCurrentTab_ === 'function') refreshCurrentTab_();
+    });
   };
 
   window.adminLogout = function(){
@@ -95,7 +134,7 @@
   }
 
   function _adminInitUI(){
-    if(window._isAdmin) _adminRenderBadge();
+    if(window._isAdmin){ _adminRenderBadge(); _adminLoadOverride('2026-06'); }
     else _adminRenderLock();
   }
   if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', _adminInitUI);
