@@ -2285,13 +2285,18 @@ function renderDailyFromLocal_(d){
   }
   const _seenTh=new Set();
   const matchedTh=_rawTh.filter(r=>{const k=(r.cart||'')+'|'+String(r.date||'').slice(0,10)+'|'+(r.type||'');if(_seenTh.has(k))return false;_seenTh.add(k);return true;});
-  const rmKg=r2(matchedTh.reduce((s,r)=>s+(parseFloat(r.totalKg)||0),0));
+  let rmKg=r2(matchedTh.reduce((s,r)=>s+(parseFloat(r.totalKg)||0),0));
   // 원육 타입별 KG: matchedTh 기준으로 재계산 (바코드·중복 해동 오염 방지)
   Object.keys(thByType).forEach(k=>delete thByType[k]);
   matchedTh.forEach(r=>{(r.type||'').split(',').map(t=>t.trim()).filter(Boolean).forEach(t=>{if(!thByType[t])thByType[t]=0;thByType[t]+=parseFloat(r.totalKg)||0;});});
-  const ppKg=r2(pp.reduce((s,r)=>s+(parseFloat(r.kg)||0),0));
-  const ckKg=r2(ck.reduce((s,r)=>s+(parseFloat(r.kg)||0),0));
-  const shKg=r2(sh.reduce((s,r)=>s+(parseFloat(r.kg)||0),0));
+  let ppKg=r2(pp.reduce((s,r)=>s+(parseFloat(r.kg)||0),0));
+  let ckKg=r2(ck.reduce((s,r)=>s+(parseFloat(r.kg)||0),0));
+  let shKg=r2(sh.reduce((s,r)=>s+(parseFloat(r.kg)||0),0));
+  // ★ 관리자 6월 override — 그날 원육/공정 값을 수정본으로 (비관리자/비6월은 원값 그대로)
+  if(typeof adminBase==='function' && window._isAdmin){
+    rmKg=r2(adminBase(d,'rm',rmKg)); ppKg=r2(adminBase(d,'pp',ppKg));
+    ckKg=r2(adminBase(d,'ck',ckKg)); shKg=r2(adminBase(d,'sh',shKg));
+  }
   const totalEA=pk.reduce((s,r)=>s+(parseFloat(r.ea)||0),0);
   const totalMH=r2(sumMH(pp)+sumMH(ck)+sumMH(sh)+sumMH(pk));
   const defect=pk.reduce((s,r)=>s+(parseFloat(r.defect)||0),0);
