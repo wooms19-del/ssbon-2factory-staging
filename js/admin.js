@@ -133,7 +133,19 @@
     document.body.appendChild(b);
   }
 
+  // 제품 → 부위 설정 로드 (하드코딩 대신 데이터 — 게스트 포함 모두)
+  window._loadProductParts = async function(){
+    if(window._productPartsLoaded) return;
+    window._productPartsLoaded = true;
+    try{
+      var doc = await db.collection('_config').doc('product_parts').get();
+      var data = (doc.exists && doc.data()) ? doc.data() : null;
+      if(data && data.parts) window._productParts = data.parts;
+    }catch(e){ window._productPartsLoaded = false; }
+  };
+
   function _adminInitUI(){
+    _loadProductParts();
     if(window._isAdmin){ _adminRenderBadge(); _adminLoadOverride('2026-06'); }
     else _adminRenderLock();
   }

@@ -588,9 +588,9 @@
         });
         typeList = Object.keys(thTypes).sort(function(a,b){return thTypes[b]-thTypes[a];});
       }
-      // 코스트코 장조림: 방혈/packing에 부위 없으면 설도로 확정 (도메인 룰)
-      if(typeList.length === 0 && !isNoMeat && /코스트코/.test(p.product||'')){
-        typeList = ['설도'];
+      // 부위 안 잡히면 제품→부위 설정에서 조회 (하드코딩 대신 데이터 — 나중에 부위 바뀌면 설정만 수정)
+      if(typeList.length === 0 && !isNoMeat && window._productParts && window._productParts[p.product]){
+        typeList = [window._productParts[p.product]];
       }
       p.type = typeList[0] || null;
       p.typeList = typeList;
