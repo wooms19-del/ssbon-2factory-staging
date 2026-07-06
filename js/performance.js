@@ -493,13 +493,6 @@ function _perfBuildRows(th, pp, ck, sh, pk, op, sc){
       var src = (t==='_') ? _dataAll(dt) : _dataByType(dt, t);
       // 부위 명시했으나 그 부위 데이터 0이면 → 그날 전체 fallback
       if(t!=='_' && src.rmKg===0 && src.ppKg===0) src = _dataAll(dt);
-      // ── 관리자 6월 override: 기초무게 4개 (하루 단일 부위일 때만; 비관리자/비오버라이드면 원값) ──
-      if(typeof adminBase==='function' && Object.keys(byType).length===1){
-        src.rmKg = adminBase(dt,'rm',src.rmKg);
-        src.ppKg = adminBase(dt,'pp',src.ppKg);
-        src.ckKg = adminBase(dt,'ck',src.ckKg);
-        src.shKg = adminBase(dt,'sh',src.shKg);
-      }
       // ★ noMeat(메추리알 등)는 원육 공정 흐름 밖 — 공정 kg 분배에서 제외(0)
       function _isNoMeat(name){
         var p = (typeof L!=='undefined' && L && L.products) ? L.products.find(function(x){return x.name===name;}) : null;
@@ -1055,6 +1048,20 @@ function _perfBuildRows(th, pp, ck, sh, pk, op, sc){
     var gk = r.date + '|' + (r.groupIdx||0);
     r.groupAllSingle = (_groupAllSingle[gk] !== false);
   });
+  // ── 관리자 6월 override: 최종 행에 기초무게 4개 갈아끼움 (하루 일반행 1개일 때만) ──
+  //   비관리자/비오버라이드면 adminBase가 원값 반환. 테스트행 제외.
+  if(typeof adminBase === 'function'){
+    var _ovCnt = {};
+    combined.forEach(function(r){ if(r && r.date && !r.isTest) _ovCnt[r.date] = (_ovCnt[r.date]||0) + 1; });
+    combined.forEach(function(r){
+      if(!r || !r.date || r.isTest || _ovCnt[r.date] !== 1) return;
+      r.rmKg = adminBase(r.date, 'rm', r.rmKg);
+      r.ppKg = adminBase(r.date, 'pp', r.ppKg);
+      r.ckKg = adminBase(r.date, 'ck', r.ckKg);
+      r.shKg = adminBase(r.date, 'sh', r.shKg);
+    });
+  }
+
   return combined;
 }
 
