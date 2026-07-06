@@ -461,7 +461,8 @@ async function renderMonthlyReport(pk, from, effectiveTo, ppMonth, thMonth, opDa
     dayEntries.forEach(([date, allR])=>{
       // ★ 방혈(thawing) 0인 날 수동 원육값 폴백 — 수율 계산에 반영 (코스트코 등 방혈 미기록일)
       const _mrm=(window._moManualRm||{})[date];
-      const dayRm=r2(rmByDate[date]|| (_mrm&&_mrm.kg) ||0);
+      let dayRm=r2(rmByDate[date]|| (_mrm&&_mrm.kg) ||0);
+      if(typeof adminBase==='function') dayRm=r2(adminBase(date,'rm',dayRm));  // ★ 관리자 6월 override
       if(!dayRm) return;
       const effPkM={};
       allR.forEach(row=>{
@@ -1518,6 +1519,10 @@ async function _moLoadAndRenderPrevCmp(curYld, curRm, curPkKg, curDays) {
     // 내포장 막대 차트도 재그림 (전월 평균선 반영 위해)
     if(typeof renderPackingChart === 'function' && window._moPackingArgs){
       renderPackingChart(window._moPackingArgs.dayEntries, window._moPackingArgs.opMap, window._moPackingArgs.ym);
+    }
+    // ★ 원육 막대 차트도 재그림 — 전월 일평균 선 반영 (누락돼 있던 버그)
+    if(window._moRmByDate && typeof _moRenderRmChart === 'function'){
+      _moRenderRmChart(window._moRmByDate, _moYm || tod().slice(0,7), window._moRmByDatePart);
     }
     // 일별 원육 차트도 재그림
     if(typeof _moRenderRmChart === 'function' && window._moRmByDate){
@@ -3746,6 +3751,26 @@ function _moRenderRmChart(rmByDate, ym, rmByDatePart){
   if(_moRmChart){_moRmChart.destroy();_moRmChart=null;}
   rmByDate = rmByDate || {};
   const manual = window._moManualRm || {};
+  // ★ 관리자 6월 override — rmByDate/부위별에 덮음 (게스트는 원값/수동값 그대로)
+  if(typeof adminBase === 'function' && window._isAdmin){
+    const _rd = Object.assign({}, rmByDate);
+    const _rp = Object.assign({}, rmByDatePart || {});
+    [...new Set(Object.keys(_rd).concat(Object.keys(manual)))].forEach(function(d){
+      const orig = _rd[d] || (manual[d] && manual[d].kg) || 0;
+      const ov = adminBase(d, 'rm', orig);
+      if(ov === orig) return;
+      _rd[d] = ov;
+      const bp = _rp[d] || {};
+      const parts = Object.keys(bp).filter(function(p){ return bp[p] > 0; });
+      if(parts.length){
+        const tot = parts.reduce(function(s,p){ return s + bp[p]; }, 0);
+        const np = {}; parts.forEach(function(p){ np[p] = bp[p]/tot*ov; }); _rp[d] = np;
+      } else if(manual[d] && manual[d].part){
+        _rp[d] = {}; _rp[d][manual[d].part] = ov;
+      }
+    });
+    rmByDate = _rd; rmByDatePart = _rp;
+  }
   if(!Object.keys(rmByDate).length && !Object.keys(manual).length){ _moRenderManualUI(ym, []); return; }
 
   // 생산한 날 + 수동 입력일
