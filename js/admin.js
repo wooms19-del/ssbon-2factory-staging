@@ -46,7 +46,7 @@
     try{
       var doc = await db.collection('_config').doc('admin_config').get();
       var data = (doc.exists && doc.data()) ? doc.data() : {};
-      ok = (inId === (data.id || '') && inPw === (data.password || ''));
+      ok = (inId.toLowerCase() === (data.id || '').toLowerCase() && inPw === (data.password || ''));
     }catch(e){
       if(err) err.textContent = '확인 실패. 잠시 후 다시 시도하세요.';
       return;
