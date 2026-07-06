@@ -864,7 +864,6 @@
       }, 0);
       // 그룹 합산 포장 인시 (생산성 포장/전체 그룹 기준 계산용)
       var grpPkPH = grp.reduce(function(s,r){ return s + (r.pkPersonHours||0); }, 0);
-      if(d==='2026-07-02'){ (window._mpDbg=window._mpDbg||[]).push({key:key,rmTotal:rmTotal,useEst:_useEst,isEst:_isEstGrp,len:grp.length,prods:grp.map(function(x){return x.product+'/rm='+x.rmKg;})}); }
       grp.forEach(function(r, i){
         r._grpSize  = grp.length;
         r._grpFirst = (i===0);
@@ -933,9 +932,31 @@
             __PART_KEYS.forEach(function(k){ r[k] = 0; });
           }
         } else {
-          // 단일 row 그룹: 그대로 두되 _grpMeatKg만 부여
-          if(_isEstGrp && _useEst){ r.rmKg = _r2(rmTotal); r.ppKg = 0; r.ckKg = 0; r.shKg = 0; }  // 가안 원육 역산
+          // 단일 row 그룹: 부위 전체 원육/전처리/자숙/파쇄 배정 (i===0과 동일)
+          //   (빌드 시 부위 분할값이 아니라 부위 방혈 전체를 대표행에 표시)
+          if(_isEstGrp && _useEst){
+            r.rmKg = _r2(rmTotal); r.ppKg = 0; r.ckKg = 0; r.shKg = 0;
+          } else {
+            r.rmKg = _r2(rmTotal);
+            r.ppKg = _r2(ppItem.kg);
+            r.ppHours = _r2(ppItem.hours);
+            r.ppPersonHours = _r2(ppItem.personHours);
+            r.ppWorkers = ppItem.hours>0 ? r1(ppItem.personHours/ppItem.hours) : 0;
+            r.ckKg = _r2(ckItem.kg);
+            r.ckHours = _r2(ckItem.hours);
+            r.ckPersonHours = _r2(ckItem.personHours);
+            r.ckWorkers = ckItem.hours>0 ? r1(ckItem.personHours/ckItem.hours) : 0;
+            r.shKg = _r2(shItem.kg);
+            r.shHours = _r2(shItem.hours);
+            r.shPersonHours = _r2(shItem.personHours);
+            r.shWorkers = shItem.hours>0 ? r1(shItem.personHours/shItem.hours) : 0;
+          }
           r._grpMeatKg = grpMeatKg;
+          r._grpRmTotal = rmTotal;
+          r._grpPpPH = ppItem.personHours;
+          r._grpCkPH = ckItem.personHours;
+          r._grpShPH = shItem.personHours;
+          r._grpPkPH = grpPkPH;
         }
       });
     });
