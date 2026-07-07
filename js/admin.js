@@ -93,9 +93,9 @@
     _adminCloseModal();
     _adminRenderBadge();
     if(typeof toast === 'function') toast('관리자 모드 ✓','s');
-    // 6월 override 로드 후 현재 탭 갱신 (로드 완료돼야 수정본 반영)
+    // 6월 override 로드 후 현재 화면 갱신 (로드 완료돼야 수정본 반영)
     _adminLoadOverride('2026-06').then(function(){
-      if(typeof refreshCurrentTab_ === 'function') refreshCurrentTab_();
+      _adminRefreshView();
     });
   };
 
@@ -104,7 +104,7 @@
     sessionStorage.removeItem(SS_KEY);
     _adminRenderLock();
     if(typeof toast === 'function') toast('관리자 모드 해제','s');
-    if(typeof refreshCurrentTab_ === 'function') refreshCurrentTab_();
+    _adminRefreshView();
   };
 
   // 비관리자: 작은 🔒 로그인 버튼 (좌하단)
@@ -147,6 +147,21 @@
       if(d2 && d2.yields) window._estYields = d2.yields;
     }catch(e){ window._productPartsLoaded = false; }
   };
+
+  // 관리자 로그인/로그아웃 시 현재 보고 있는 화면 재렌더 (override 반영/해제)
+  function _adminRefreshView(){
+    try { if(typeof refreshCurrentTab_ === 'function') refreshCurrentTab_(); } catch(e){}   // 입력 모드
+    try {
+      if(typeof MODE !== 'undefined'){
+        if(MODE === 'd'){                                                                    // 분석
+          if(typeof DTAB !== 'undefined' && DTAB === 'monthly' && typeof renderMonthly === 'function') renderMonthly();
+          else if(typeof DTAB !== 'undefined' && DTAB === 'daily' && typeof renderDaily === 'function') renderDaily();
+        } else if(MODE === 'p'){                                                             // 실적관리(월단위생산량 등)
+          if(typeof window._mpRerender === 'function') window._mpRerender();
+        }
+      }
+    } catch(e){}
+  }
 
   function _adminInitUI(){
     _loadProductParts();
