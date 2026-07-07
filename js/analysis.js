@@ -3756,33 +3756,21 @@ function _moRenderRmChart(rmByDate, ym, rmByDatePart){
   if(_moRmChart){_moRmChart.destroy();_moRmChart=null;}
   rmByDate = rmByDate || {};
   const manual = window._moManualRm || {};
-  // ★ 관리자 6월 override — rmByDate/부위별에 덮음 (게스트는 원값/수동값 그대로)
-  if(typeof adminBase === 'function' && window._isAdmin){
-    const _rd = Object.assign({}, rmByDate);
-    const _rp = Object.assign({}, rmByDatePart || {});
-    const _mpRows = (window._moGD && window._moGD.mpRows) || [];
-    const _dateProd = {}; _mpRows.forEach(function(r){ if(r && r.date && r.product && !_dateProd[r.date]) _dateProd[r.date] = r.product; });
-    const _dateType = {}; _mpRows.forEach(function(r){ if(r && r.date && r.type && !_dateType[r.date]) _dateType[r.date] = r.type; });
-    // 제품 → 부위 매핑 (수동입력 부위 + 단일부위 방혈일에서 수집)
-    const _prodPart = {};
-    Object.keys(manual).forEach(function(d){ const pt = manual[d] && manual[d].part; const pr = _dateProd[d]; if(pt && pr && !_prodPart[pr]) _prodPart[pr] = pt; });
-    Object.keys(_rp).forEach(function(d){ const bp = _rp[d] || {}; const ps = Object.keys(bp).filter(function(x){ return bp[x] > 0; }); const pr = _dateProd[d]; if(ps.length === 1 && pr && !_prodPart[pr]) _prodPart[pr] = ps[0]; });
-    [...new Set(Object.keys(_rd).concat(Object.keys(manual)))].forEach(function(d){
-      const orig = _rd[d] || (manual[d] && manual[d].kg) || 0;
-      const ov = adminBase(d, 'rm', orig);
-      if(ov === orig) return;
-      _rd[d] = ov;
-      const bp = _rp[d] || {};
-      const parts = Object.keys(bp).filter(function(p){ return bp[p] > 0; });
-      if(parts.length){
-        const tot = parts.reduce(function(s,p){ return s + bp[p]; }, 0);
-        const np = {}; parts.forEach(function(p){ np[p] = bp[p]/tot*ov; }); _rp[d] = np;
-      } else {
-        const pt = (manual[d] && manual[d].part) || _dateType[d] || _prodPart[_dateProd[d]];
-        if(pt){ _rp[d] = {}; _rp[d][pt] = ov; }
-      }
-    });
-    rmByDate = _rd; rmByDatePart = _rp;
+  // ★ 표(생산일보)와 동일 출처(mpRows: 실제 방혈 + 코스트코 가안 + 6월 관리자 override)로 원육 재구성
+  //   → 코스트코 가안·6월 수정본이 그래프에도 그대로 반영되고 표와 일치. (mpRows 없으면 기존 유지)
+  {
+    const _mpRows = (window._moGD && window._moGD.mpRows) || null;
+    if(_mpRows && _mpRows.length){
+      const _rd = {}, _rp = {};
+      _mpRows.forEach(function(r){
+        if(!r || !r.date || r._isMainRow === false) return;  // 대표행만 (보조행 중복 방지)
+        _rd[r.date] = (_rd[r.date] || 0) + (r.rmKg || 0);
+        const pt = r.type || '';
+        if(pt){ if(!_rp[r.date]) _rp[r.date] = {}; _rp[r.date][pt] = (_rp[r.date][pt] || 0) + (r.rmKg || 0); }
+      });
+      rmByDate = _rd;
+      rmByDatePart = _rp;
+    }
   }
   if(!Object.keys(rmByDate).length && !Object.keys(manual).length){ _moRenderManualUI(ym, []); return; }
 
