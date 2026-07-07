@@ -1731,7 +1731,7 @@
       // 폴백: 모듈 미로딩 시 동기간 비교 표
       cmp.innerHTML = '<h3>📊 전월 대비 비교</h3><table><thead><tr><th>지표</th><th>'+ymThis.replace('-','년 ')+'월</th><th>'+ymPrev.replace('-','년 ')+'월 동기간 ('+ndays+'일차)</th><th>'+ymPrev.replace('-','년 ')+'월 (전체)</th><th>차이 (vs 동기간)</th><th>증감율</th></tr></thead><tbody>'
         + rowAbs('월 누적 원육사용량', 'rmKg', 'kg', 0)
-        + rowAbs('월 누적 EA (외포장)', 'pkEa', '', 0)
+        + rowAbs('월 누적 EA (외포장)', 'pkEa', 'EA', 0)
         + rowAbs('완제품 고기중량', 'meatKg', 'kg', 0)
         + rowYield('전처리 수율', 'ppKg') + rowYield('자숙 수율', 'ckKg') + rowYield('파쇄 수율', 'shKg') + rowYield('최종 수율', 'meatKg')
         + '</tbody></table>';
