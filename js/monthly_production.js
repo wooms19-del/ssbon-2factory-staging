@@ -856,6 +856,13 @@
         ckItem = {kg: _r2(rmTotal * _ckY), hours:0, personHours:0};
         shItem = {kg: _r2(rmTotal * _shY), hours:0, personHours:0};
         grp.forEach(function(r){ r._estRm = true; });
+      } else if(_isEstGrp && __nonEstDT[d+'|'+t]){
+        // __EST__(코스트코)인데 가안 미적용(게스트 등) + 같은 부위에 형제 제품 존재
+        //   → 원육은 형제 그룹 것이므로 0 (중복 계산 방지)
+        rmTotal = 0;
+        ppItem = {kg:0, hours:0, personHours:0};
+        ckItem = {kg:0, hours:0, personHours:0};
+        shItem = {kg:0, hours:0, personHours:0};
       } else {
         rmTotal = thByDateType[d+'|'+t] || 0;
         ppItem  = ppByDT[d+'|'+t] || {kg:0, hours:0, personHours:0};
