@@ -1641,7 +1641,7 @@ function _moRenderPrevCmp(el, cur, prev, prevYm) {
       ];
       const rows = stages.map((s,idx) => {
         const isFinal = idx === stages.length-1;
-        const yldDelta = (s.p>0 && s.c>0) ? delta(s.c, s.p, true) : '<span style="color:#94a3b8">—</span>';
+        const yldDelta = (s.p>0 && s.c>0) ? delta(s.c, s.p, true, '%p') : '<span style="color:#94a3b8">—</span>';
         return `<tr class="cmp-row" style="border-top:1px solid #f1f5f9;${isFinal?'background:#eff6ff':''}">
           <td style="padding:8px 6px;color:#64748b;${isFinal?'font-weight:700;color:#1e293b':''}">${s.label}</td>
           <td style="padding:8px 6px;text-align:center;${isFinal?'font-weight:600;color:#1d4ed8':'background:#f8fafc'}">${s.p>0?s.p.toFixed(1)+'%':'—'}</td>
