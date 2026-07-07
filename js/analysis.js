@@ -458,19 +458,19 @@ async function renderMonthlyReport(pk, from, effectiveTo, ppMonth, thMonth, opDa
   {
     let moTotRm=0, moTotPkKg=0, moDays=0, moGoodDays=0;
     const dailyYields=[];
-    dayEntries.forEach(([date, allR])=>{
-      // ★ 방혈(thawing) 0인 날 수동 원육값 폴백 — 수율 계산에 반영 (코스트코 등 방혈 미기록일)
-      const _mrm=(window._moManualRm||{})[date];
-      let dayRm=r2(rmByDate[date]|| (_mrm&&_mrm.kg) ||0);
-      if(typeof adminBase==='function') dayRm=r2(adminBase(date,'rm',dayRm));  // ★ 관리자 6월 override
+    // ★ mpRows(실제 방혈 + 코스트코 가안 + 6월 override) 기준 per-day — 원육그래프·표와 일치
+    const _mpR = (window._moGD && window._moGD.mpRows) || [];
+    const _byD = {};
+    _mpR.forEach(function(r){
+      if(!r || !r.date || r._isMainRow === false) return;
+      if(!_byD[r.date]) _byD[r.date] = {rm:0, meat:0};
+      _byD[r.date].rm += (r.rmKg||0);
+      _byD[r.date].meat += ((r.pkEaInner!=null?r.pkEaInner:r.pkEa)||0)*(r.kgea||0);  // 내포장(생산) 기준 완제품고기
+    });
+    Object.keys(_byD).sort().forEach(function(date){
+      const dayRm=r2(_byD[date].rm);
       if(!dayRm) return;
-      const effPkM={};
-      allR.forEach(row=>{
-        // ★ 원육수율=생산(내포장) 기준 — 외포장(출고) 우선 폴백 제거 (샘플/출고지연 왜곡 방지)
-        effPkM[row.product]=row.pkKg;
-      });
-      const totalAllPk=r2(allR.reduce((s,r)=>s+(effPkM[r.product]||0),0));
-      const dayPkKg=totalAllPk;
+      const dayPkKg=r2(_byD[date].meat);
       moTotRm+=dayRm; moTotPkKg+=dayPkKg; moDays++;
       const yld=dayPkKg/dayRm*100;
       if(yld>=52) moGoodDays++;
