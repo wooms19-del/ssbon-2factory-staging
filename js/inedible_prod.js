@@ -219,6 +219,7 @@
       +   '<button class="btn" onclick="ipThisMonth()">이번달</button>'
       +   '<input type="month" value="'+ym+'" onchange="ipPickMonth(this.value)">'
       +   '<button class="btn'+(_ipShowAnalysis?' an':'')+'" onclick="ipToggleAnalysis()">📊 분석</button>'
+      +   '<button class="btn dl" onclick="ipDownload()" style="margin-left:auto;background:#15803d;color:#fff;border-color:#15803d;font-weight:600">📥 엑셀 다운로드</button>'
       + '</div>'
       + '<div id="ipAnalysis"></div>'
       + '<div id="ipFilter"></div>'
@@ -508,4 +509,58 @@
   window.ipPickMonth = ipPickMonth;
   window.ipSetType   = ipSetType;
   window.ipToggleAnalysis = ipToggleAnalysis;
+
+  /* ===== 엑셀 다운로드 — 화면 그대로 (15열: 수율 포함) ===== */
+  window.ipDownload = function(){
+    if(typeof XLSX==='undefined'){ alert('엑셀 라이브러리 로딩 안됨'); return; }
+    var rows=_ipType===null ? _ipRows : _ipRows.filter(function(r){return r.type===_ipType;});
+    rows=rows.slice().sort(function(a,b){ if(a.date!==b.date) return a.date<b.date?-1:1; return b.rmKg-a.rmKg; });
+    if(!rows.length){ alert('내보낼 데이터가 없습니다'); return; }
+    var R1=function(v){ return Math.round(v*10)/10; };
+    var R2=function(v){ return Math.round(v*100)/100; };
+    var yld=function(num,den){ return den>0 ? R1(num/den*100) : ''; };
+    var head=['생산일자','원육 종류','제품명','원육 무게(KG)',
+      '전처리 비가식부(KG)','전처리 비가식부(%)','파쇄 비가식부(KG)','파쇄 비가식부(%)',
+      '전처리 수율(%)','자숙 수율(%)','파쇄 수율(%)',
+      '생산성 전처리(kg/인시)','생산성 자숙(kg/인시)','생산성 파쇄(kg/인시)','생산성 포장(EA/인시)'];
+    var aoa=[head];
+    rows.forEach(function(x){
+      aoa.push([
+        x.date, x.type||'', x.product||'-',
+        x.rmKg>0?R2(x.rmKg):'',
+        x.ppWaste>0?R2(x.ppWaste):'',
+        (x.ppWaste>0&&x.rmKg>0)?R1(x.ppWaste/x.rmKg*100):'',
+        x.shWaste>0?R2(x.shWaste):'',
+        (x.shWaste>0&&x.ckKg>0)?R1(x.shWaste/x.ckKg*100):'',
+        yld(x.ppKg,x.rmKg), yld(x.ckKg,x.ppKg), yld(x.shKg,x.ckKg),
+        x.ppMH>0?R1(x.rmKg/x.ppMH):'',
+        x.ckMH>0?R1(x.ppKg/x.ckMH):'',
+        x.shMH>0?R1(x.shKg/x.shMH):'',
+        x.pkMH>0?R2(x.ea/x.pkMH):''
+      ]);
+    });
+    var S=_agg(rows);
+    var days=S.days||1;
+    function totArr(label, div){
+      return [label, _ipType?_ipType:'전체','-',
+        S.rmKg>0?R2(S.rmKg/div):'',
+        S.ppWaste>0?R2(S.ppWaste/div):'',
+        S.ppWastePct!=null?R1(S.ppWastePct):'',
+        S.shWaste>0?R2(S.shWaste/div):'',
+        S.shWastePct!=null?R1(S.shWastePct):'',
+        yld(S.ppKg,S.rmKg), yld(S.ckKg,S.ppKg), yld(S.shKg,S.ckKg),
+        S.prodPp!=null?R1(S.prodPp):'',
+        S.prodCk!=null?R1(S.prodCk):'',
+        S.prodSh!=null?R1(S.prodSh):'',
+        S.prodPk!=null?R2(S.prodPk):''
+      ];
+    }
+    aoa.push(totArr('합계',1));
+    aoa.push(totArr('일평균',days));
+    var ws=XLSX.utils.aoa_to_sheet(aoa);
+    ws['!cols']=[{wch:12},{wch:10},{wch:34},{wch:12},{wch:15},{wch:15},{wch:13},{wch:13},{wch:12},{wch:12},{wch:12},{wch:16},{wch:16},{wch:15},{wch:16}];
+    var wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, '비가식부·생산성');
+    XLSX.writeFile(wb, '비가식부생산성_'+(_ipYm||_ymToday())+(_ipType?'_'+_ipType:'')+'.xlsx');
+  };
 })();
