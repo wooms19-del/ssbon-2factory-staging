@@ -247,10 +247,10 @@ async function _renderAttReport(){
       if(t.indexOf('annual')>=0){c.annual++; off.push(_nm+'(연차)');}
       else if(t.indexOf('absent')>=0){c.absent++; off.push(_nm+'(결근)');}
       else if(t.indexOf('holiday')>=0){c.holiday++; off.push(_nm+'(휴무)');}
-      if(t.indexOf('half-am')>=0){c.half++; off.push(_nm+'(반차오전)');}
-      else if(t.indexOf('half-pm')>=0){c.half++; off.push(_nm+'(반차오후)');}
-      if(t.indexOf('quarter-am')>=0){c.quarter++; off.push(_nm+'(반반차오전)');}
-      else if(t.indexOf('quarter-pm')>=0){c.quarter++; off.push(_nm+'(반반차오후)');}
+      if(t.indexOf('half-am')>=0){c.half++; off.push(_nm+'(오전반차)');}
+      else if(t.indexOf('half-pm')>=0){c.half++; off.push(_nm+'(오후반차)');}
+      if(t.indexOf('quarter-am')>=0){c.quarter++; off.push(_nm+'(오전반반차)');}
+      else if(t.indexOf('quarter-pm')>=0){c.quarter++; off.push(_nm+'(오후반반차)');}
       else if(t.indexOf('quarter')>=0){c.quarter++; off.push(_nm+'(반반차)');}
     });
     var work=c.total-c.annual-c.absent-c.holiday-c.half-c.quarter;
@@ -322,10 +322,10 @@ function _buildEarlyMsg(){
     if(t.indexOf('holiday')>=0)off.push(_attDispName(e));
     else if(t.indexOf('annual')>=0)off.push(_attDispName(e)+'(연차)');
     else if(t.indexOf('absent')>=0)off.push(_attDispName(e)+'(결근)');
-    if(t.indexOf('half-am')>=0)off.push(_attDispName(e)+'(반차오전)');
-    else if(t.indexOf('half-pm')>=0)off.push(_attDispName(e)+'(반차오후)');
-    if(t.indexOf('quarter-am')>=0)off.push(_attDispName(e)+'(반반차오전)');
-    else if(t.indexOf('quarter-pm')>=0)off.push(_attDispName(e)+'(반반차오후)');
+    if(t.indexOf('half-am')>=0)off.push(_attDispName(e)+'(오전반차)');
+    else if(t.indexOf('half-pm')>=0)off.push(_attDispName(e)+'(오후반차)');
+    if(t.indexOf('quarter-am')>=0)off.push(_attDispName(e)+'(오전반반차)');
+    else if(t.indexOf('quarter-pm')>=0)off.push(_attDispName(e)+'(오후반반차)');
     else if(t.indexOf('quarter')>=0)off.push(_attDispName(e)+'(반반차)');
   });
   lines.push('휴무자 '+(off.length?off.join(' '):'없습니다.'));
