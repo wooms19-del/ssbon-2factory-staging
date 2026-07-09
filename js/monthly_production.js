@@ -87,7 +87,7 @@
     var pnav=document.getElementById('pnav');
     if(pnav){
       pnav.querySelectorAll('.ti').forEach(function(t,i){
-        t.classList.toggle('on', (i===0&&name==='daily') || (i===1&&name==='monthly') || (i===2&&name==='stock') || (i===3&&name==='inedible'));
+        t.classList.toggle('on', (i===0&&name==='daily') || (i===1&&name==='monthly') || (i===2&&name==='stock') || (i===3&&name==='inedible') || (i===4&&name==='analysis'));
       });
     }
     // ★ 다른 모드(일정표/출퇴근 등) 페이지가 켜져 있을 수 있으니 모든 .pg 먼저 끄기
@@ -113,6 +113,11 @@
       var ipPg = document.getElementById('p-inedible');
       if(ipPg) ipPg.classList.add('on');
       if(typeof renderInedibleProd === 'function') renderInedibleProd();
+    } else if(name==='analysis'){
+      var paPg = document.getElementById('p-prod-analysis');
+      if(paPg) paPg.classList.add('on');
+      if(_innerEl) _innerEl.style.maxWidth = 'none';
+      if(typeof renderProdAnalysis === 'function') renderProdAnalysis();
     }
     var ms=document.getElementById('mscroll'); if(ms) ms.scrollTop=0;
   }
@@ -2011,6 +2016,7 @@
   window.showPerfSub    = showPerfSub;
   window.mpPrevMonth    = mpPrevMonth;
   window._mpProcess     = _mpProcess;  // ★ 월간 생산 일보가 동일 값을 쓰도록 노출
+  window._mpAggregate   = _mpAggregate;  // ★ 생산 분석(1~12월 요약)이 동일 집계 경로를 쓰도록 노출
   window._mpRerender    = function(){ try{ if(_mpYm) _mpReload(); }catch(e){} };  // ★ 관리자 로그인/아웃 시 현재월 재렌더
   window.mpNextMonth    = mpNextMonth;
   window.mpThisMonth    = mpThisMonth;
