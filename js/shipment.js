@@ -189,47 +189,122 @@ function _renderStockView(){
 // ── 출고 이력 뷰 ──
 function _renderShipView(){
   var host=document.getElementById('op_view_ship'); if(!host) return;
-  // 출고 폼: 제품 → 로트 선택
   var prods=_shipProducts();
   var prodOpts=prods.map(function(p){ return '<option value="'+p.replace(/"/g,'&quot;')+'">'+p+'</option>'; }).join('');
   var form='<div style="background:#fef3c7;border:1px dashed #f59e0b;border-radius:8px;padding:14px;margin-bottom:16px">'
     + '<div style="display:flex;gap:10px;align-items:end;flex-wrap:wrap">'
       + '<div><label style="display:block;font-size:11px;color:#6b7280;margin-bottom:4px">출고일</label><input type="date" id="gs_date" value="'+_shipToday()+'" style="padding:7px 9px;border:1px solid #d1d5db;border-radius:5px;font-size:13px"></div>'
-      + '<div style="min-width:190px"><label style="display:block;font-size:11px;color:#6b7280;margin-bottom:4px">제품</label><select id="gs_prod" onchange="_gsFillLots()" style="padding:7px 9px;border:1px solid #d1d5db;border-radius:5px;font-size:13px;width:100%">'+prodOpts+'</select></div>'
-      + '<div style="min-width:170px"><label style="display:block;font-size:11px;color:#6b7280;margin-bottom:4px">로트(제조/소비일)</label><select id="gs_lot" style="padding:7px 9px;border:1px solid #d1d5db;border-radius:5px;font-size:13px;width:100%"></select></div>'
-      + '<div><label style="display:block;font-size:11px;color:#6b7280;margin-bottom:4px">출고 수량(EA)</label><input type="number" id="gs_ea" min="1" style="padding:7px 9px;border:1px solid #d1d5db;border-radius:5px;font-size:13px;width:120px;text-align:right"></div>'
-      + '<div style="flex:1;min-width:130px"><label style="display:block;font-size:11px;color:#6b7280;margin-bottom:4px">메모</label><input type="text" id="gs_note" placeholder="거래처 등" style="padding:7px 9px;border:1px solid #d1d5db;border-radius:5px;font-size:13px;width:100%"></div>'
-      + '<button onclick="goodsShipAdd()" style="padding:8px 16px;background:#d97706;color:#fff;border:none;border-radius:5px;font-size:13px;font-weight:600;cursor:pointer">출고 저장</button>'
-    + '</div></div>';
+      + '<div style="min-width:180px"><label style="display:block;font-size:11px;color:#6b7280;margin-bottom:4px">제품</label><select id="gs_prod" onchange="_gsFillLots();_gsCalcEa()" style="padding:7px 9px;border:1px solid #d1d5db;border-radius:5px;font-size:13px;width:100%">'+prodOpts+'</select></div>'
+      + '<div style="min-width:200px"><label style="display:block;font-size:11px;color:#6b7280;margin-bottom:4px">로트(소비기한)</label><select id="gs_lot" style="padding:7px 9px;border:1px solid #d1d5db;border-radius:5px;font-size:13px;width:100%"></select></div>'
+      + '<div><label style="display:block;font-size:11px;color:#6b7280;margin-bottom:4px">박스</label><input type="number" id="gs_box" min="0" oninput="_gsCalcEa()" style="padding:7px 9px;border:1px solid #d1d5db;border-radius:5px;font-size:13px;width:80px;text-align:right"></div>'
+      + '<div><label style="display:block;font-size:11px;color:#6b7280;margin-bottom:4px">수량(EA)</label><input type="number" id="gs_ea" min="1" style="padding:7px 9px;border:1px solid #d1d5db;border-radius:5px;font-size:13px;width:100px;text-align:right"></div>'
+      + '<div><label style="display:block;font-size:11px;color:#6b7280;margin-bottom:4px">파레트</label><input type="number" id="gs_pallet" min="0" step="0.5" style="padding:7px 9px;border:1px solid #d1d5db;border-radius:5px;font-size:13px;width:75px;text-align:right"></div>'
+      + '<div style="flex:1;min-width:110px"><label style="display:block;font-size:11px;color:#6b7280;margin-bottom:4px">메모</label><input type="text" id="gs_note" placeholder="거래처 등" style="padding:7px 9px;border:1px solid #d1d5db;border-radius:5px;font-size:13px;width:100%"></div>'
+      + '<button onclick="goodsShipAdd()" style="padding:8px 16px;background:#d97706;color:#fff;border:none;border-radius:5px;font-size:13px;font-weight:600;cursor:pointer">출고 추가</button>'
+    + '</div>'
+    + '<div style="font-size:11px;color:#9ca3af;margin-top:8px">박스 입력하면 EA 자동 계산(입수 기준) · EA 직접 수정 가능 · 파레트는 직접 입력</div></div>';
+  // 출고서 복사
+  var copyBox='<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:14px;margin-bottom:16px">'
+    + '<div style="display:flex;gap:10px;align-items:end;flex-wrap:wrap;margin-bottom:10px">'
+      + '<div><label style="display:block;font-size:11px;color:#6b7280;margin-bottom:4px">출고서 날짜</label><input type="date" id="gs_copy_date" value="'+_shipToday()+'" onchange="_shipCopy()" style="padding:7px 9px;border:1px solid #d1d5db;border-radius:5px;font-size:13px"></div>'
+      + '<button onclick="_shipCopy()" style="padding:8px 16px;background:#2563eb;color:#fff;border:none;border-radius:5px;font-size:13px;font-weight:600;cursor:pointer">📋 출고서 생성</button>'
+      + '<button onclick="_shipCopyClip()" style="padding:8px 16px;background:#fff;border:1px solid #2563eb;color:#2563eb;border-radius:5px;font-size:13px;font-weight:600;cursor:pointer">복사하기</button>'
+    + '</div>'
+    + '<textarea id="gs_copy_out" readonly style="width:100%;min-height:130px;padding:10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;font-family:monospace;line-height:1.6;background:#fff;resize:vertical" placeholder="날짜 선택 후 [출고서 생성] → 메신저에 붙여넣기"></textarea>'
+    + '</div>';
   // 출고 목록
   var ships=_shipData.ships.slice().sort(function(a,b){ return String(b.date).localeCompare(String(a.date)); });
   var rows=ships.map(function(s){
-    var fb=s.fbId||s.id||'';
+    var fb=s.fbId||s.id||''; var box=parseInt(s.boxes,10)||0; var pal=parseFloat(s.pallets)||0;
     return '<tr style="border-top:0.5px solid #f3f4f6">'
       + '<td style="padding:9px 14px;font-weight:600;font-family:monospace">'+(s.date||'-')+'</td>'
       + '<td style="padding:9px 14px">'+(s.product||'-')+'</td>'
-      + '<td style="padding:9px 14px;font-family:monospace;color:#6b7280">소비기한 '+(s.lotDate||'-')+'</td>'
-      + '<td style="padding:9px 14px;text-align:right;font-weight:600">'+(parseInt(s.ea,10)||0).toLocaleString()+'</td>'
+      + '<td style="padding:9px 14px;font-family:monospace;color:#6b7280">'+(s.lotDate||'-')+'</td>'
+      + '<td style="padding:9px 10px;text-align:right">'+(box?box.toLocaleString():'-')+'</td>'
+      + '<td style="padding:9px 10px;text-align:right;font-weight:600">'+(parseInt(s.ea,10)||0).toLocaleString()+'</td>'
+      + '<td style="padding:9px 10px;text-align:right;color:#6b7280">'+(pal||'-')+'</td>'
       + '<td style="padding:9px 14px;color:#6b7280">'+(s.note||'-')+'</td>'
       + '<td style="padding:9px 14px;text-align:center">'+(fb?'<button onclick="goodsShipDelete(\''+fb+'\')" style="padding:4px 10px;background:#dc2626;color:#fff;border:none;border-radius:4px;font-size:12px;cursor:pointer">삭제</button>':'-')+'</td>'
       + '</tr>';
   }).join('');
-  if(!rows) rows='<tr><td colspan="6" style="padding:16px;text-align:center;color:#9ca3af;font-size:13px">출고 기록 없음</td></tr>';
+  if(!rows) rows='<tr><td colspan="8" style="padding:16px;text-align:center;color:#9ca3af;font-size:13px">출고 기록 없음</td></tr>';
   var table='<div style="background:#fff;border:0.5px solid #e5e7eb;border-radius:12px;overflow:hidden"><div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">'
     + '<thead><tr style="background:#f9fafb">'
     + '<th style="padding:9px 14px;text-align:left;color:#475569;font-weight:600">출고일</th>'
     + '<th style="padding:9px 14px;text-align:left;color:#475569;font-weight:600">제품</th>'
-    + '<th style="padding:9px 14px;text-align:left;color:#475569;font-weight:600">로트</th>'
-    + '<th style="padding:9px 14px;text-align:right;color:#475569;font-weight:600">출고 EA</th>'
+    + '<th style="padding:9px 14px;text-align:left;color:#475569;font-weight:600">소비기한</th>'
+    + '<th style="padding:9px 10px;text-align:right;color:#475569;font-weight:600">박스</th>'
+    + '<th style="padding:9px 10px;text-align:right;color:#475569;font-weight:600">EA</th>'
+    + '<th style="padding:9px 10px;text-align:right;color:#475569;font-weight:600">파레트</th>'
     + '<th style="padding:9px 14px;text-align:left;color:#475569;font-weight:600">메모</th>'
     + '<th style="padding:9px 14px;text-align:center;color:#475569;font-weight:600">관리</th>'
     + '</tr></thead><tbody>'+rows+'</tbody></table></div></div>';
-  host.innerHTML = '<div style="font-size:15px;font-weight:700;color:#0f172a;margin:4px 2px 10px">🚚 출고 등록</div>'
+  host.innerHTML = '<div style="font-size:15px;font-weight:700;color:#0f172a;margin:4px 2px 10px">🚚 출고 등록 (오늘 나갈 것 여러 개 추가)</div>'
     + form
-    + '<div style="font-size:15px;font-weight:700;color:#0f172a;margin:4px 2px 10px">📋 출고 목록</div>'
+    + '<div style="font-size:15px;font-weight:700;color:#0f172a;margin:4px 2px 10px">📋 출고서 복사 (메신저용)</div>'
+    + copyBox
+    + '<div style="font-size:15px;font-weight:700;color:#0f172a;margin:4px 2px 10px">📄 출고 목록</div>'
     + table;
-  setTimeout(_gsFillLots, 0);
+  setTimeout(function(){ _gsFillLots(); _gsCalcEa(); }, 0);
 }
+
+// 박스 → EA 자동환산 (입수 기준)
+function _gsCalcEa(){
+  var prod=(document.getElementById('gs_prod')||{}).value;
+  var pb=_perBoxOf(prod);
+  var box=parseInt((document.getElementById('gs_box')||{}).value,10)||0;
+  var eaEl=document.getElementById('gs_ea');
+  if(eaEl && pb>0 && box>0) eaEl.value = box*pb;
+}
+window._gsCalcEa=_gsCalcEa;
+
+function _fmtYY(ds){ var p=String(ds||'').split('-'); if(p.length<3) return ds; return p[0].slice(2)+'.'+p[1]+'.'+p[2]; }
+
+// 출고서 텍스트 생성 (제품 → 소비기한별 묶음)
+function _shipCopyText(dateStr){
+  var ships=_shipData.ships.filter(function(s){ return String(s.date).slice(0,10)===dateStr; });
+  if(!ships.length) return '('+dateStr+' 출고 항목 없음)';
+  var byProd={};
+  ships.forEach(function(s){
+    var p=s.product||'(제품없음)';
+    if(!byProd[p]) byProd[p]={lots:{}, box:0, ea:0, pallet:0};
+    var ld=s.lotDate||'-';
+    if(!byProd[p].lots[ld]) byProd[p].lots[ld]={box:0,ea:0};
+    var box=parseInt(s.boxes,10)||0, ea=parseInt(s.ea,10)||0, pal=parseFloat(s.pallets)||0;
+    byProd[p].lots[ld].box+=box; byProd[p].lots[ld].ea+=ea;
+    byProd[p].box+=box; byProd[p].ea+=ea; byProd[p].pallet+=pal;
+  });
+  var lines=['📦 출고서 '+dateStr, ''];
+  var tBox=0,tEa=0,tPal=0;
+  Object.keys(byProd).forEach(function(p){
+    var g=byProd[p]; lines.push('■ '+p);
+    Object.keys(g.lots).sort().forEach(function(ld){
+      var l=g.lots[ld];
+      lines.push('  · 소비기한 '+_fmtYY(ld)+' — '+l.box.toLocaleString()+'박스 · '+l.ea.toLocaleString()+'ea');
+    });
+    lines.push('  ▶ 소계 '+g.box.toLocaleString()+'박스 · '+g.ea.toLocaleString()+'ea'+(g.pallet?' · '+(Math.round(g.pallet*10)/10)+'파레트':''));
+    lines.push('');
+    tBox+=g.box; tEa+=g.ea; tPal+=g.pallet;
+  });
+  lines.push('━━━━━━━━━━━━');
+  lines.push('총 '+tBox.toLocaleString()+'박스 · '+tEa.toLocaleString()+'ea'+(tPal?' · '+(Math.round(tPal*10)/10)+'파레트':''));
+  return lines.join('\n');
+}
+function _shipCopy(){
+  var d=(document.getElementById('gs_copy_date')||{}).value||_shipToday();
+  var out=document.getElementById('gs_copy_out'); if(out) out.value=_shipCopyText(d);
+}
+window._shipCopy=_shipCopy;
+function _shipCopyClip(){
+  var out=document.getElementById('gs_copy_out'); if(!out||!out.value){ _shipCopy(); }
+  if(!out||!out.value) return;
+  out.select();
+  try{
+    if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(out.value).then(function(){ toast&&toast('✓ 복사됨','s'); }).catch(function(){ document.execCommand('copy'); toast&&toast('✓ 복사됨','s'); }); }
+    else { document.execCommand('copy'); toast&&toast('✓ 복사됨','s'); }
+  }catch(e){ toast&&toast('복사 실패 — 길게 눌러 복사하세요','d'); }
+}
+window._shipCopyClip=_shipCopyClip;
 
 // 선택 제품의 남은 재고 있는 로트만 드롭다운
 function _gsFillLots(){
@@ -282,23 +357,24 @@ async function goodsShipAdd(){
   var date=(document.getElementById('gs_date')||{}).value;
   var prod=(document.getElementById('gs_prod')||{}).value;
   var lotv=(document.getElementById('gs_lot')||{}).value;
+  var box=parseInt((document.getElementById('gs_box')||{}).value,10)||0;
   var ea=parseInt((document.getElementById('gs_ea')||{}).value,10);
+  var pallet=parseFloat((document.getElementById('gs_pallet')||{}).value)||0;
   var note=String((document.getElementById('gs_note')||{}).value||'').trim();
   if(!date){ toast&&toast('출고일','d'); return; }
   if(!prod){ toast&&toast('제품','d'); return; }
   if(!lotv){ toast&&toast('출고할 로트 선택','d'); return; }
   if(!ea||ea<=0){ toast&&toast('수량','d'); return; }
   var lotDate=lotv; // = 소비기한(expiry)
-  // 남은 재고 초과 방지 (자동+수동 통합)
   var agg=_aggregateLots().filter(function(lt){return lt.product===prod && lt.expiry===lotDate;})[0];
   var inEa=agg?agg.inEa:0;
   var rem=inEa-_shippedFor(prod,lotDate);
   if(ea>rem){ toast&&toast('남은 재고('+rem.toLocaleString()+') 초과','d'); return; }
-  var rec={ id:(typeof gid==='function')?gid():('gs_'+Date.now()), product:prod, lotDate:lotDate, date:date, ea:ea, note:note };
+  var rec={ id:(typeof gid==='function')?gid():('gs_'+Date.now()), product:prod, lotDate:lotDate, date:date, boxes:box, ea:ea, pallets:pallet, note:note };
   toast&&toast('저장 중...','i');
   try{ var fbId=await fbSave('goodsShip', rec);
     if(fbId){ rec.fbId=fbId; _shipData.ships.push(rec); toast&&toast('✓ '+prod+' '+ea.toLocaleString()+'EA 출고','s');
-      var e=document.getElementById('gs_ea'); if(e)e.value=''; var n=document.getElementById('gs_note'); if(n)n.value='';
+      ['gs_box','gs_ea','gs_pallet','gs_note'].forEach(function(id){var el=document.getElementById(id); if(el)el.value='';});
       _renderShipViews();
     } else toast&&toast('저장 실패','d');
   }catch(e){ console.error(e); toast&&toast('오류: '+(e.message||e),'d'); }
