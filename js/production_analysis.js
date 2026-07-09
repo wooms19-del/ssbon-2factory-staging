@@ -115,16 +115,25 @@
     var bd="0.5px solid #e5e7eb", bdS="0.5px solid #cbd5e1", bdM="2px solid #94a3b8";
 
     var h='';
-    // 툴바
-    h+='<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:12px 8px 10px">';
+    // 툴바 1줄: 제품별/부위별 + 지표
+    h+='<div style="display:flex;gap:9px;flex-wrap:wrap;align-items:center;padding:14px 10px 8px">';
     h+='<div style="display:inline-flex;border:1px solid #cbd5e1;border-radius:8px;overflow:hidden">'
-      +'<button onclick="paSetMode(\'prod\')" style="font-size:13px;padding:6px 16px;border:none;cursor:pointer;background:'+(_paMode==='prod'?'#1d4ed8':'#f8fafc')+';color:'+(_paMode==='prod'?'#fff':'#475569')+'">제품별</button>'
-      +'<button onclick="paSetMode(\'part\')" style="font-size:13px;padding:6px 16px;border:none;cursor:pointer;background:'+(_paMode==='part'?'#1d4ed8':'#f8fafc')+';color:'+(_paMode==='part'?'#fff':'#475569')+'">부위별</button>'
+      +'<button onclick="paSetMode(\'prod\')" style="font-size:14px;padding:7px 18px;border:none;cursor:pointer;background:'+(_paMode==='prod'?'#1d4ed8':'#f8fafc')+';color:'+(_paMode==='prod'?'#fff':'#475569')+'">제품별</button>'
+      +'<button onclick="paSetMode(\'part\')" style="font-size:14px;padding:7px 18px;border:none;cursor:pointer;background:'+(_paMode==='part'?'#1d4ed8':'#f8fafc')+';color:'+(_paMode==='part'?'#fff':'#475569')+'">부위별</button>'
       +'</div>';
-    h+='<span style="font-size:12px;color:#94a3b8;margin:0 2px">| 월별 표시 지표</span>';
+    h+='<span style="font-size:13px;color:#94a3b8;margin:0 2px">| 월별 표시 지표</span>';
     SUB.forEach(function(s){
       var on=!_paHidden[s.key];
-      h+='<button onclick="paToggleMetric(\''+s.key+'\')" style="font-size:12px;padding:5px 11px;border-radius:20px;border:1px solid #cbd5e1;cursor:pointer;background:'+(on?'#1d4ed8':'#f1f5f9')+';color:'+(on?'#fff':'#94a3b8')+'">'+s.k+'</button>';
+      h+='<button onclick="paToggleMetric(\''+s.key+'\')" style="font-size:13px;padding:6px 13px;border-radius:20px;border:1px solid #cbd5e1;cursor:pointer;background:'+(on?'#1d4ed8':'#f1f5f9')+';color:'+(on?'#fff':'#94a3b8')+'">'+s.k+'</button>';
+    });
+    h+='</div>';
+    // 툴바 2줄: 항목(제품/부위) 선택 칩 — 제품별 바로 아래
+    var allItems0=_items();
+    h+='<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;padding:2px 10px 12px;border-bottom:1px solid #eef1f4;margin-bottom:2px">';
+    h+='<span style="font-size:13px;color:#94a3b8;margin-right:4px">'+(_paMode==='prod'?'제품':'부위')+'</span>';
+    allItems0.forEach(function(x){
+      var on=!_paOff[x];
+      h+='<button onclick="paToggleItem(\''+x.replace(/'/g,"\\'")+'\')" style="font-size:13px;padding:6px 13px;border-radius:20px;border:1px solid #cbd5e1;cursor:pointer;background:'+(on?'#eff6ff':'#f1f5f9')+';color:'+(on?'#1e40af':'#94a3b8')+';font-weight:'+(on?'500':'400')+';'+(on?'':'text-decoration:line-through;')+'">'+x+'</button>';
     });
     h+='</div>';
 
@@ -133,17 +142,17 @@
 
     // 표
     h+='<div style="overflow-x:auto;border:1px solid #e5e7eb;border-radius:8px;margin:0 8px">';
-    h+='<table style="border-collapse:collapse;font-size:11px;white-space:nowrap;font-variant-numeric:tabular-nums;min-width:100%">';
+    h+='<table style="border-collapse:collapse;font-size:13px;white-space:nowrap;font-variant-numeric:tabular-nums;min-width:100%">';
     // 헤더 2줄
     h+='<thead>';
     h+='<tr style="background:#374151;color:#fff">';
-    h+='<th rowspan="2" style="position:sticky;left:0;z-index:6;background:#1e293b;padding:8px 10px;text-align:left;min-width:118px;border-bottom:'+bd+'">'+(_paMode==='prod'?'제품':'부위')+'</th>';
-    months.forEach(function(m,mi){ h+='<th colspan="'+subVis.length+'" style="padding:7px 6px;text-align:center;border-bottom:'+bd+';border-left:'+(mi===0?bdM:'1px solid #6b7280')+'">'+m+'월</th>'; });
-    h+='<th colspan="'+subVis.length+'" style="padding:7px 6px;text-align:center;border-bottom:'+bd+';border-left:2px solid #065f46;background:#065f46">누적</th>';
+    h+='<th rowspan="2" style="position:sticky;left:0;z-index:6;background:#1e293b;padding:11px 12px;text-align:left;min-width:132px;font-size:14px;border-bottom:'+bd+'">'+(_paMode==='prod'?'제품':'부위')+'</th>';
+    months.forEach(function(m,mi){ h+='<th colspan="'+subVis.length+'" style="padding:9px 6px;text-align:center;font-size:13.5px;border-bottom:'+bd+';border-left:'+(mi===0?bdM:'1px solid #6b7280')+'">'+m+'월</th>'; });
+    h+='<th colspan="'+subVis.length+'" style="padding:9px 6px;text-align:center;font-size:13.5px;border-bottom:'+bd+';border-left:2px solid #065f46;background:#065f46">누적</th>';
     h+='</tr>';
     h+='<tr style="background:#4b5563;color:#e5e7eb;font-size:9.5px">';
     months.forEach(function(m,mi){ subVis.forEach(function(s,si){ h+='<th style="padding:4px 8px;text-align:right;border-bottom:'+bd+';'+(si===0?'border-left:'+(mi===0?bdM:'1px solid #6b7280'):'')+'">'+s.k+'</th>'; }); });
-    subVis.forEach(function(s,si){ h+='<th style="padding:4px 8px;text-align:right;border-bottom:'+bd+';background:#065f46;color:#d1fae5;'+(si===0?'border-left:2px solid #065f46':'')+'">'+s.k+'</th>'; });
+    subVis.forEach(function(s,si){ h+='<th style="padding:6px 10px;text-align:right;border-bottom:'+bd+';background:#065f46;color:#d1fae5;'+(si===0?'border-left:2px solid #065f46':'')+'">'+s.k+'</th>'; });
     h+='</tr></thead><tbody>';
 
     // 행 렌더 헬퍼
@@ -156,7 +165,7 @@
       // 지표별 시리즈 미리 계산
       var series = subVis.map(function(s){ return _series(kind, item, s, months); });
       var r='<tr style="background:'+bg+'">';
-      r+='<td style="position:sticky;left:0;z-index:4;background:'+lbg+';padding:8px 10px;text-align:left;font-weight:'+(isTot?700:600)+';color:'+lcol+';border-right:'+bdS+';border-bottom:'+(isTot?bdS:bd)+'">'+name+'</td>';
+      r+='<td style="position:sticky;left:0;z-index:4;background:'+lbg+';padding:10px 12px;text-align:left;font-size:13.5px;font-weight:'+(isTot?700:600)+';color:'+lcol+';border-right:'+bdS+';border-bottom:'+(isTot?bdS:bd)+'">'+name+'</td>';
       months.forEach(function(m,mi){
         subVis.forEach(function(s,si){
           var v=series[si].arr[mi];
@@ -165,12 +174,12 @@
           var col=_momColor(s,v,prev) || '#1e293b';
           var bgc='transparent';
           if(s.badLow!=null && v!=null && v<s.badLow){ col='#dc2626'; bgc='#fee2e2'; }
-          r+='<td style="padding:8px 8px;text-align:right;color:'+col+';background:'+bgc+';border-bottom:'+(isTot?bdS:bd)+';'+(si===0?'border-left:'+(mi===0?bdM:'1px solid #e5e7eb'):'')+'">'+(v==null?'':(s.dec?_f1(v):_f(v)))+'</td>';
+          r+='<td style="padding:9px 10px;text-align:right;color:'+col+';background:'+bgc+';border-bottom:'+(isTot?bdS:bd)+';'+(si===0?'border-left:'+(mi===0?bdM:'1px solid #e5e7eb'):'')+'">'+(v==null?'':(s.dec?_f1(v):_f(v)))+'</td>';
         });
       });
       subVis.forEach(function(s,si){
         var cv=series[si].cum;
-        r+='<td style="padding:8px 8px;text-align:right;font-weight:600;color:#1d4ed8;background:#f0fdf4;border-bottom:'+(isTot?bdS:bd)+';'+(si===0?'border-left:2px solid #a7f3d0':'')+'">'+(cv==null?'':(s.dec?_f1(cv):_f(cv)))+'</td>';
+        r+='<td style="padding:9px 10px;text-align:right;font-weight:600;color:#1d4ed8;background:#f0fdf4;border-bottom:'+(isTot?bdS:bd)+';'+(si===0?'border-left:2px solid #a7f3d0':'')+'">'+(cv==null?'':(s.dec?_f1(cv):_f(cv)))+'</td>';
       });
       r+='</tr>';
       return r;
@@ -180,17 +189,7 @@
     items.forEach(function(it,ri){ h+=rowHtml('item', it, ri); });
     h+='</tbody></table></div>';
 
-    // 항목 탭
-    var allItems=_items();
-    h+='<div style="font-size:12px;color:#94a3b8;margin:14px 8px 6px">'+(_paMode==='prod'?'제품':'부위')+' (누르면 빠짐)</div>';
-    h+='<div style="display:flex;gap:6px;flex-wrap:wrap;padding:0 8px 8px">';
-    allItems.forEach(function(x){
-      var on=!_paOff[x];
-      h+='<button onclick="paToggleItem(\''+x.replace(/'/g,"\\'")+'\')" style="font-size:12px;padding:5px 12px;border-radius:20px;border:1px solid #cbd5e1;cursor:pointer;background:'+(on?'#fff':'#f1f5f9')+';color:'+(on?'#1e293b':'#94a3b8')+';'+(on?'':'text-decoration:line-through;')+'">'+x+'</button>';
-    });
-    h+='</div>';
-
-    h+='<div style="font-size:11.5px;color:#9ca3af;line-height:1.6;padding:6px 8px 20px">'
+    h+='<div style="font-size:12px;color:#9ca3af;line-height:1.6;padding:12px 10px 20px">'
       +'전체 종합 + '+(_paMode==='prod'?'제품별':'부위별')+' · 월 아래 하위 칸에 지표 · 데이터 있는 달만 표시 · 전월보다 좋아지면 파랑, 나빠지면 빨강(수율↑·생산성↑·개당원육↓이 좋음) · 수율 88%↓ 빨강 · 숫자는 월단위생산량과 동일 집계</div>';
 
     host.innerHTML=h;
