@@ -66,6 +66,7 @@ function _dateLabel(ds){
 var _stockDateF2 = null;  // 선택일 (null=오늘, _renderStockShell에서 초기화)
 var _stockDateF1 = null;
 var _stockDateCa = null;
+var _stockDateSum = null;
 // 캐시된 최소 fetch 시작일 (이 날짜 이전 데이터는 아직 안 가져옴)
 var _stockFetchedFrom = null;
 
@@ -137,8 +138,9 @@ function _renderStockShell(){
   if(!_stockDateF2) _stockDateF2 = today;
   if(!_stockDateF1) _stockDateF1 = today;
   if(!_stockDateCa) _stockDateCa = today;
+  if(!_stockDateSum) _stockDateSum = today;
   // 현재 서브탭의 선택일 = 누적 기준일
-  var selDate = (_stockSubTab==='f1') ? _stockDateF1 : (_stockSubTab==='ca') ? _stockDateCa : _stockDateF2;
+  var selDate = (_stockSubTab==='f1') ? _stockDateF1 : (_stockSubTab==='ca') ? _stockDateCa : (_stockSubTab==='sum') ? _stockDateSum : _stockDateF2;
 
   // === 위치별 집계 (선택일까지 누적) ===
   var ext = {f2:{}, f1:{}, ca:{}};    // 외부입고
@@ -318,6 +320,7 @@ function _renderStockShell(){
     + _tabBtn('f2','🏭 2공장','#2563eb')
     + _tabBtn('f1','📦 1공장','#7c3aed')
     + _tabBtn('ca','🚚 천안물류','#059669')
+    + _tabBtn('sum','📊 종합','#0f172a')
     + '</div>';
 
   // 입력 폼 — 2공장 입고
@@ -413,15 +416,64 @@ function _renderStockShell(){
     + '</div>'
     + _section('🚚 다른 곳으로 이동', _transferForm('CA','F2'));
 
+  // === 종합 화면 (전체 원육 재고 = 2공장 + 1공장 + 천안물류) ===
+  function _locStock(loc, t){
+    var init=INITIAL[loc][t]||0, ins=ext[loc][t]||0, mi=mvIn[loc][t]||0, mo=mvOut[loc][t]||0;
+    var use = (loc==='f2') ? (f2Out[t]||0) : 0;   // 사용(해동)은 2공장만
+    return Math.round(init + ins + mi - mo - use);
+  }
+  var _totalCards = allTypes.map(function(t){
+    var a=_locStock('f2',t), b=_locStock('f1',t), c=_locStock('ca',t), tot=a+b+c;
+    var kg=Math.round(tot*KG_PER_BOX);
+    var color = tot<50?'#dc2626':tot<200?'#f59e0b':'#16a34a';
+    return '<div style="flex:1;min-width:210px;padding:16px 18px;background:#fff;border:1px solid #e5e7eb;border-radius:10px;box-shadow:0 1px 2px rgba(0,0,0,0.04)">'
+      + '<div style="font-size:14px;color:#6b7280;font-weight:700;margin-bottom:8px">'+t+'</div>'
+      + '<div style="font-size:28px;font-weight:800;color:'+color+';line-height:1.1">'+tot.toLocaleString()+' <span style="font-size:14px;color:#9ca3af;font-weight:500">박스</span></div>'
+      + '<div style="font-size:13px;color:#6b7280;margin-top:4px">약 '+kg.toLocaleString()+' kg</div>'
+      + '<div style="font-size:11px;color:#9ca3af;margin-top:9px;line-height:1.6;border-top:1px solid #f1f5f9;padding-top:7px">🏭 2공장 <b style="color:#475569">'+a.toLocaleString()+'</b> · 📦 1공장 <b style="color:#475569">'+b.toLocaleString()+'</b> · 🚚 천안 <b style="color:#475569">'+c.toLocaleString()+'</b></div>'
+      + '</div>';
+  }).join('');
+  var _grand={f2:0,f1:0,ca:0,tot:0};
+  var _cellR=function(v,st){ return '<td style="padding:9px 14px;border-bottom:1px solid #f3f4f6;text-align:right;'+(st||'')+'">'+v.toLocaleString()+'</td>'; };
+  var _sumBody = allTypes.map(function(t){
+    var a=_locStock('f2',t), b=_locStock('f1',t), c=_locStock('ca',t), tot=a+b+c;
+    _grand.f2+=a; _grand.f1+=b; _grand.ca+=c; _grand.tot+=tot;
+    return '<tr>'
+      + '<td style="padding:9px 14px;border-bottom:1px solid #f3f4f6;font-weight:700">'+t+'</td>'
+      + _cellR(a,'font-weight:600')+_cellR(b,'font-weight:600')+_cellR(c,'font-weight:600')
+      + _cellR(tot,'font-weight:800;color:#0f172a;background:#f8fafc')
+      + '<td style="padding:9px 14px;border-bottom:1px solid #f3f4f6;text-align:right;color:#6b7280">'+Math.round(tot*KG_PER_BOX).toLocaleString()+' kg</td>'
+      + '</tr>';
+  }).join('');
+  var _sumTotal = '<tr style="background:#f1f5f9">'
+    + '<td style="padding:11px 14px;font-weight:800">전체 합계</td>'
+    + _cellR(_grand.f2,'font-weight:800')+_cellR(_grand.f1,'font-weight:800')+_cellR(_grand.ca,'font-weight:800')
+    + _cellR(_grand.tot,'font-weight:800;color:#1d4ed8')
+    + '<td style="padding:11px 14px;text-align:right;font-weight:800;color:#1d4ed8">'+Math.round(_grand.tot*KG_PER_BOX).toLocaleString()+' kg</td>'
+    + '</tr>';
+  var _sumTable = '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:14px">'
+    + '<thead><tr style="background:#f9fafb">'
+    + '<th style="padding:10px 14px;border-bottom:2px solid #e5e7eb;text-align:left;color:#475569">부위</th>'
+    + '<th style="padding:10px 14px;border-bottom:2px solid #e5e7eb;text-align:right;color:#475569">🏭 2공장</th>'
+    + '<th style="padding:10px 14px;border-bottom:2px solid #e5e7eb;text-align:right;color:#475569">📦 1공장</th>'
+    + '<th style="padding:10px 14px;border-bottom:2px solid #e5e7eb;text-align:right;color:#475569">🚚 천안물류</th>'
+    + '<th style="padding:10px 14px;border-bottom:2px solid #e5e7eb;text-align:right;color:#0f172a">합계(박스)</th>'
+    + '<th style="padding:10px 14px;border-bottom:2px solid #e5e7eb;text-align:right;color:#475569">합계(kg)</th>'
+    + '</tr></thead><tbody>'+_sumBody+_sumTotal+'</tbody></table></div>';
+  var sumHtml = '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:16px">'+_totalCards+'</div>'
+    + _section('📊 위치별 원육 재고 (박스 기준)', _sumTable)
+    + '<div style="font-size:12px;color:#9ca3af;padding:2px 4px">※ '+_dateLabel(selDate)+' 기준 · 1박스 = '+KG_PER_BOX+'kg · 2공장은 해동(사용)분 차감 · 천안물류는 보관·경유만</div>';
+
   // 일자 선택기 — 최상단 (서브탭 아래)
   var datePickerTop = (_stockSubTab==='f1') ? _datePicker(_stockDateF1, 'f1')
     : (_stockSubTab==='ca') ? _datePicker(_stockDateCa, 'ca')
+    : (_stockSubTab==='sum') ? _datePicker(_stockDateSum, 'sum')
     : _datePicker(_stockDateF2, 'f2');
 
   pg.innerHTML = '<div style="padding:16px 20px;max-width:1300px;margin:0 auto">'
     + subTabHtml
     + datePickerTop
-    + (_stockSubTab==='f1' ? f1Html : _stockSubTab==='ca' ? caHtml : f2Html)
+    + (_stockSubTab==='f1' ? f1Html : _stockSubTab==='ca' ? caHtml : _stockSubTab==='sum' ? sumHtml : f2Html)
     + '<div style="text-align:right;padding:8px 0"><button onclick="renderStock()" style="padding:6px 14px;background:#fff;border:1px solid #d1d5db;border-radius:5px;font-size:12px;color:#475569;cursor:pointer">🔄 새로고침</button></div>'
     + '</div>';
 }
@@ -521,7 +573,7 @@ async function stockGenericDelete(collection, fbId){
 // 일자별 필터 핸들러
 // ============================================================
 async function _stockDateShift(tab, delta){
-  var cur = (tab==='f1') ? _stockDateF1 : (tab==='ca') ? _stockDateCa : _stockDateF2;
+  var cur = (tab==='f1') ? _stockDateF1 : (tab==='ca') ? _stockDateCa : (tab==='sum') ? _stockDateSum : _stockDateF2;
   if(!cur) cur = _stockToday();
   await _stockDateSet(tab, _dateShift(cur, delta));
 }
@@ -531,6 +583,7 @@ async function _stockDateSet(tab, ds){
   if(ds > _stockToday()) ds = _stockToday();  // 오늘 이후는 차단
   if(tab==='f1') _stockDateF1 = ds;
   else if(tab==='ca') _stockDateCa = ds;
+  else if(tab==='sum') _stockDateSum = ds;
   else _stockDateF2 = ds;
 
   // 캐시 시작일보다 과거 날짜를 선택했으면 fetch 확장
