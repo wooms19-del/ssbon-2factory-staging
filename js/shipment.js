@@ -14,6 +14,8 @@ var FC_SHELF_DAYS = 60;       // FC 3KG 소비기한
 var DEFAULT_SHELF_DAYS = 365; // 나머지 전 제품 소비기한 (생산일 + 1년)
 var SHELF_DAYS = {};          // 제품별 override (필요시 {제품명:일수})
 function _shelfDays(prod){ if(SHELF_DAYS[prod]!=null) return SHELF_DAYS[prod]; return prod===FC3KG ? FC_SHELF_DAYS : DEFAULT_SHELF_DAYS; }
+// 소비기한 = 생산일 포함 만 N일 → 생산일 + (N-1)  (예: 07-03 생산, 365일 → 07-02)
+function _expiryOf(prodDate, prod){ return _plusDays(prodDate, _shelfDays(prod) - 1); }
 
 function _shipProducts(){
   var ps = ((typeof L!=='undefined' && L.products) || []).map(function(p){ return p.name; });
@@ -79,13 +81,13 @@ function _aggregateLots(){
     if(!op || op._timeOnly || !op.product || !op.stockReg) return;
     var d=String(op.date||'').slice(0,10); if(!d) return;
     var ea=_opEaOf(op); if(ea<=0) return;
-    _add(op.product, _plusDays(d, _shelfDays(op.product)), d, ea, true);
+    _add(op.product, _expiryOf(d, op.product), d, ea, true);
   });
   // 수동 — goodsLot
   (_shipData.lots||[]).forEach(function(l){
     if(!l.product) return; var d=String(l.date||'').slice(0,10); if(!d) return;
     var ea=parseInt(l.ea,10)||0; if(ea<=0) return;
-    var expiry = (l.dateType==='제조') ? _plusDays(d, _shelfDays(l.product)) : d; // 수동 non-FC는 date가 곧 소비기한
+    var expiry = (l.dateType==='제조') ? _expiryOf(d, l.product) : d; // 수동 non-FC는 date가 곧 소비기한
     var prodDate = (l.dateType==='제조') ? d : '';
     _add(l.product, expiry, prodDate, ea, false);
   });
@@ -125,7 +127,7 @@ function _glExpHint(){
   var prod=(document.getElementById('gl_prod')||{}).value;
   var d=(document.getElementById('gl_date')||{}).value;
   var el=document.getElementById('gl_exphint'); if(!el) return;
-  el.textContent = (prod===FC3KG && d) ? ('→ 소비기한 '+_plusDays(d, FC_SHELF_DAYS)+' (제조+'+FC_SHELF_DAYS+'일)') : '';
+  el.textContent = (prod===FC3KG && d) ? ('→ 소비기한 '+_expiryOf(d, prod)+' (제조일 포함 '+FC_SHELF_DAYS+'일)') : '';
 }
 window._glOnProd=_glOnProd;
 
