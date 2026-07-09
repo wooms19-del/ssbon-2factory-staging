@@ -6,10 +6,14 @@
 //   재고 = Σ goodsLot.ea − Σ goodsShip.ea  (제품+로트일자 기준)
 // ============================================================
 
-var _shipData = { lots: [], ships: [] };
+var _shipData = { lots: [], ships: [], outerpacking: [] };
 var _opSubTab = 'work';
 var _shipLoaded = false;
 var FC3KG = 'FC 장조림 3KG';
+var FC_SHELF_DAYS = 60;       // FC 3KG 소비기한
+var DEFAULT_SHELF_DAYS = 365; // 나머지 전 제품 소비기한 (생산일 + 1년)
+var SHELF_DAYS = {};          // 제품별 override (필요시 {제품명:일수})
+function _shelfDays(prod){ if(SHELF_DAYS[prod]!=null) return SHELF_DAYS[prod]; return prod===FC3KG ? FC_SHELF_DAYS : DEFAULT_SHELF_DAYS; }
 
 function _shipProducts(){
   var ps = ((typeof L!=='undefined' && L.products) || []).map(function(p){ return p.name; });
@@ -44,15 +48,51 @@ async function loadShipment(){
   try {
     var R = await Promise.all([
       fbGetRange('goodsLot', from, to).catch(function(){return [];}),
-      fbGetRange('goodsShip', from, to).catch(function(){return [];})
+      fbGetRange('goodsShip', from, to).catch(function(){return [];}),
+      fbGetRange('outerpacking', from, to).catch(function(){return [];})
     ]);
     _shipData.lots = R[0]||[];
     _shipData.ships = R[1]||[];
+    _shipData.outerpacking = R[2]||[];
     _shipLoaded = true;
     _renderShipViews();
   } catch(e){ console.error('출고/재고 로드 오류', e); }
 }
 window.loadShipment = loadShipment;
+
+// 외포장 완료 EA (박스×입수 + 잔량)
+function _opEaOf(op){ if(typeof opEa==='function') return opEa(op); return (parseInt(op.outerEa,10)||0)+(parseInt(op.remainEa,10)||0); }
+
+// 통합 로트: 자동(외포장 완료) + 수동(goodsLot) → 제품+소비기한 단위로 합산
+//   반환: [{product, expiry, prodDate, inEa, autoEa, manualEa}]  (소비기한 임박순 아님)
+function _aggregateLots(){
+  var map={}; // key: product|expiry
+  function _add(prod, expiry, prodDate, ea, isAuto){
+    var k=prod+'|'+expiry;
+    if(!map[k]) map[k]={product:prod, expiry:expiry, prodDate:prodDate||'', inEa:0, autoEa:0, manualEa:0};
+    map[k].inEa+=ea; if(isAuto) map[k].autoEa+=ea; else map[k].manualEa+=ea;
+    if(prodDate && (!map[k].prodDate || prodDate<map[k].prodDate)) map[k].prodDate=prodDate;
+    return map[k];
+  }
+  // 자동 — 외포장 완료분 (미완료/작업시간만 문서 제외)
+  (_shipData.outerpacking||[]).forEach(function(op){
+    if(!op || op._timeOnly || !op.product) return;
+    var d=String(op.date||'').slice(0,10); if(!d) return;
+    var ea=_opEaOf(op); if(ea<=0) return;
+    _add(op.product, _plusDays(d, _shelfDays(op.product)), d, ea, true);
+  });
+  // 수동 — goodsLot
+  (_shipData.lots||[]).forEach(function(l){
+    if(!l.product) return; var d=String(l.date||'').slice(0,10); if(!d) return;
+    var ea=parseInt(l.ea,10)||0; if(ea<=0) return;
+    var expiry = (l.dateType==='제조') ? _plusDays(d, _shelfDays(l.product)) : d; // 수동 non-FC는 date가 곧 소비기한
+    var prodDate = (l.dateType==='제조') ? d : '';
+    _add(l.product, expiry, prodDate, ea, false);
+  });
+  return Object.keys(map).map(function(k){ return map[k]; });
+}
+
+async function loadShipment_removed(){}
 
 function _shippedFor(prod, lotDate){
   return _shipData.ships.filter(function(s){ return s.product===prod && String(s.lotDate)===String(lotDate); })
@@ -92,22 +132,12 @@ window._glOnProd=_glOnProd;
 // ── 재고 현황 뷰 ──
 function _renderStockView(){
   var host=document.getElementById('op_view_stock'); if(!host) return;
-  // 로트 집계: 제품+로트일자 단위
-  var lotMap={};  // key: prod|date → {prod, dateType, date, inEa}
-  _shipData.lots.forEach(function(l){
-    var prod=l.product, date=String(l.date||'').slice(0,10); if(!prod||!date) return;
-    var k=prod+'|'+date;
-    if(!lotMap[k]) lotMap[k]={prod:prod, dateType:l.dateType||'소비', date:date, inEa:0};
-    lotMap[k].inEa += parseInt(l.ea,10)||0;
-  });
-  var lots=Object.keys(lotMap).map(function(k){ return lotMap[k]; });
-  // 제품별 총재고 요약
+  var lots=_aggregateLots();
+  // 제품별 총재고
   var byProd={};
-  lots.forEach(function(lt){
-    var out=_shippedFor(lt.prod, lt.date), rem=lt.inEa-out;
-    byProd[lt.prod]=(byProd[lt.prod]||0)+rem;
-  });
+  lots.forEach(function(lt){ var rem=lt.inEa-_shippedFor(lt.product, lt.expiry); byProd[lt.product]=(byProd[lt.product]||0)+rem; });
   var prodOrder=_shipProducts().filter(function(p){ return byProd[p]!==undefined; });
+  Object.keys(byProd).forEach(function(p){ if(prodOrder.indexOf(p)<0) prodOrder.push(p); });
   var cards=prodOrder.map(function(p){
     var rem=byProd[p], pb=_perBoxOf(p), boxes=pb>0?Math.floor(rem/pb):0;
     return '<div style="background:#f8fafc;border-radius:8px;padding:12px 14px;min-width:150px;flex:1">'
@@ -117,45 +147,45 @@ function _renderStockView(){
       + '</div>';
   }).join('');
   // 로트 표 (제품별 그룹, 소비기한 임박순)
-  lots.sort(function(a,b){ if(a.prod!==b.prod) return a.prod<b.prod?-1:1; return _shipExpiry(a)<_shipExpiry(b)?-1:1; });
+  lots.sort(function(a,b){ if(a.product!==b.product) return a.product<b.product?-1:1; return a.expiry<b.expiry?-1:1; });
   var rows='', curProd=null;
   lots.forEach(function(lt){
-    if(lt.prod!==curProd){ curProd=lt.prod;
-      rows += '<tr style="background:#eff6ff"><td colspan="6" style="padding:7px 14px;font-weight:600;color:#1d4ed8;font-size:12px">'+lt.prod+'</td></tr>';
+    if(lt.product!==curProd){ curProd=lt.product;
+      rows += '<tr style="background:#eff6ff"><td colspan="6" style="padding:7px 14px;font-weight:600;color:#1d4ed8;font-size:12px">'+lt.product+'</td></tr>';
     }
-    var out=_shippedFor(lt.prod, lt.date), rem=lt.inEa-out, exp=_shipExpiry(lt);
-    var dateCell = (lt.dateType==='제조')
-      ? '<span style="font-family:monospace;color:#374151">'+lt.date+'</span> <span style="font-size:11px;color:#9ca3af">제조</span>'
-      : '<span style="font-family:monospace;color:#374151">'+lt.date+'</span> <span style="font-size:11px;color:#9ca3af">소비</span>';
+    var out=_shippedFor(lt.product, lt.expiry), rem=lt.inEa-out;
+    var src = lt.autoEa>0 && lt.manualEa>0 ? '외포장+수동' : (lt.autoEa>0 ? '외포장' : '수동');
+    var srcColor = lt.manualEa>0 && lt.autoEa===0 ? '#7c3aed' : '#0e7490';
+    var lotCell = '<span style="font-family:monospace;color:#374151">'+(lt.prodDate||'-')+'</span> <span style="font-size:11px;color:#9ca3af">생산</span>'
+      + ' <span style="font-size:10px;color:'+srcColor+';background:#f1f5f9;padding:1px 5px;border-radius:4px;margin-left:4px">'+src+'</span>';
     rows += '<tr style="border-top:0.5px solid #f3f4f6">'
-      + '<td style="padding:10px 14px">'+dateCell+'</td>'
-      + '<td style="padding:10px 8px;text-align:center;font-size:12px">'+exp+_ddayBadge(exp)+'</td>'
+      + '<td style="padding:10px 14px">'+lotCell+'</td>'
+      + '<td style="padding:10px 8px;text-align:center;font-size:12px"><span style="font-family:monospace">'+lt.expiry+'</span>'+_ddayBadge(lt.expiry)+'</td>'
       + '<td style="padding:10px 8px;text-align:right;color:#6b7280">'+lt.inEa.toLocaleString()+'</td>'
       + '<td style="padding:10px 8px;text-align:right;color:'+(out>0?'#dc2626':'#9ca3af')+'">'+out.toLocaleString()+'</td>'
       + '<td style="padding:10px 8px;text-align:right;font-weight:700;color:'+(rem<=0?'#dc2626':'#0f172a')+'">'+rem.toLocaleString()+'</td>'
-      + '<td style="padding:8px 14px;text-align:center"><button onclick="_shipQuick(\''+lt.prod.replace(/'/g,"\\'")+'\',\''+lt.date+'\')" style="padding:5px 12px;background:#fff;border:1px solid #d1d5db;border-radius:5px;font-size:12px;cursor:pointer">🚚 출고</button></td>'
+      + '<td style="padding:8px 14px;text-align:center"><button onclick="_shipQuick(\''+lt.product.replace(/'/g,"\\'")+'\',\''+lt.expiry+'\')" style="padding:5px 12px;background:#fff;border:1px solid #d1d5db;border-radius:5px;font-size:12px;cursor:pointer">🚚 출고</button></td>'
       + '</tr>';
   });
-  if(!rows) rows='<tr><td colspan="6" style="padding:16px;text-align:center;color:#9ca3af;font-size:13px">등록된 재고 없음 — 아래에서 재고를 등록하세요</td></tr>';
+  if(!rows) rows='<tr><td colspan="6" style="padding:16px;text-align:center;color:#9ca3af;font-size:13px">재고 없음 — 외포장을 완료하거나 아래에서 수동 등록하세요</td></tr>';
   var table='<div style="background:#fff;border:0.5px solid #e5e7eb;border-radius:12px;overflow:hidden"><div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">'
     + '<thead><tr style="background:#f9fafb">'
-    + '<th style="padding:9px 14px;text-align:left;color:#475569;font-weight:600">로트(제조/소비일)</th>'
+    + '<th style="padding:9px 14px;text-align:left;color:#475569;font-weight:600">로트(생산일)</th>'
     + '<th style="padding:9px 8px;text-align:center;color:#475569;font-weight:600">소비기한</th>'
     + '<th style="padding:9px 8px;text-align:right;color:#475569;font-weight:600">입고</th>'
     + '<th style="padding:9px 8px;text-align:right;color:#475569;font-weight:600">출고</th>'
     + '<th style="padding:9px 8px;text-align:right;color:#0f172a;font-weight:600">남은 재고</th>'
     + '<th style="padding:9px 14px;text-align:center;color:#475569;font-weight:600"></th>'
     + '</tr></thead><tbody>'+rows+'</tbody></table></div></div>';
-
   host.innerHTML = (cards?'<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px">'+cards+'</div>':'')
-    + '<div style="font-size:15px;font-weight:700;color:#0f172a;margin:4px 2px 10px">➕ 재고 등록 (외포장 완료분 입고)</div>'
-    + _stockAddForm()
+    + '<div style="font-size:12px;color:#9ca3af;margin:0 2px 14px">외포장 완료분은 <b style="color:#0e7490">외포장</b> 태그로 자동 표시 · 소비기한 = 생산일 + (FC 3KG 60일 / 나머지 365일)</div>'
     + '<div style="font-size:15px;font-weight:700;color:#0f172a;margin:4px 2px 10px">📦 로트별 재고</div>'
     + table
-    + '<div style="font-size:12px;color:#9ca3af;margin-top:10px;padding:0 2px">남은 재고 = 입고 − 출고 · FC 3KG는 제조일자(소비기한=제조일+60일), 나머지는 소비기한 기준 · 임박 로트 색 표시</div>';
+    + '<div style="font-size:15px;font-weight:700;color:#0f172a;margin:18px 2px 10px">➕ 재고 수동 등록 (보정·특이사항용)</div>'
+    + _stockAddForm()
+    + '<div style="font-size:12px;color:#9ca3af;margin-top:4px;padding:0 2px">남은 재고 = 입고 − 출고 · 임박 로트 색 표시</div>';
   setTimeout(function(){ _glOnProd(); var de=document.getElementById('gl_date'); if(de) de.addEventListener('change', _glExpHint); }, 0);
 }
-
 // ── 출고 이력 뷰 ──
 function _renderShipView(){
   var host=document.getElementById('op_view_ship'); if(!host) return;
@@ -178,7 +208,7 @@ function _renderShipView(){
     return '<tr style="border-top:0.5px solid #f3f4f6">'
       + '<td style="padding:9px 14px;font-weight:600;font-family:monospace">'+(s.date||'-')+'</td>'
       + '<td style="padding:9px 14px">'+(s.product||'-')+'</td>'
-      + '<td style="padding:9px 14px;font-family:monospace;color:#6b7280">'+(s.lotDate||'-')+'<span style="font-size:11px;color:#9ca3af"> '+(s.dateType==='제조'?'제조':'소비')+'</span></td>'
+      + '<td style="padding:9px 14px;font-family:monospace;color:#6b7280">소비기한 '+(s.lotDate||'-')+'</td>'
       + '<td style="padding:9px 14px;text-align:right;font-weight:600">'+(parseInt(s.ea,10)||0).toLocaleString()+'</td>'
       + '<td style="padding:9px 14px;color:#6b7280">'+(s.note||'-')+'</td>'
       + '<td style="padding:9px 14px;text-align:center">'+(fb?'<button onclick="goodsShipDelete(\''+fb+'\')" style="padding:4px 10px;background:#dc2626;color:#fff;border:none;border-radius:4px;font-size:12px;cursor:pointer">삭제</button>':'-')+'</td>'
@@ -205,26 +235,23 @@ function _renderShipView(){
 function _gsFillLots(){
   var prod=(document.getElementById('gs_prod')||{}).value;
   var sel=document.getElementById('gs_lot'); if(!sel) return;
-  var lotMap={};
-  _shipData.lots.forEach(function(l){
-    if(l.product!==prod) return; var date=String(l.date||'').slice(0,10); if(!date) return;
-    var k=date; if(!lotMap[k]) lotMap[k]={dateType:l.dateType||'소비', date:date, inEa:0}; lotMap[k].inEa+=parseInt(l.ea,10)||0;
-  });
-  var arr=Object.keys(lotMap).map(function(k){ var lt=lotMap[k]; lt.rem=lt.inEa-_shippedFor(prod,lt.date); return lt; })
-    .filter(function(lt){ return lt.rem>0; }).sort(function(a,b){ return a.date<b.date?-1:1; });
-  sel.innerHTML = arr.length ? arr.map(function(lt){
-    return '<option value="'+lt.date+'|'+lt.dateType+'">'+lt.date+' ('+(lt.dateType==='제조'?'제조':'소비')+') · 남은 '+lt.rem.toLocaleString()+'</option>';
+  var lots=_aggregateLots().filter(function(lt){ return lt.product===prod; })
+    .map(function(lt){ lt.rem=lt.inEa-_shippedFor(prod, lt.expiry); return lt; })
+    .filter(function(lt){ return lt.rem>0; })
+    .sort(function(a,b){ return a.expiry<b.expiry?-1:1; });
+  sel.innerHTML = lots.length ? lots.map(function(lt){
+    return '<option value="'+lt.expiry+'">소비기한 '+lt.expiry+(lt.prodDate?' (생산 '+lt.prodDate+')':'')+' · 남은 '+lt.rem.toLocaleString()+'</option>';
   }).join('') : '<option value="">재고 있는 로트 없음</option>';
 }
 window._gsFillLots=_gsFillLots;
 
 // 재고 표에서 [출고] 클릭 → 출고 탭으로 이동 + 그 로트 선택
-function _shipQuick(prod, date){
+function _shipQuick(prod, date){ /* date=소비기한(expiry) */
   opSwitchTab('ship');
   setTimeout(function(){
     var ps=document.getElementById('gs_prod'); if(ps){ ps.value=prod; _gsFillLots(); }
     var ls=document.getElementById('gs_lot');
-    if(ls){ for(var i=0;i<ls.options.length;i++){ if(ls.options[i].value.indexOf(date+'|')===0){ ls.selectedIndex=i; break; } } }
+    if(ls){ for(var i=0;i<ls.options.length;i++){ if(ls.options[i].value===date){ ls.selectedIndex=i; break; } } }
     var ea=document.getElementById('gs_ea'); if(ea) ea.focus();
   }, 60);
 }
@@ -261,12 +288,13 @@ async function goodsShipAdd(){
   if(!prod){ toast&&toast('제품','d'); return; }
   if(!lotv){ toast&&toast('출고할 로트 선택','d'); return; }
   if(!ea||ea<=0){ toast&&toast('수량','d'); return; }
-  var parts=lotv.split('|'); var lotDate=parts[0], dateType=parts[1]||'소비';
-  // 남은 재고 초과 방지
-  var inEa=_shipData.lots.filter(function(l){return l.product===prod && String(l.date).slice(0,10)===lotDate;}).reduce(function(a,l){return a+(parseInt(l.ea,10)||0);},0);
+  var lotDate=lotv; // = 소비기한(expiry)
+  // 남은 재고 초과 방지 (자동+수동 통합)
+  var agg=_aggregateLots().filter(function(lt){return lt.product===prod && lt.expiry===lotDate;})[0];
+  var inEa=agg?agg.inEa:0;
   var rem=inEa-_shippedFor(prod,lotDate);
   if(ea>rem){ toast&&toast('남은 재고('+rem.toLocaleString()+') 초과','d'); return; }
-  var rec={ id:(typeof gid==='function')?gid():('gs_'+Date.now()), product:prod, lotDate:lotDate, dateType:dateType, date:date, ea:ea, note:note };
+  var rec={ id:(typeof gid==='function')?gid():('gs_'+Date.now()), product:prod, lotDate:lotDate, date:date, ea:ea, note:note };
   toast&&toast('저장 중...','i');
   try{ var fbId=await fbSave('goodsShip', rec);
     if(fbId){ rec.fbId=fbId; _shipData.ships.push(rec); toast&&toast('✓ '+prod+' '+ea.toLocaleString()+'EA 출고','s');
