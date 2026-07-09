@@ -5,6 +5,13 @@
 
 const ATT_EMP_KEY = 'att_employees_v1';  // 로컬 캐시 (Firestore 폴백용)
 const ATT_EMP_DOC = '_config/attendance_employees';  // Firestore 공유 마스터
+var _attHist = [];  // 인원 변동 이력 [{name, date, type:'입사'|'퇴사'}]
+function _attHistThisMonth(){
+  var ym = tod().slice(0,7);
+  return (_attHist||[]).filter(function(h){ return h && String(h.date||'').slice(0,7)===ym; })
+    .sort(function(a,b){ return String(a.date)<String(b.date)?-1:1; })
+    .map(function(h){ var p=String(h.date).slice(0,10).split('-'); return (+p[1])+'/'+(+p[2])+' '+h.name+' '+h.type; });
+}
 const DEFAULT_EMPS = ['김구식','김수영','임혜경','한채현','김정희','안남정','심현주','홍안순',
   '박수경','하대성','홍유순','정현석','김성희','김영선','배현자','김미애','이용범','게이코',
   '유혜선','레티장','김진화','드엉반담','르탄프엉','응우옌반동','응우옌민호앙',
@@ -82,6 +89,7 @@ async function initAttendance(){
       var data = doc.data();
       if(data && Array.isArray(data.employees) && data.employees.length){
         _attEmps = data.employees;
+        if(Array.isArray(data.history)) _attHist = data.history;
         // 로컬 캐시 동기화
         try{ localStorage.setItem(ATT_EMP_KEY, JSON.stringify(_attEmps)); }catch(e){}
         loaded = true;
@@ -114,6 +122,7 @@ async function _saveAttEmps(){
   try{
     await firebase.firestore().doc(ATT_EMP_DOC).set({
       employees: _attEmps,
+      history: _attHist,
       updatedAt: new Date().toISOString()
     });
   }catch(e){ console.error('직원 마스터 저장 오류', e); }
@@ -286,10 +295,15 @@ async function _renderAttReport(){
        +'<input type="number" value="'+required+'" onchange="_attCfgSetRequired(this.value)" style="width:60px;text-align:right;border:1px solid var(--g2);border-radius:4px;padding:2px 4px"></div>'
     +'<div style="display:flex;justify-content:space-between;padding:6px 10px;font-size:13px;border-top:1px solid var(--g1);color:'+(rate>=100?'#1d4ed8':'#dc2626')+'"><span>채용율</span><b>'+rate+'%</b></div>'
     +'</div>';
+  var _histLines = _attHistThisMonth();
+  var _autoHist = _histLines.length
+    ? '<div style="padding:6px 10px;font-size:12px;color:#1d4ed8;border-bottom:1px dashed var(--g2);background:#f8fafc;line-height:1.7"><b>이번달 인원 변동</b><br>'+_histLines.join('<br>')+'</div>'
+    : '';
   var noteBox=
     '<div style="border:1px solid var(--g2);border-radius:8px;overflow:hidden;flex:1;min-width:240px">'
     +'<div style="background:#fdf3e0;padding:6px 10px;font-weight:700;font-size:13px;border-bottom:1px solid var(--g2)">총원 특이사항</div>'
-    +'<textarea onchange="_attCfgSetNote(this.value)" style="width:100%;height:70px;border:none;padding:8px 10px;font-size:13px;resize:vertical;background:transparent">'+(_attReportCfg.note||'')+'</textarea>'
+    +_autoHist
+    +'<textarea spellcheck="false" onchange="_attCfgSetNote(this.value)" style="width:100%;height:70px;border:none;padding:8px 10px;font-size:13px;resize:vertical;background:transparent">'+(_attReportCfg.note||'')+'</textarea>'
     +'</div>';
 
   var msg=_buildEarlyMsg();
@@ -299,7 +313,7 @@ async function _renderAttReport(){
     +'<thead>'+head+'</thead><tbody>'+bodyRows+totRow+'</tbody></table></div>'
     +'<div style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap">'+statBox+noteBox+'</div>'
     +'<div style="font-size:14px;font-weight:700;margin:16px 0 6px">조출 보고 메시지 <span style="font-size:11px;color:var(--g5);font-weight:400">(직접 수정 가능)</span></div>'
-    +'<textarea id="attEarlyMsg" style="width:100%;height:130px;padding:10px;border:1px solid var(--g2);border-radius:8px;font-size:13px;line-height:1.6;resize:vertical">'+msg+'</textarea>'
+    +'<textarea id="attEarlyMsg" spellcheck="false" style="width:100%;height:130px;padding:10px;border:1px solid var(--g2);border-radius:8px;font-size:13px;line-height:1.6;resize:vertical">'+msg+'</textarea>'
     +'<button class="btn bp bblk" style="width:100%;margin-top:8px" onclick="_attCopyEarly()">📋 조출 메시지 복사</button>';
 }
 
@@ -946,7 +960,7 @@ function _renderAttStaff(){
       +'</div>';
   }).join('');
 }
-function attAddStaff(){var n=prompt('직원 이름:');if(!n||!n.trim())return;var d=parseInt(prompt('연차 일수:','15'))||15;_attEmps.push({name:n.trim(),annualDays:d,usedDays:0});_saveAttEmps();_renderAttStaff();}
+function attAddStaff(){var n=prompt('직원 이름:');if(!n||!n.trim())return;var d=parseInt(prompt('연차 일수:','15'))||15;_attEmps.push({name:n.trim(),annualDays:d,usedDays:0});_attHist.push({name:n.trim(),date:tod(),type:'입사'});_saveAttEmps();_renderAttStaff();}
 function attEditStaff(i){
   var e=_attEmps[i]||{};
   var partOpts=ATT_PART_ORDER.concat(['미배치']).map(function(p){
@@ -982,7 +996,7 @@ function attSaveStaff(i){
   _renderAttStaff();
   if(typeof toast==='function') toast(name+' 저장 \u2713','s');
 }
-function attDeleteStaff(i){if(!confirm(_attEmps[i].name+' 삭제?'))return;_attEmps.splice(i,1);_saveAttEmps();_renderAttStaff();}
+function attDeleteStaff(i){if(!confirm(_attEmps[i].name+' 삭제?'))return;var _nm=_attEmps[i].name;_attEmps.splice(i,1);_attHist.push({name:_nm,date:tod(),type:'퇴사'});_saveAttEmps();_renderAttStaff();}
 
 // ─── 유틸 ───
 function _attFmt(v){v=(v||'').replace(/[^0-9]/g,'');if(v.length>4)v=v.slice(0,4);if(v.length===3)v='0'+v;if(v.length===4)return v.slice(0,2)+':'+v.slice(2);return v;}
