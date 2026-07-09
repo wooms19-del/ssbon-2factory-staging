@@ -2,7 +2,7 @@
 // 외포장 서브탭 — 출고 대기 현황(재고) + 출고 이력
 //   goodsLot  : 재고 입고 로트 {product, dateType:'제조'|'소비', date, ea, note}
 //   goodsShip : 출고 기록      {product, lotDate, dateType, date(출고일), ea, note}
-//   FC 3KG = 제조일자 입력(소비기한=제조일+1년), 나머지 = 소비기한 입력
+//   FC 3KG = 제조일자 입력(소비기한=제조일+60일), 나머지 = 소비기한 입력
 //   재고 = Σ goodsLot.ea − Σ goodsShip.ea  (제품+로트일자 기준)
 // ============================================================
 
@@ -16,8 +16,9 @@ function _shipProducts(){
   return ps.filter(Boolean);
 }
 function _shipToday(){ var d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
-function _plusYear(ds){ var p=String(ds||'').split('-'); if(p.length<3) return ds; return (parseInt(p[0],10)+1)+'-'+p[1]+'-'+p[2]; }
-function _shipExpiry(lot){ return lot.dateType==='제조' ? _plusYear(lot.date) : lot.date; }
+var FC_SHELF_DAYS=60;
+function _plusDays(ds, n){ var p=String(ds||'').split('-'); if(p.length<3) return ds; var d=new Date(+p[0],+p[1]-1,+p[2]); d.setDate(d.getDate()+n); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function _shipExpiry(lot){ return lot.dateType==='제조' ? _plusDays(lot.date, FC_SHELF_DAYS) : lot.date; }
 function _dday(ds){ var p=String(ds||'').split('-'); if(p.length<3) return null; var d=new Date(+p[0],+p[1]-1,+p[2]); var t=new Date(); t.setHours(0,0,0,0); return Math.floor((d-t)/86400000); }
 function _ddayBadge(exp){
   var dd=_dday(exp); if(dd===null) return '';
@@ -84,7 +85,7 @@ function _glExpHint(){
   var prod=(document.getElementById('gl_prod')||{}).value;
   var d=(document.getElementById('gl_date')||{}).value;
   var el=document.getElementById('gl_exphint'); if(!el) return;
-  el.textContent = (prod===FC3KG && d) ? ('→ 소비기한 '+_plusYear(d)) : '';
+  el.textContent = (prod===FC3KG && d) ? ('→ 소비기한 '+_plusDays(d, FC_SHELF_DAYS)+' (제조+'+FC_SHELF_DAYS+'일)') : '';
 }
 window._glOnProd=_glOnProd;
 
@@ -151,7 +152,7 @@ function _renderStockView(){
     + _stockAddForm()
     + '<div style="font-size:15px;font-weight:700;color:#0f172a;margin:4px 2px 10px">📦 로트별 재고</div>'
     + table
-    + '<div style="font-size:12px;color:#9ca3af;margin-top:10px;padding:0 2px">남은 재고 = 입고 − 출고 · FC 3KG는 제조일자(소비기한=제조일+1년), 나머지는 소비기한 기준 · 임박 로트 색 표시</div>';
+    + '<div style="font-size:12px;color:#9ca3af;margin-top:10px;padding:0 2px">남은 재고 = 입고 − 출고 · FC 3KG는 제조일자(소비기한=제조일+60일), 나머지는 소비기한 기준 · 임박 로트 색 표시</div>';
   setTimeout(function(){ _glOnProd(); var de=document.getElementById('gl_date'); if(de) de.addEventListener('change', _glExpHint); }, 0);
 }
 
