@@ -15,7 +15,27 @@ const RT_BATCH=['A','B','C','D','E','F'];  // 3B 자숙 배치 구분
 function _rtToday(){ return (L.retort||[]).filter(r=>String(r.date||'').slice(0,10)===tod()); }
 function _rtViewDate(){ return window._rtViewDt || tod(); }
 function _rtViewRecs(){ const d=_rtViewDate(); return (L.retort||[]).filter(r=>String(r.date||'').slice(0,10)===d); }
-async function rtDateChanged(){
+
+// ── 수정 가능 기간 ── (현장 규칙 바뀔 수 있어 여기 숫자만 조절)
+//   0 = 당일만, 1 = 어제까지, 2 = 이틀 전까지, -1 = 제한 없음
+var RT_EDIT_MAX_DAYS = 0;
+function _rtEditable(rec){
+  if(RT_EDIT_MAX_DAYS < 0) return true;
+  if(!rec) return false;
+  function _toDt(s){ var p=String(s||'').slice(0,10).split('-'); return new Date(+p[0], (+p[1]||1)-1, +p[2]||1); }
+  var diff = Math.floor((_toDt(tod()) - _toDt(rec.date)) / 86400000);
+  return diff >= 0 && diff <= RT_EDIT_MAX_DAYS;
+}
+// 수정/삭제 전 가드 — 기간 지난 기록이면 안내 후 차단
+function _rtGuard(fbId){
+  var rec = (L.retort||[]).find(function(r){ return r.fbId===fbId; });
+  if(!_rtEditable(rec)){
+    var msg = RT_EDIT_MAX_DAYS===0 ? '당일 기록만 수정 가능합니다' : ('최근 '+(RT_EDIT_MAX_DAYS+1)+'일 기록만 수정 가능합니다');
+    if(typeof toast==='function') toast(msg, 'd');
+    return false;
+  }
+  return true;
+}async function rtDateChanged(){
   const dEl=document.getElementById('rt_ccp_date');
   const d=(dEl&&dEl.value)||tod();
   window._rtViewDt=d;
@@ -241,6 +261,7 @@ async function rtStart(m){
 }
 
 async function rtMark(fbId, step){
+  if(!_rtGuard(fbId)) return;   // 당일만 수정 (지나면 차단)
   const rec=(L.retort||[]).find(r=>r.fbId===fbId);
   if(!rec){ toast('기록을 찾을 수 없습니다','d'); return; }
   const patch={ [step]: nowHM() };
@@ -266,6 +287,7 @@ async function rtMark(fbId, step){
 }
 
 async function rtEditTime(fbId, key){
+  if(!_rtGuard(fbId)) return;   // 당일만 수정 (지나면 차단)
   const rec=(L.retort||[]).find(r=>r.fbId===fbId);
   if(!rec) return;
   const lbl={t1:'① 가동 시작',t2:'② 온도 도달',t3:'③ 가열 종료',t4:'④ 배출 완료'}[key];
@@ -281,6 +303,7 @@ async function rtEditTime(fbId, key){
 }
 
 async function rtDelete(fbId){
+  if(!_rtGuard(fbId)) return;   // 당일만 수정 (지나면 차단)
   const rec=(L.retort||[]).find(r=>r.fbId===fbId);
   if(!rec) return;
   if(!confirm(`${rec.machine}호기 ${rec.round}회차 (${rec.product}) 기록을 삭제할까요?`)) return;
@@ -293,6 +316,7 @@ async function rtDelete(fbId){
 
 /* ── 회차 필드 수정 (온도/구분/제품) ───────────────────────── */
 async function rtEditTemp(fbId){
+  if(!_rtGuard(fbId)) return;   // 당일만 수정 (지나면 차단)
   const rec=(L.retort||[]).find(r=>r.fbId===fbId); if(!rec) return;
   const v=prompt('멸균(살균) 온도 ℃', rec.temp||'');
   if(v==null) return;
@@ -302,6 +326,7 @@ async function rtEditTemp(fbId){
   rec.temp=t; renderRetort();
 }
 async function rtEditCcp(fbId){
+  if(!_rtGuard(fbId)) return;   // 당일만 수정 (지나면 차단)
   const rec=(L.retort||[]).find(r=>r.fbId===fbId); if(!rec) return;
   const v=prompt('자숙 배치 (예: A 또는 A:50, B:46)', rec.batch||'');
   if(v==null) return;
@@ -313,6 +338,7 @@ async function rtEditCcp(fbId){
   Object.assign(rec,patch); renderRetort();
 }
 async function rtEditEa(fbId){
+  if(!_rtGuard(fbId)) return;   // 당일만 수정 (지나면 차단)
   const rec=(L.retort||[]).find(r=>r.fbId===fbId); if(!rec) return;
   const v=prompt('수량 (EA)', rec.ea||'');
   if(v==null) return;
@@ -321,6 +347,7 @@ async function rtEditEa(fbId){
   rec.ea=ea; renderRetort();
 }
 async function rtEditProd(fbId){
+  if(!_rtGuard(fbId)) return;   // 당일만 수정 (지나면 차단)
   const rec=(L.retort||[]).find(r=>r.fbId===fbId); if(!rec) return;
   const v=prompt('제품명', rec.product||'');
   if(v==null || !v.trim()) return;
