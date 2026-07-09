@@ -406,6 +406,12 @@ body{display:flex;flex-direction:column;font-family:-apple-system,BlinkMacSystem
 </div>
 
 <div class="pg" id="p-outerpacking">
+  <div id="op_subtabs" style="display:flex;gap:0;border-bottom:2px solid #e5e7eb;margin-bottom:14px">
+    <button onclick="opSwitchTab('work')" id="opTab_work" style="padding:10px 18px;background:none;border:none;border-bottom:2px solid #2563eb;color:#2563eb;font-size:14px;font-weight:600;cursor:pointer;margin-bottom:-2px">✏️ 외포장 작업</button>
+    <button onclick="opSwitchTab('stock')" id="opTab_stock" style="padding:10px 18px;background:none;border:none;border-bottom:2px solid transparent;color:#64748b;font-size:14px;font-weight:500;cursor:pointer;margin-bottom:-2px">📦 출고 대기 현황</button>
+    <button onclick="opSwitchTab('ship')" id="opTab_ship" style="padding:10px 18px;background:none;border:none;border-bottom:2px solid transparent;color:#64748b;font-size:14px;font-weight:500;cursor:pointer;margin-bottom:-2px">🚚 출고 이력</button>
+  </div>
+  <div id="op_view_work">
   <div class="card">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
       <div class="ct" style="margin:0">외포장</div>
@@ -430,6 +436,9 @@ body{display:flex;flex-direction:column;font-family:-apple-system,BlinkMacSystem
       <div class="emp">데이터 없음</div>
     </div>
   </div>
+  </div>
+  <div id="op_view_stock" style="display:none"></div>
+  <div id="op_view_ship" style="display:none"></div>
 </div>
 
 <!-- ===== 레토르트 ===== -->
@@ -1664,6 +1673,7 @@ body{display:flex;flex-direction:column;font-family:-apple-system,BlinkMacSystem
 <script src="js/timepicker.js?v=1778129561"></script>
 <script src="js/globals.js?v=1778599476"></script>
 <script src="js/stock.js?v=1783562029"></script>
+<script src="js/shipment.js?v=1783562890"></script>
 <script src="js/inedible_prod.js?v=1783495634"></script>
 <script src="js/monthly_analysis.js?v=1"></script>
 <script src="js/timetable.js?v=1781859979"></script>
