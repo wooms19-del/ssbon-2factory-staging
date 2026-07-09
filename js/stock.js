@@ -127,7 +127,7 @@ function _renderStockShell(){
   var INITIAL = {
     f2: { '우둔':247, '홍두깨':1024, '설도':0 },
     f1: {},
-    ca: { '설도':1988 }   // 천안물류 초기재고 (설도 1988박스)
+    ca: {}   // 천안물류 초기재고 없음 (0)
   };
   var START_DATE = '2026-05-01';
   var KG_PER_BOX = 20;
