@@ -74,9 +74,9 @@ function _aggregateLots(){
     if(prodDate && (!map[k].prodDate || prodDate<map[k].prodDate)) map[k].prodDate=prodDate;
     return map[k];
   }
-  // 자동 — 외포장 완료분 (미완료/작업시간만 문서 제외)
+  // 자동 — 외포장 완료분 중 stockReg 플래그 있는 것만 (과거 완료분 제외, 완료 시점부터 등록)
   (_shipData.outerpacking||[]).forEach(function(op){
-    if(!op || op._timeOnly || !op.product) return;
+    if(!op || op._timeOnly || !op.product || !op.stockReg) return;
     var d=String(op.date||'').slice(0,10); if(!d) return;
     var ea=_opEaOf(op); if(ea<=0) return;
     _add(op.product, _plusDays(d, _shelfDays(op.product)), d, ea, true);

@@ -478,6 +478,7 @@ async function completeOuterPacking(i, date, product, innerEa) {
     trayUsed, trayDefect: 0,
     defectRate: rate, materials, note,
     testRun: isTest ? true : false,
+    stockReg: true,   // 이 완료분부터 출고 대기 현황에 자동 등록 (과거분은 플래그 없어 제외)
     savedAt: new Date().toISOString()
   };
 
