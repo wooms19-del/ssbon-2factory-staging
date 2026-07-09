@@ -1,14 +1,30 @@
 // ============================================================
-// 입고관리 — 2공장/1공장 서브탭, 각자 입고/출고 이력
+// 입고관리 — 2공장/1공장/천안물류 서브탭, 각자 입고/출고 이력
 // 컬렉션:
 //   stockIn        : 2공장 외부 입고
 //   stockIn_f1     : 1공장 외부 입고
-//   transfer       : 공장간 이동 (direction:'F1toF2'|'F2toF1')
+//   stockIn_ca     : 천안물류 외부 입고
+//   transfer       : 위치간 이동 (from/to:'F2'|'F1'|'CA'; 구버전 direction:'F1toF2'|'F2toF1' 호환)
+//   ※ 천안물류 = 보관·경유 창고 (사용/생산 없음)
 // ============================================================
 
-var _stockData = { stockIn: [], stockIn_f1: [], transfer: [], thawing: [] };
+var _stockData = { stockIn: [], stockIn_f1: [], stockIn_ca: [], transfer: [], thawing: [] };
 var _stockLoading = false;
 var _stockSubTab = 'f2';
+
+// 위치 코드 ↔ 탭키 ↔ 이름
+var STK_LOCS = ['f2','f1','ca'];
+var STK_LOC_CODE = { f2:'F2', f1:'F1', ca:'CA' };
+var STK_CODE_LOC = { F2:'f2', F1:'f1', CA:'ca' };
+var STK_LOC_NAME = { f2:'2공장', f1:'1공장', ca:'천안물류' };
+var STK_IN_COLL  = { f2:'stockIn', f1:'stockIn_f1', ca:'stockIn_ca' };
+// 이동 from/to 정규화 (신규 from/to 우선, 없으면 구버전 direction 해석)
+function _trFromTo(r){
+  if(r && r.from && r.to) return { from:r.from, to:r.to };
+  if(r && r.direction==='F1toF2') return { from:'F1', to:'F2' };
+  if(r && r.direction==='F2toF1') return { from:'F2', to:'F1' };
+  return { from:'', to:'' };
+}
 
 function _stockThisMonth(){
   var d = new Date();
@@ -49,6 +65,7 @@ function _dateLabel(ds){
 
 var _stockDateF2 = null;  // 선택일 (null=오늘, _renderStockShell에서 초기화)
 var _stockDateF1 = null;
+var _stockDateCa = null;
 // 캐시된 최소 fetch 시작일 (이 날짜 이전 데이터는 아직 안 가져옴)
 var _stockFetchedFrom = null;
 
@@ -77,13 +94,15 @@ async function renderStock(){
       fbGetRange('stockIn_f1', stockInFrom, toStr).catch(function(){return [];}),
       fbGetRange('transfer', stockInFrom, toStr).catch(function(){return [];}),
       fbGetRange('thawing', thawingFrom, toStrThawing),
-      fbGetRange('barcode', thawingFrom, toStrThawing).catch(function(){return [];})
+      fbGetRange('barcode', thawingFrom, toStrThawing).catch(function(){return [];}),
+      fbGetRange('stockIn_ca', stockInFrom, toStr).catch(function(){return [];})
     ]);
     _stockData.stockIn = R[0] || [];
     _stockData.stockIn_f1 = R[1] || [];
     _stockData.transfer = R[2] || [];
     _stockData.thawing = R[3] || [];
     _stockData.barcode = R[4] || [];
+    _stockData.stockIn_ca = R[5] || [];
     _stockFetchedFrom = stockInFrom;  // 캐시 시작 기록
     _renderStockShell();
     // 미등록 GTIN 배너는 입력>해동기 화면에서만 처리 (바코드 스캔 위치)
@@ -104,7 +123,11 @@ function _renderStockShell(){
   var pg = document.getElementById('p-stock');
   if(!pg) return;
 
-  var INITIAL = { '우둔': 247, '홍두깨': 1024, '설도': 0 };
+  var INITIAL = {
+    f2: { '우둔':247, '홍두깨':1024, '설도':0 },
+    f1: {},
+    ca: { '설도':1988 }   // 천안물류 초기재고 (설도 1988박스)
+  };
   var START_DATE = '2026-05-01';
   var KG_PER_BOX = 20;
   var allTypes = ['설도','우둔','홍두깨'];
@@ -113,75 +136,52 @@ function _renderStockShell(){
   // 선택일 초기화 (최초 진입 시 오늘)
   if(!_stockDateF2) _stockDateF2 = today;
   if(!_stockDateF1) _stockDateF1 = today;
+  if(!_stockDateCa) _stockDateCa = today;
   // 현재 서브탭의 선택일 = 누적 기준일
-  var selDate = (_stockSubTab==='f1') ? _stockDateF1 : _stockDateF2;
+  var selDate = (_stockSubTab==='f1') ? _stockDateF1 : (_stockSubTab==='ca') ? _stockDateCa : _stockDateF2;
 
-  // === 2공장 누적 (선택일까지) + 당일 ===
-  var f2In = {}, f2Out = {}, f2InProgress = {}, f2FromF1 = {}, f2ToF1 = {};
-  var f2InDay = {}, f2OutDay = {};   // 선택일 하루치
-  _stockData.stockIn.forEach(function(r){
-    var d = String(r.date||'').slice(0,10);
-    if(d < START_DATE || d > selDate) return;
-    var t = String(r.type||'').trim();
-    var b = parseInt(r.boxes,10)||0;
-    if(!t || !b) return;
-    f2In[t] = (f2In[t]||0) + b;
-    if(d === selDate) f2InDay[t] = (f2InDay[t]||0) + b;
-  });
-  // ★ 재고 차감 = 바코드(해동 시작 = 창고에서 빠진 시점) 기준. 방혈(thawing) 완료 아님.
-  //    당일 찍힌 바코드 = 해동중(inProg)으로 별도 표시. 어제까지 찍힌 바코드 = 재고에서 빠짐.
-  var _prevDay = _dateShift(selDate, -1);
-  (_stockData.barcode || []).forEach(function(b){
-    var d = String(b.date||'').slice(0,10);
-    if(d < START_DATE || d >= selDate) return;  // 어제까지 해동 시작분만 재고 차감
-    var t = String(b.part||'').trim();
-    if(!t) return;
-    f2Out[t] = (f2Out[t]||0) + 1;  // 바코드 1개 = 1박스
-    if(d === _prevDay) f2OutDay[t] = (f2OutDay[t]||0) + 1;  // 전날 해동분 = 당일 재고 변화
-  });
-  // 해동중 = barcode 컬렉션 기준 (오늘 스캔된 바코드들). 바코드 스캔 시점 = 창고에서 빠진 시점.
-  // thawing 레코드 생성 전이라도 바코드만 찍히면 해동중으로 카운트됨.
-  (_stockData.barcode || []).forEach(function(b){
-    var d = String(b.date||'').slice(0,10);
-    if(d !== selDate) return;
-    if(d < START_DATE) return;
-    var t = String(b.part||'').trim();
-    if(!t) return;
-    f2InProgress[t] = (f2InProgress[t]||0) + 1;  // 바코드 1개 = 1박스
+  // === 위치별 집계 (선택일까지 누적) ===
+  var ext = {f2:{}, f1:{}, ca:{}};    // 외부입고
+  var mvIn = {f2:{}, f1:{}, ca:{}};   // 이동 IN
+  var mvOut = {f2:{}, f1:{}, ca:{}};  // 이동 OUT
+  var dayIn = {f2:{}, f1:{}, ca:{}};  // 선택일 입고(외부+이동IN)
+  var dayOut = {f2:{}, f1:{}, ca:{}}; // 선택일 이동출고
+  STK_LOCS.forEach(function(loc){
+    (_stockData[STK_IN_COLL[loc]]||[]).forEach(function(r){
+      var d=String(r.date||'').slice(0,10); if(d<START_DATE||d>selDate) return;
+      var t=String(r.type||'').trim(); var b=parseInt(r.boxes,10)||0; if(!t||!b) return;
+      ext[loc][t]=(ext[loc][t]||0)+b;
+      if(d===selDate) dayIn[loc][t]=(dayIn[loc][t]||0)+b;
+    });
   });
   _stockData.transfer.forEach(function(r){
-    var d = String(r.date||'').slice(0,10);
-    if(d < START_DATE || d > selDate) return;
-    var t = String(r.type||'').trim();
-    var b = parseInt(r.boxes,10)||0;
-    var dir = r.direction || 'F1toF2';
-    if(!t || !b) return;
-    if(dir === 'F1toF2'){ f2FromF1[t] = (f2FromF1[t]||0) + b; if(d===selDate) f2InDay[t]=(f2InDay[t]||0)+b; }
-    else if(dir === 'F2toF1'){ f2ToF1[t] = (f2ToF1[t]||0) + b; if(d===selDate) f2OutDay[t]=(f2OutDay[t]||0)+b; }
+    var d=String(r.date||'').slice(0,10); if(d<START_DATE||d>selDate) return;
+    var t=String(r.type||'').trim(); var b=parseInt(r.boxes,10)||0; if(!t||!b) return;
+    var ft=_trFromTo(r); var fl=STK_CODE_LOC[ft.from], tl=STK_CODE_LOC[ft.to];
+    if(tl){ mvIn[tl][t]=(mvIn[tl][t]||0)+b; if(d===selDate) dayIn[tl][t]=(dayIn[tl][t]||0)+b; }
+    if(fl){ mvOut[fl][t]=(mvOut[fl][t]||0)+b; if(d===selDate) dayOut[fl][t]=(dayOut[fl][t]||0)+b; }
   });
 
-  // === 1공장 누적 (선택일까지) ===
-  var f1In = {};
-  _stockData.stockIn_f1.forEach(function(r){
-    var d = String(r.date||'').slice(0,10);
-    if(d < START_DATE || d > selDate) return;
-    var t = String(r.type||'').trim();
-    var b = parseInt(r.boxes,10)||0;
-    if(!t || !b) return;
-    f1In[t] = (f1In[t]||0) + b;
+  // === 2공장 사용(해동)/해동중 = barcode(해동 시작 = 창고에서 빠진 시점) 기준 ===
+  var f2Out = {}, f2InProgress = {}, f2OutDay = {};
+  var _prevDay = _dateShift(selDate, -1);
+  (_stockData.barcode || []).forEach(function(b){
+    var d = String(b.date||'').slice(0,10); if(d < START_DATE) return;
+    var t = String(b.part||'').trim(); if(!t) return;
+    if(d < selDate){ f2Out[t]=(f2Out[t]||0)+1; if(d===_prevDay) f2OutDay[t]=(f2OutDay[t]||0)+1; }
+    else if(d === selDate) f2InProgress[t]=(f2InProgress[t]||0)+1;
   });
 
-  // === 카드 (2공장) ===
+  // === 카드 (2공장: 사용/해동중 있음) ===
   function _f2Card(t){
-    var init = INITIAL[t]||0;
-    var ins = f2In[t]||0;
+    var init = INITIAL.f2[t]||0;
+    var ins = ext.f2[t]||0;
+    var mi = mvIn.f2[t]||0, mo = mvOut.f2[t]||0;
     var outs = f2Out[t]||0;
-    var insDay = Math.round(f2InDay[t]||0);
+    var insDay = Math.round(dayIn.f2[t]||0);
     var outsDay = Math.round(f2OutDay[t]||0);
     var inProg = Math.round(f2InProgress[t]||0);
-    var fromF1 = f2FromF1[t]||0;
-    var toF1 = f2ToF1[t]||0;
-    var rem = Math.round(init + ins + fromF1 - toF1 - outs);
+    var rem = Math.round(init + ins + mi - mo - outs);
     var remNext = rem - inProg;
     var outsNext = Math.round(outs) + inProg;
     var estKg = Math.round(rem * KG_PER_BOX);
@@ -211,21 +211,23 @@ function _renderStockShell(){
       + '<div style="display:flex;align-items:flex-start;gap:6px">'+todayCell+tomorrowCell+'</div></div>';
   }
 
-  // === 카드 (1공장) ===
-  function _f1Card(t){
-    var ins = f1In[t]||0;
-    var fromF1 = f2FromF1[t]||0;
-    var toF1 = f2ToF1[t]||0;
-    var rem = ins - fromF1 + toF1;
+  // === 카드 (1공장/천안물류: 사용 없음 — 보관·이동만) ===
+  function _genCard(loc, t){
+    var init = INITIAL[loc][t]||0;
+    var ins = ext[loc][t]||0;
+    var mi = mvIn[loc][t]||0, mo = mvOut[loc][t]||0;
+    var rem = init + ins + mi - mo;
     var estKg = Math.round(rem * KG_PER_BOX);
     var color = rem === 0 ? '#9ca3af' : rem < 50 ? '#f59e0b' : '#16a34a';
     return '<div style="flex:1;min-width:160px;padding:14px 16px;background:#fff;border:1px solid #e5e7eb;border-radius:8px;box-shadow:0 1px 2px rgba(0,0,0,0.04)">'
       + '<div style="font-size:13px;color:#6b7280;font-weight:600;margin-bottom:6px">'+t+'</div>'
       + '<div style="font-size:22px;font-weight:700;color:'+color+';line-height:1.2">'+rem.toLocaleString()+' <span style="font-size:13px;color:#9ca3af;font-weight:500">박스</span></div>'
       + '<div style="font-size:12px;color:#6b7280;margin-top:4px">약 '+estKg.toLocaleString()+' kg</div>'
-      + '<div style="font-size:11px;color:#9ca3af;margin-top:4px">입고 '+ins.toLocaleString()+' · 2공장이동 '+fromF1.toLocaleString()+'</div>'
+      + '<div style="font-size:11px;color:#9ca3af;margin-top:4px">'+(init?'초기 '+init.toLocaleString()+' · ':'')+'입고 '+ins.toLocaleString()+' · 이동입고 '+mi.toLocaleString()+' · 이동출고 '+mo.toLocaleString()+'</div>'
       + '</div>';
   }
+  function _f1Card(t){ return _genCard('f1', t); }
+  function _caCard(t){ return _genCard('ca', t); }
 
   // 이력 row 헬퍼
   function _row(date, type, boxes, note, source, fbId, collection){
@@ -263,52 +265,29 @@ function _renderStockShell(){
       + '</div>';
   }
 
-  // === 2공장 이력 ===
-  // 입고: stockIn (외부) + transfer F1→F2
-  var f2InRows = [];
-  _stockData.stockIn.forEach(function(r){
-    f2InRows.push({date:r.date||'-',type:r.type||'-',boxes:parseInt(r.boxes,10)||0,note:r.note||'',source:'외부 입고',fbId:r.fbId||r.id||'',collection:'stockIn'});
-  });
-  _stockData.transfer.forEach(function(r){
-    if(r.direction !== 'F1toF2') return;
-    f2InRows.push({date:r.date||'-',type:r.type||'-',boxes:parseInt(r.boxes,10)||0,note:r.note||'',source:'1공장 ← 이동',fbId:r.fbId||r.id||'',collection:'transfer'});
-  });
-  // 월 필터
-  f2InRows = _filterByDate(f2InRows, _stockDateF2);
-  f2InRows.sort(function(a,b){return String(b.date).localeCompare(String(a.date));});
-  var f2InHtml = f2InRows.map(function(x){return _row(x.date,x.type,x.boxes,x.note,x.source,x.fbId,x.collection);}).join('');
-
-  // 출고: transfer F2→F1
-  var f2OutRows = [];
-  _stockData.transfer.forEach(function(r){
-    if(r.direction !== 'F2toF1') return;
-    f2OutRows.push({date:r.date||'-',type:r.type||'-',boxes:parseInt(r.boxes,10)||0,note:r.note||'',source:'1공장 → 이동',fbId:r.fbId||r.id||'',collection:'transfer'});
-  });
-  f2OutRows = _filterByDate(f2OutRows, _stockDateF2);
-  f2OutRows.sort(function(a,b){return String(b.date).localeCompare(String(a.date));});
-  var f2OutHtml = f2OutRows.map(function(x){return _row(x.date,x.type,x.boxes,x.note,x.source,x.fbId,x.collection);}).join('');
-
-  // === 1공장 이력 ===
-  var f1InRows = [];
-  _stockData.stockIn_f1.forEach(function(r){
-    f1InRows.push({date:r.date||'-',type:r.type||'-',boxes:parseInt(r.boxes,10)||0,note:r.note||'',source:'외부 입고',fbId:r.fbId||r.id||'',collection:'stockIn_f1'});
-  });
-  _stockData.transfer.forEach(function(r){
-    if(r.direction !== 'F2toF1') return;
-    f1InRows.push({date:r.date||'-',type:r.type||'-',boxes:parseInt(r.boxes,10)||0,note:r.note||'',source:'2공장 ← 이동',fbId:r.fbId||r.id||'',collection:'transfer'});
-  });
-  f1InRows = _filterByDate(f1InRows, _stockDateF1);
-  f1InRows.sort(function(a,b){return String(b.date).localeCompare(String(a.date));});
-  var f1InHtml = f1InRows.map(function(x){return _row(x.date,x.type,x.boxes,x.note,x.source,x.fbId,x.collection);}).join('');
-
-  var f1OutRows = [];
-  _stockData.transfer.forEach(function(r){
-    if(r.direction !== 'F1toF2') return;
-    f1OutRows.push({date:r.date||'-',type:r.type||'-',boxes:parseInt(r.boxes,10)||0,note:r.note||'',source:'2공장 → 이동',fbId:r.fbId||r.id||'',collection:'transfer'});
-  });
-  f1OutRows = _filterByDate(f1OutRows, _stockDateF1);
-  f1OutRows.sort(function(a,b){return String(b.date).localeCompare(String(a.date));});
-  var f1OutHtml = f1OutRows.map(function(x){return _row(x.date,x.type,x.boxes,x.note,x.source,x.fbId,x.collection);}).join('');
+  // === 위치별 입출고 이력 (선택일까지) ===
+  function _locHist(loc){
+    var code = STK_LOC_CODE[loc];
+    var selD = (loc==='f1')?_stockDateF1:(loc==='ca')?_stockDateCa:_stockDateF2;
+    var inRows=[], outRows=[];
+    (_stockData[STK_IN_COLL[loc]]||[]).forEach(function(r){
+      inRows.push({date:r.date||'-',type:r.type||'-',boxes:parseInt(r.boxes,10)||0,note:r.note||'',source:'외부 입고',fbId:r.fbId||r.id||'',collection:STK_IN_COLL[loc]});
+    });
+    _stockData.transfer.forEach(function(r){
+      var ft=_trFromTo(r); var b=parseInt(r.boxes,10)||0;
+      if(ft.to===code)   inRows.push({date:r.date||'-',type:r.type||'-',boxes:b,note:r.note||'',source:(STK_LOC_NAME[STK_CODE_LOC[ft.from]]||ft.from)+' ← 이동',fbId:r.fbId||r.id||'',collection:'transfer'});
+      if(ft.from===code) outRows.push({date:r.date||'-',type:r.type||'-',boxes:b,note:r.note||'',source:(STK_LOC_NAME[STK_CODE_LOC[ft.to]]||ft.to)+' → 이동',fbId:r.fbId||r.id||'',collection:'transfer'});
+    });
+    var sortFn=function(a,b){return String(b.date).localeCompare(String(a.date));};
+    inRows=_filterByDate(inRows, selD).sort(sortFn);
+    outRows=_filterByDate(outRows, selD).sort(sortFn);
+    return {
+      inHtml: inRows.map(function(x){return _row(x.date,x.type,x.boxes,x.note,x.source,x.fbId,x.collection);}).join(''),
+      outHtml: outRows.map(function(x){return _row(x.date,x.type,x.boxes,x.note,x.source,x.fbId,x.collection);}).join('')
+    };
+  }
+  var f2H=_locHist('f2'), f1H=_locHist('f1'), caH=_locHist('ca');
+  var f2InHtml=f2H.inHtml, f2OutHtml=f2H.outHtml, f1InHtml=f1H.inHtml, f1OutHtml=f1H.outHtml;
 
   // 테이블 헬퍼
   function _table(rowsHtml, emptyMsg){
@@ -331,9 +310,14 @@ function _renderStockShell(){
   }
 
   // 서브탭
+  function _tabBtn(key, label, col){
+    var on=(_stockSubTab===key);
+    return '<button onclick="_switchStockSubTab(\''+key+'\')" style="padding:10px 18px;background:none;border:none;border-bottom:2px solid '+(on?col:'transparent')+';color:'+(on?col:'#64748b')+';font-size:14px;font-weight:'+(on?'600':'500')+';cursor:pointer;margin-bottom:-2px">'+label+'</button>';
+  }
   var subTabHtml = '<div style="display:flex;gap:0;border-bottom:2px solid #e5e7eb;margin-bottom:14px">'
-    + '<button onclick="_switchStockSubTab(\'f2\')" style="padding:10px 18px;background:none;border:none;border-bottom:2px solid '+(_stockSubTab==='f2'?'#2563eb':'transparent')+';color:'+(_stockSubTab==='f2'?'#2563eb':'#64748b')+';font-size:14px;font-weight:'+(_stockSubTab==='f2'?'600':'500')+';cursor:pointer;margin-bottom:-2px">🏭 2공장</button>'
-    + '<button onclick="_switchStockSubTab(\'f1\')" style="padding:10px 18px;background:none;border:none;border-bottom:2px solid '+(_stockSubTab==='f1'?'#7c3aed':'transparent')+';color:'+(_stockSubTab==='f1'?'#7c3aed':'#64748b')+';font-size:14px;font-weight:'+(_stockSubTab==='f1'?'600':'500')+';cursor:pointer;margin-bottom:-2px">📦 1공장</button>'
+    + _tabBtn('f2','🏭 2공장','#2563eb')
+    + _tabBtn('f1','📦 1공장','#7c3aed')
+    + _tabBtn('ca','🚚 천안물류','#059669')
     + '</div>';
 
   // 입력 폼 — 2공장 입고
@@ -366,16 +350,30 @@ function _renderStockShell(){
       + '<button onclick="stockF1Add()" style="padding:8px 16px;background:#7c3aed;color:#fff;border:none;border-radius:5px;font-size:13px;font-weight:600;cursor:pointer">저장</button>'
     + '</div></div>';
 
-  // 이동 폼
-  function _transferForm(defaultDir){
+  // 입력 폼 — 천안물류 입고
+  var caInputForm = '<div style="background:#fafafa;border:1px dashed #e5e7eb;border-radius:8px;padding:14px;margin-bottom:14px">'
+    + '<div style="display:flex;gap:10px;align-items:end;flex-wrap:wrap">'
+      + '<div><label style="display:block;font-size:11px;color:#6b7280;margin-bottom:4px">입고일</label><input type="date" id="caIn_date" value="'+_stockToday()+'" style="padding:7px 9px;border:1px solid #d1d5db;border-radius:5px;font-size:13px"></div>'
+      + '<div><label style="display:block;font-size:11px;color:#6b7280;margin-bottom:4px">부위</label>'
+        + '<div style="display:flex;gap:4px">'
+        + '<button type="button" onclick="document.getElementById(\'caIn_type\').value=\'우둔\'" style="padding:7px 10px;background:#fff;border:1px solid #d1d5db;border-radius:5px;font-size:12px;cursor:pointer">우둔</button>'
+        + '<button type="button" onclick="document.getElementById(\'caIn_type\').value=\'홍두깨\'" style="padding:7px 10px;background:#fff;border:1px solid #d1d5db;border-radius:5px;font-size:12px;cursor:pointer">홍두깨</button>'
+        + '<button type="button" onclick="document.getElementById(\'caIn_type\').value=\'설도\'" style="padding:7px 10px;background:#fff;border:1px solid #d1d5db;border-radius:5px;font-size:12px;cursor:pointer">설도</button>'
+        + '<input type="text" id="caIn_type" placeholder="직접입력" style="padding:7px 9px;border:1px solid #d1d5db;border-radius:5px;font-size:13px;width:100px"></div></div>'
+      + '<div><label style="display:block;font-size:11px;color:#6b7280;margin-bottom:4px">박스 수</label><input type="number" id="caIn_boxes" min="1" style="padding:7px 9px;border:1px solid #d1d5db;border-radius:5px;font-size:13px;width:90px;text-align:right"></div>'
+      + '<div style="flex:1;min-width:160px"><label style="display:block;font-size:11px;color:#6b7280;margin-bottom:4px">메모</label><input type="text" id="caIn_note" placeholder="원산지/로트 등" style="padding:7px 9px;border:1px solid #d1d5db;border-radius:5px;font-size:13px;width:100%"></div>'
+      + '<button onclick="stockCaAdd()" style="padding:8px 16px;background:#059669;color:#fff;border:none;border-radius:5px;font-size:13px;font-weight:600;cursor:pointer">저장</button>'
+    + '</div></div>';
+
+  // 이동 폼 (출발지 → 도착지, 3곳 자유)
+  function _transferForm(defFrom, defTo){
+    var opts=function(sel){ return STK_LOCS.map(function(l){ return '<option value="'+STK_LOC_CODE[l]+'"'+(sel===STK_LOC_CODE[l]?' selected':'')+'>'+STK_LOC_NAME[l]+'</option>'; }).join(''); };
     return '<div style="background:#fef3c7;border:1px dashed #f59e0b;border-radius:8px;padding:14px;margin-bottom:14px">'
       + '<div style="display:flex;gap:10px;align-items:end;flex-wrap:wrap">'
         + '<div><label style="display:block;font-size:11px;color:#6b7280;margin-bottom:4px">이동일</label><input type="date" id="trf_date" value="'+_stockToday()+'" style="padding:7px 9px;border:1px solid #d1d5db;border-radius:5px;font-size:13px"></div>'
-        + '<div><label style="display:block;font-size:11px;color:#6b7280;margin-bottom:4px">방향</label>'
-          + '<select id="trf_dir" style="padding:7px 9px;border:1px solid #d1d5db;border-radius:5px;font-size:13px">'
-          + '<option value="F1toF2"'+(defaultDir==='F1toF2'?' selected':'')+'>1공장 → 2공장</option>'
-          + '<option value="F2toF1"'+(defaultDir==='F2toF1'?' selected':'')+'>2공장 → 1공장</option>'
-          + '</select></div>'
+        + '<div><label style="display:block;font-size:11px;color:#6b7280;margin-bottom:4px">출발지</label><select id="trf_from" style="padding:7px 9px;border:1px solid #d1d5db;border-radius:5px;font-size:13px">'+opts(defFrom)+'</select></div>'
+        + '<div style="align-self:center;padding:0 2px 8px;color:#9ca3af;font-size:16px">→</div>'
+        + '<div><label style="display:block;font-size:11px;color:#6b7280;margin-bottom:4px">도착지</label><select id="trf_to" style="padding:7px 9px;border:1px solid #d1d5db;border-radius:5px;font-size:13px">'+opts(defTo)+'</select></div>'
         + '<div><label style="display:block;font-size:11px;color:#6b7280;margin-bottom:4px">부위</label>'
           + '<div style="display:flex;gap:4px">'
           + '<button type="button" onclick="document.getElementById(\'trf_type\').value=\'우둔\'" style="padding:7px 10px;background:#fff;border:1px solid #d1d5db;border-radius:5px;font-size:12px;cursor:pointer">우둔</button>'
@@ -392,29 +390,38 @@ function _renderStockShell(){
   var f2Html = '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px">'+allTypes.map(_f2Card).join('')+'</div>'
     + _section('➕ 2공장 입고 추가', f2InputForm)
     + '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:14px">'
-      + '<div style="flex:1;min-width:340px">' + _section('📥 입고 이력 (외부 + 1공장 이동)', _table(f2InHtml, '이 날 입고 이력 없음')) + '</div>'
-      + '<div style="flex:1;min-width:340px">' + _section('📤 출고 이력 (1공장으로 이동)', _table(f2OutHtml, '이 날 출고 이력 없음')) + '</div>'
+      + '<div style="flex:1;min-width:340px">' + _section('📥 입고 이력 (외부 + 이동)', _table(f2InHtml, '이 날 입고 이력 없음')) + '</div>'
+      + '<div style="flex:1;min-width:340px">' + _section('📤 출고 이력 (다른 곳으로 이동)', _table(f2OutHtml, '이 날 출고 이력 없음')) + '</div>'
     + '</div>'
-    + _section('🚚 1공장으로 이동', _transferForm('F2toF1'));
+    + _section('🚚 다른 곳으로 이동', _transferForm('F2','F1'));
 
   // === 1공장 화면 ===
   var f1Html = '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px">'+allTypes.map(_f1Card).join('')+'</div>'
     + _section('➕ 1공장 입고 추가', f1InputForm)
     + '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:14px">'
-      + '<div style="flex:1;min-width:340px">' + _section('📥 입고 이력 (외부 + 2공장 이동)', _table(f1InHtml, '이 날 입고 이력 없음')) + '</div>'
-      + '<div style="flex:1;min-width:340px">' + _section('📤 출고 이력 (2공장으로 이동)', _table(f1OutHtml, '이 날 출고 이력 없음')) + '</div>'
+      + '<div style="flex:1;min-width:340px">' + _section('📥 입고 이력 (외부 + 이동)', _table(f1InHtml, '이 날 입고 이력 없음')) + '</div>'
+      + '<div style="flex:1;min-width:340px">' + _section('📤 출고 이력 (다른 곳으로 이동)', _table(f1OutHtml, '이 날 출고 이력 없음')) + '</div>'
     + '</div>'
-    + _section('🚚 2공장으로 이동', _transferForm('F1toF2'));
+    + _section('🚚 다른 곳으로 이동', _transferForm('F1','F2'));
+
+  // === 천안물류 화면 (보관·경유 창고 — 사용 없음) ===
+  var caHtml = '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px">'+allTypes.map(_caCard).join('')+'</div>'
+    + _section('➕ 천안물류 입고 추가', caInputForm)
+    + '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:14px">'
+      + '<div style="flex:1;min-width:340px">' + _section('📥 입고 이력 (외부 + 이동)', _table(caH.inHtml, '이 날 입고 이력 없음')) + '</div>'
+      + '<div style="flex:1;min-width:340px">' + _section('📤 출고 이력 (다른 곳으로 이동)', _table(caH.outHtml, '이 날 출고 이력 없음')) + '</div>'
+    + '</div>'
+    + _section('🚚 다른 곳으로 이동', _transferForm('CA','F2'));
 
   // 일자 선택기 — 최상단 (서브탭 아래)
-  var datePickerTop = (_stockSubTab==='f2')
-    ? _datePicker(_stockDateF2, 'f2')
-    : _datePicker(_stockDateF1, 'f1');
+  var datePickerTop = (_stockSubTab==='f1') ? _datePicker(_stockDateF1, 'f1')
+    : (_stockSubTab==='ca') ? _datePicker(_stockDateCa, 'ca')
+    : _datePicker(_stockDateF2, 'f2');
 
   pg.innerHTML = '<div style="padding:16px 20px;max-width:1300px;margin:0 auto">'
     + subTabHtml
     + datePickerTop
-    + (_stockSubTab === 'f2' ? f2Html : f1Html)
+    + (_stockSubTab==='f1' ? f1Html : _stockSubTab==='ca' ? caHtml : f2Html)
     + '<div style="text-align:right;padding:8px 0"><button onclick="renderStock()" style="padding:6px 14px;background:#fff;border:1px solid #d1d5db;border-radius:5px;font-size:12px;color:#475569;cursor:pointer">🔄 새로고침</button></div>'
     + '</div>';
 }
@@ -456,23 +463,43 @@ async function stockF1Add(){
 
 async function transferAdd(){
   var date = document.getElementById('trf_date').value;
-  var direction = document.getElementById('trf_dir').value;
+  var from = (document.getElementById('trf_from')||{}).value;
+  var to   = (document.getElementById('trf_to')||{}).value;
   var type = String(document.getElementById('trf_type').value||'').trim();
   var boxes = parseInt(document.getElementById('trf_boxes').value, 10);
   var note = String(document.getElementById('trf_note').value||'').trim();
   if(!date){ toast && toast('이동일','d'); return; }
+  if(!from || !to){ toast && toast('출발지/도착지','d'); return; }
+  if(from === to){ toast && toast('출발지와 도착지가 같습니다','d'); return; }
   if(!type){ toast && toast('부위','d'); return; }
   if(!boxes || boxes<=0){ toast && toast('박스 수','d'); return; }
-  var rec = { id: (typeof gid==='function')?gid():('trf_'+Date.now()), date:date, type:type, boxes:boxes, direction:direction, note:note };
+  var rec = { id: (typeof gid==='function')?gid():('trf_'+Date.now()), date:date, type:type, boxes:boxes, from:from, to:to, note:note };
   toast && toast('저장 중...','i');
   try {
     var fbId = await fbSave('transfer', rec);
     if(fbId){
       rec.fbId = fbId; _stockData.transfer.push(rec);
-      var dirLbl = direction === 'F2toF1' ? '2공장→1공장' : '1공장→2공장';
-      toast && toast('✓ '+dirLbl+' '+type+' '+boxes+'박스','s');
+      var lbl = (STK_LOC_NAME[STK_CODE_LOC[from]]||from)+'→'+(STK_LOC_NAME[STK_CODE_LOC[to]]||to);
+      toast && toast('✓ '+lbl+' '+type+' '+boxes+'박스','s');
       _renderStockShell();
     } else { toast && toast('저장 실패','d'); }
+  } catch(e){ console.error(e); toast && toast('오류: '+(e.message||e),'d'); }
+}
+
+async function stockCaAdd(){
+  var date = document.getElementById('caIn_date').value;
+  var type = String(document.getElementById('caIn_type').value||'').trim();
+  var boxes = parseInt(document.getElementById('caIn_boxes').value, 10);
+  var note = String(document.getElementById('caIn_note').value||'').trim();
+  if(!date){ toast && toast('입고일','d'); return; }
+  if(!type){ toast && toast('부위','d'); return; }
+  if(!boxes || boxes<=0){ toast && toast('박스 수','d'); return; }
+  var rec = { id: (typeof gid==='function')?gid():('stkca_'+Date.now()), date:date, type:type, boxes:boxes, note:note };
+  toast && toast('저장 중...','i');
+  try {
+    var fbId = await fbSave('stockIn_ca', rec);
+    if(fbId){ rec.fbId = fbId; _stockData.stockIn_ca.push(rec); toast && toast('✓ 천안 '+type+' '+boxes+'박스 저장','s'); _renderStockShell(); }
+    else { toast && toast('저장 실패','d'); }
   } catch(e){ console.error(e); toast && toast('오류: '+(e.message||e),'d'); }
 }
 
@@ -483,6 +510,7 @@ async function stockGenericDelete(collection, fbId){
     await fbDelete(collection, fbId);
     if(collection === 'stockIn') _stockData.stockIn = _stockData.stockIn.filter(function(r){return (r.fbId||r.id)!==fbId;});
     else if(collection === 'stockIn_f1') _stockData.stockIn_f1 = _stockData.stockIn_f1.filter(function(r){return (r.fbId||r.id)!==fbId;});
+    else if(collection === 'stockIn_ca') _stockData.stockIn_ca = _stockData.stockIn_ca.filter(function(r){return (r.fbId||r.id)!==fbId;});
     else if(collection === 'transfer') _stockData.transfer = _stockData.transfer.filter(function(r){return (r.fbId||r.id)!==fbId;});
     toast && toast('✓ 삭제됨','s');
     _renderStockShell();
@@ -493,7 +521,7 @@ async function stockGenericDelete(collection, fbId){
 // 일자별 필터 핸들러
 // ============================================================
 async function _stockDateShift(tab, delta){
-  var cur = (tab==='f1') ? _stockDateF1 : _stockDateF2;
+  var cur = (tab==='f1') ? _stockDateF1 : (tab==='ca') ? _stockDateCa : _stockDateF2;
   if(!cur) cur = _stockToday();
   await _stockDateSet(tab, _dateShift(cur, delta));
 }
@@ -502,6 +530,7 @@ async function _stockDateSet(tab, ds){
   if(!ds || !/^\d{4}-\d{2}-\d{2}$/.test(ds)) return;
   if(ds > _stockToday()) ds = _stockToday();  // 오늘 이후는 차단
   if(tab==='f1') _stockDateF1 = ds;
+  else if(tab==='ca') _stockDateCa = ds;
   else _stockDateF2 = ds;
 
   // 캐시 시작일보다 과거 날짜를 선택했으면 fetch 확장
@@ -527,11 +556,13 @@ async function _stockFetchOlder(newFrom){
     var R = await Promise.all([
       fbGetRange('stockIn', newFrom, toStr).catch(function(){return [];}),
       fbGetRange('stockIn_f1', newFrom, toStr).catch(function(){return [];}),
-      fbGetRange('transfer', newFrom, toStr).catch(function(){return [];})
+      fbGetRange('transfer', newFrom, toStr).catch(function(){return [];}),
+      fbGetRange('stockIn_ca', newFrom, toStr).catch(function(){return [];})
     ]);
     if(R[0] && R[0].length) _stockData.stockIn = _stockData.stockIn.concat(R[0]);
     if(R[1] && R[1].length) _stockData.stockIn_f1 = _stockData.stockIn_f1.concat(R[1]);
     if(R[2] && R[2].length) _stockData.transfer = _stockData.transfer.concat(R[2]);
+    if(R[3] && R[3].length) _stockData.stockIn_ca = _stockData.stockIn_ca.concat(R[3]);
     _stockFetchedFrom = newFrom;
   } catch(e){
     console.error('과거 데이터 로드 오류', e);
@@ -680,5 +711,6 @@ window._checkUnknownGtinsBanner = _checkUnknownGtinsBanner;
 window.renderStock = renderStock;
 window.stockAdd = stockAdd;
 window.stockF1Add = stockF1Add;
+window.stockCaAdd = stockCaAdd;
 window.transferAdd = transferAdd;
 window.stockGenericDelete = stockGenericDelete;
