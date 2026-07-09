@@ -939,7 +939,7 @@ function _renderAttStaff(){
   el.innerHTML=_attEmps.map(function(e,i){
     return '<div style="display:flex;align-items:center;padding:10px 0;border-bottom:0.5px solid var(--g2);gap:10px">'
       +'<span style="font-size:12px;color:var(--g4);width:20px;text-align:right">'+(i+1)+'</span>'
-      +'<span style="flex:1;font-size:14px">'+e.name+'</span>'
+      +'<span style="flex:1;font-size:14px">'+e.name+'<span style="font-size:11px;color:var(--g5);margin-left:6px;background:var(--g1);padding:1px 6px;border-radius:4px">'+(e.part||'미배치')+'</span></span>'
       +'<span style="font-size:12px;color:var(--g5)">연차 '+e.annualDays+'일 / 잔여 <b style="color:var(--p)">'+(e.annualDays-(e.usedDays||0))+'일</b></span>'
       +'<button class="btn bo bsm" onclick="attEditStaff('+i+')">수정</button>'
       +'<button class="btn bo bsm" style="color:#e53935" onclick="attDeleteStaff('+i+')">삭제</button>'
@@ -947,7 +947,41 @@ function _renderAttStaff(){
   }).join('');
 }
 function attAddStaff(){var n=prompt('직원 이름:');if(!n||!n.trim())return;var d=parseInt(prompt('연차 일수:','15'))||15;_attEmps.push({name:n.trim(),annualDays:d,usedDays:0});_saveAttEmps();_renderAttStaff();}
-function attEditStaff(i){var e=_attEmps[i],n=prompt('이름:',e.name);if(!n)return;var d=parseInt(prompt('연차 일수:',e.annualDays))||e.annualDays;_attEmps[i]=Object.assign({},e,{name:n.trim(),annualDays:d});_saveAttEmps();_renderAttStaff();}
+function attEditStaff(i){
+  var e=_attEmps[i]||{};
+  var partOpts=ATT_PART_ORDER.concat(['미배치']).map(function(p){
+    return '<option value="'+p+'"'+(((e.part||'미배치')===p)?' selected':'')+'>'+p+'</option>';
+  }).join('');
+  var roleList=[['','(미설정)'],['production','생산 (작업인원 카운트)'],['qc','QC'],['manager','관리자'],['other','기타']];
+  var roleOpts=roleList.map(function(r){
+    return '<option value="'+r[0]+'"'+(((e.role||'')===r[0])?' selected':'')+'>'+r[1]+'</option>';
+  }).join('');
+  var fld=function(lbl,inner){return '<div><div style="font-size:12px;color:var(--g5);margin-bottom:4px">'+lbl+'</div>'+inner+'</div>';};
+  var body='<div style="display:flex;flex-direction:column;gap:12px">'
+    +fld('이름','<input class="fc" id="aes_name" value="'+(e.name||'')+'" style="width:100%;padding:8px;box-sizing:border-box">')
+    +fld('파트 (조직도)','<select class="fc" id="aes_part" style="width:100%;padding:8px;box-sizing:border-box">'+partOpts+'</select>')
+    +fld('역할','<select class="fc" id="aes_role" style="width:100%;padding:8px;box-sizing:border-box">'+roleOpts+'</select>')
+    +fld('연차 일수','<input class="fc" id="aes_annual" type="number" value="'+(e.annualDays||15)+'" style="width:100%;padding:8px;box-sizing:border-box">')
+    +'<button class="btn bp bblk" style="padding:10px;font-size:14px;margin-top:6px" onclick="attSaveStaff('+i+')">저장</button>'
+    +'</div>';
+  _attShowModal('직원 수정 · '+(e.name||''), body);
+}
+function attSaveStaff(i){
+  var e=_attEmps[i]||{};
+  var g=function(id){var el=document.getElementById(id);return el?el.value:undefined;};
+  var name=(g('aes_name')||e.name||'').trim();
+  if(!name){toast('이름을 입력하세요','w');return;}
+  var part=g('aes_part')||e.part;
+  var role=g('aes_role');
+  var annual=parseInt(g('aes_annual'));
+  var upd={name:name, part:part, annualDays:(isNaN(annual)?e.annualDays:annual)};
+  if(role) upd.role=role;   // 미설정('')이면 기존 유지
+  _attEmps[i]=Object.assign({},e,upd);
+  _saveAttEmps();
+  _attCloseModal();
+  _renderAttStaff();
+  if(typeof toast==='function') toast(name+' 저장 \u2713','s');
+}
 function attDeleteStaff(i){if(!confirm(_attEmps[i].name+' 삭제?'))return;_attEmps.splice(i,1);_saveAttEmps();_renderAttStaff();}
 
 // ─── 유틸 ───
