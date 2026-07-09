@@ -368,15 +368,18 @@ function _renderStockShell(){
       + '<button onclick="stockCaAdd()" style="padding:8px 16px;background:#059669;color:#fff;border:none;border-radius:5px;font-size:13px;font-weight:600;cursor:pointer">저장</button>'
     + '</div></div>';
 
-  // 이동 폼 (출발지 → 도착지, 3곳 자유)
-  function _transferForm(defFrom, defTo){
-    var opts=function(sel){ return STK_LOCS.map(function(l){ return '<option value="'+STK_LOC_CODE[l]+'"'+(sel===STK_LOC_CODE[l]?' selected':'')+'>'+STK_LOC_NAME[l]+'</option>'; }).join(''); };
+  // 이동 폼 — 출발지는 현재 탭으로 고정, 도착지만 선택
+  function _transferForm(fromCode){
+    var fromLoc = STK_CODE_LOC[fromCode];
+    var toOpts = STK_LOCS.filter(function(l){ return l!==fromLoc; })
+      .map(function(l){ return '<option value="'+STK_LOC_CODE[l]+'">'+STK_LOC_NAME[l]+'</option>'; }).join('');
     return '<div style="background:#fef3c7;border:1px dashed #f59e0b;border-radius:8px;padding:14px;margin-bottom:14px">'
       + '<div style="display:flex;gap:10px;align-items:end;flex-wrap:wrap">'
         + '<div><label style="display:block;font-size:11px;color:#6b7280;margin-bottom:4px">이동일</label><input type="date" id="trf_date" value="'+_stockToday()+'" style="padding:7px 9px;border:1px solid #d1d5db;border-radius:5px;font-size:13px"></div>'
-        + '<div><label style="display:block;font-size:11px;color:#6b7280;margin-bottom:4px">출발지</label><select id="trf_from" style="padding:7px 9px;border:1px solid #d1d5db;border-radius:5px;font-size:13px">'+opts(defFrom)+'</select></div>'
+        + '<input type="hidden" id="trf_from" value="'+fromCode+'">'
+        + '<div><label style="display:block;font-size:11px;color:#6b7280;margin-bottom:4px">출발지</label><div style="padding:7px 12px;background:#fff;border:1px solid #e5e7eb;border-radius:5px;font-size:13px;font-weight:700;color:#0f172a">'+STK_LOC_NAME[fromLoc]+'</div></div>'
         + '<div style="align-self:center;padding:0 2px 8px;color:#9ca3af;font-size:16px">→</div>'
-        + '<div><label style="display:block;font-size:11px;color:#6b7280;margin-bottom:4px">도착지</label><select id="trf_to" style="padding:7px 9px;border:1px solid #d1d5db;border-radius:5px;font-size:13px">'+opts(defTo)+'</select></div>'
+        + '<div><label style="display:block;font-size:11px;color:#6b7280;margin-bottom:4px">도착지</label><select id="trf_to" style="padding:7px 9px;border:1px solid #d1d5db;border-radius:5px;font-size:13px">'+toOpts+'</select></div>'
         + '<div><label style="display:block;font-size:11px;color:#6b7280;margin-bottom:4px">부위</label>'
           + '<div style="display:flex;gap:4px">'
           + '<button type="button" onclick="document.getElementById(\'trf_type\').value=\'우둔\'" style="padding:7px 10px;background:#fff;border:1px solid #d1d5db;border-radius:5px;font-size:12px;cursor:pointer">우둔</button>'
@@ -396,7 +399,7 @@ function _renderStockShell(){
       + '<div style="flex:1;min-width:340px">' + _section('📥 입고 이력 (외부 + 이동)', _table(f2InHtml, '이 날 입고 이력 없음')) + '</div>'
       + '<div style="flex:1;min-width:340px">' + _section('📤 출고 이력 (다른 곳으로 이동)', _table(f2OutHtml, '이 날 출고 이력 없음')) + '</div>'
     + '</div>'
-    + _section('🚚 다른 곳으로 이동', _transferForm('F2','F1'));
+    + _section('🚚 다른 곳으로 이동', _transferForm('F2'));
 
   // === 1공장 화면 ===
   var f1Html = '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px">'+allTypes.map(_f1Card).join('')+'</div>'
@@ -405,7 +408,7 @@ function _renderStockShell(){
       + '<div style="flex:1;min-width:340px">' + _section('📥 입고 이력 (외부 + 이동)', _table(f1InHtml, '이 날 입고 이력 없음')) + '</div>'
       + '<div style="flex:1;min-width:340px">' + _section('📤 출고 이력 (다른 곳으로 이동)', _table(f1OutHtml, '이 날 출고 이력 없음')) + '</div>'
     + '</div>'
-    + _section('🚚 다른 곳으로 이동', _transferForm('F1','F2'));
+    + _section('🚚 다른 곳으로 이동', _transferForm('F1'));
 
   // === 천안물류 화면 (보관·경유 창고 — 사용 없음) ===
   var caHtml = '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px">'+allTypes.map(_caCard).join('')+'</div>'
@@ -414,7 +417,7 @@ function _renderStockShell(){
       + '<div style="flex:1;min-width:340px">' + _section('📥 입고 이력 (외부 + 이동)', _table(caH.inHtml, '이 날 입고 이력 없음')) + '</div>'
       + '<div style="flex:1;min-width:340px">' + _section('📤 출고 이력 (다른 곳으로 이동)', _table(caH.outHtml, '이 날 출고 이력 없음')) + '</div>'
     + '</div>'
-    + _section('🚚 다른 곳으로 이동', _transferForm('CA','F2'));
+    + _section('🚚 다른 곳으로 이동', _transferForm('CA'));
 
   // === 종합 화면 (전체 원육 재고 = 2공장 + 1공장 + 천안물류) ===
   function _locStock(loc, t){
