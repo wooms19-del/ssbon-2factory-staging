@@ -112,7 +112,7 @@
     var months = _activeMonths();
     var subVis = SUB.filter(function(s){ return !_paHidden[s.key]; });
     var items = _items().filter(function(x){ return !_paOff[x]; });
-    var bd="0.5px solid #e5e7eb", bdS="0.5px solid #cbd5e1", bdM="2px solid #94a3b8";
+    var bd="1px solid #cbd5e1", bdS="1px solid #64748b", bdM="2px solid #334155", bdc="1px solid #e2e8f0";
 
     var h='';
     // 툴바 1줄: 제품별/부위별 + 지표
@@ -141,18 +141,18 @@
     if(!subVis.length){ host.innerHTML=h+'<div style="padding:30px 8px;color:#9ca3af">표시할 지표를 하나 이상 켜세요.</div>'; return; }
 
     // 표
-    h+='<div style="overflow-x:auto;border:1px solid #e5e7eb;border-radius:8px;margin:0 8px">';
+    h+='<div style="overflow-x:auto;border:1.5px solid #64748b;border-radius:8px;margin:0 8px">';
     h+='<table style="border-collapse:collapse;font-size:13px;white-space:nowrap;font-variant-numeric:tabular-nums;min-width:100%">';
     // 헤더 2줄
     h+='<thead>';
     h+='<tr style="background:#374151;color:#fff">';
     h+='<th rowspan="2" style="position:sticky;left:0;z-index:6;background:#1e293b;padding:11px 12px;text-align:left;min-width:132px;font-size:14px;border-bottom:'+bd+'">'+(_paMode==='prod'?'제품':'부위')+'</th>';
-    months.forEach(function(m,mi){ h+='<th colspan="'+subVis.length+'" style="padding:9px 6px;text-align:center;font-size:13.5px;border-bottom:'+bd+';border-left:'+(mi===0?bdM:'1px solid #6b7280')+'">'+m+'월</th>'; });
+    months.forEach(function(m,mi){ h+='<th colspan="'+subVis.length+'" style="padding:9px 6px;text-align:center;font-size:13.5px;border-bottom:'+bd+';border-left:'+(mi===0?bdM:'2px solid #475569')+'">'+m+'월</th>'; });
     h+='<th colspan="'+subVis.length+'" style="padding:9px 6px;text-align:center;font-size:13.5px;border-bottom:'+bd+';border-left:2px solid #065f46;background:#065f46">누적</th>';
     h+='</tr>';
     h+='<tr style="background:#4b5563;color:#e5e7eb;font-size:9.5px">';
-    months.forEach(function(m,mi){ subVis.forEach(function(s,si){ h+='<th style="padding:4px 8px;text-align:right;border-bottom:'+bd+';'+(si===0?'border-left:'+(mi===0?bdM:'1px solid #6b7280'):'')+'">'+s.k+'</th>'; }); });
-    subVis.forEach(function(s,si){ h+='<th style="padding:6px 10px;text-align:right;border-bottom:'+bd+';background:#065f46;color:#d1fae5;'+(si===0?'border-left:2px solid #065f46':'')+'">'+s.k+'</th>'; });
+    months.forEach(function(m,mi){ subVis.forEach(function(s,si){ h+='<th style="padding:6px 10px;text-align:right;font-size:11.5px;border-bottom:'+bd+';border-right:1px solid #64748b;'+(si===0?'border-left:'+(mi===0?bdM:'2px solid #475569'):'')+'">'+s.k+'</th>'; }); });
+    subVis.forEach(function(s,si){ h+='<th style="padding:6px 10px;text-align:right;border-bottom:'+bd+';background:#065f46;color:#d1fae5;border-right:1px solid #047857;'+(si===0?'border-left:2px solid #a7f3d0':'')+'">'+s.k+'</th>'; });
     h+='</tr></thead><tbody>';
 
     // 행 렌더 헬퍼
@@ -174,12 +174,12 @@
           var col=_momColor(s,v,prev) || '#1e293b';
           var bgc='transparent';
           if(s.badLow!=null && v!=null && v<s.badLow){ col='#dc2626'; bgc='#fee2e2'; }
-          r+='<td style="padding:9px 10px;text-align:right;color:'+col+';background:'+bgc+';border-bottom:'+(isTot?bdS:bd)+';'+(si===0?'border-left:'+(mi===0?bdM:'1px solid #e5e7eb'):'')+'">'+(v==null?'':(s.dec?_f1(v):_f(v)))+'</td>';
+          r+='<td style="padding:9px 10px;text-align:right;color:'+col+';background:'+bgc+';border-bottom:'+(isTot?bdS:bd)+';border-right:'+bdc+';'+(si===0?'border-left:'+(mi===0?bdM:'2px solid #94a3b8'):'')+'">'+(v==null?'':(s.dec?_f1(v):_f(v)))+'</td>';
         });
       });
       subVis.forEach(function(s,si){
         var cv=series[si].cum;
-        r+='<td style="padding:9px 10px;text-align:right;font-weight:600;color:#1d4ed8;background:#f0fdf4;border-bottom:'+(isTot?bdS:bd)+';'+(si===0?'border-left:2px solid #a7f3d0':'')+'">'+(cv==null?'':(s.dec?_f1(cv):_f(cv)))+'</td>';
+        r+='<td style="padding:9px 10px;text-align:right;font-weight:600;color:#1d4ed8;background:#f0fdf4;border-bottom:'+(isTot?bdS:bd)+';border-right:'+bdc+';'+(si===0?'border-left:2px solid #059669':'')+'">'+(cv==null?'':(s.dec?_f1(cv):_f(cv)))+'</td>';
       });
       r+='</tr>';
       return r;
