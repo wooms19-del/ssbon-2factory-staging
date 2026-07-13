@@ -11,6 +11,8 @@
   let dragStartCell = null;
   let selectedCells = [];
   let popupEl = null;
+  let _dragMoved = false;   // 드래그로 움직였는지 (아니면 클릭)
+  let _baseCells = [];      // 지금까지 골라둔 셀 (Alt+클릭 누적용)
 
   // 셀 텍스트에서 숫자 추출 (1,234.56 / 1234 / 12.3% 등 처리)
   function _extractNum(text) {
@@ -181,6 +183,7 @@
     if (popupEl) popupEl.style.display = 'none';
     document.querySelectorAll('.ac-selected').forEach(el => el.classList.remove('ac-selected'));
     selectedCells = [];
+    _baseCells = [];
   }
 
   // 스타일 (한 번만)
@@ -196,31 +199,39 @@
   }
   _injectCSS();
 
-  // 마우스 이벤트 — Alt 키 누르고 드래그
+  // 마우스 이벤트 — Alt + 드래그(범위) / Alt + 클릭(한 칸씩 추가·제거)
   document.addEventListener('mousedown', function(e){
     if (!e.altKey) return;
     const td = e.target.closest('td');
     if (!td || !_isNumCell(td)) return;
-    // input 내부 클릭이면 안 함
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'BUTTON') return;
     e.preventDefault();
     isAltDragging = true;
+    _dragMoved = false;
     dragStartCell = td;
     dragStartX = e.clientX;
     dragStartY = e.clientY;
-    selectedCells = [td];
-    _highlightCells();
+    // 팝업이 떠 있으면 기존 선택을 유지(누적), 아니면 새로 시작
+    var popupOpen = popupEl && popupEl.style.display !== 'none';
+    _baseCells = popupOpen ? selectedCells.slice() : [];
     document.body.classList.add('ac-dragging');
   });
 
   document.addEventListener('mousemove', function(e){
     if (!isAltDragging) return;
     if (!dragStartCell) return;
-    // 현재 마우스가 가리키는 셀
+    // 살짝 흔들린 건 클릭으로 취급 (3px 이상 움직여야 드래그)
+    if (!_dragMoved) {
+      if (Math.abs(e.clientX - dragStartX) < 3 && Math.abs(e.clientY - dragStartY) < 3) return;
+      _dragMoved = true;
+    }
     const el = document.elementFromPoint(e.clientX, e.clientY);
     const td = el ? el.closest('td') : null;
-    // 시작 셀(닻점) ~ 현재 셀 사이 사각형 영역
-    selectedCells = _selectByAnchor(dragStartCell, td);
+    var ranged = _selectByAnchor(dragStartCell, td);
+    // 기존 선택 + 이번 드래그 범위 (중복 제거)
+    var merged = _baseCells.slice();
+    ranged.forEach(function(c){ if (merged.indexOf(c) === -1) merged.push(c); });
+    selectedCells = merged;
     _highlightCells();
   });
 
@@ -228,15 +239,20 @@
     if (!isAltDragging) return;
     isAltDragging = false;
     document.body.classList.remove('ac-dragging');
-    if (selectedCells.length === 0) {
-      _hidePopup();
-      return;
+
+    if (!_dragMoved) {
+      // ── Alt + 클릭: 그 셀 하나만 토글 (이미 있으면 빼기) ──
+      var td = dragStartCell;
+      var idx = _baseCells.indexOf(td);
+      if (idx >= 0) _baseCells.splice(idx, 1);
+      else _baseCells.push(td);
+      selectedCells = _baseCells.slice();
+      _highlightCells();
     }
+
+    if (selectedCells.length === 0) { _hidePopup(); return; }
     const stats = _calcStats(selectedCells);
-    if (stats.count === 0) {
-      _hidePopup();
-      return;
-    }
+    if (stats.count === 0) { _hidePopup(); return; }
     _showPopup(stats, e.clientX, e.clientY);
   });
 
