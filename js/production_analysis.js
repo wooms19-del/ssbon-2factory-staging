@@ -1,6 +1,6 @@
 /* ============================================================
  * 생산 분석 (1~12월 요약) — 제조원가율 형식
- * - 월 아래 [원육·생산량·수율(+생산성)] 하위 칸
+ * - 월 아래 [원육·고기중량·생산량·수율(+생산성)] 하위 칸
  * - 제품 한 줄씩 / 전체 종합 줄 / 제품별·부위별 전환
  * - 데이터 있는 달만 표시, 전월 대비 방향 색
  * - 숫자는 월단위생산량과 동일 집계(_mpAggregate)
@@ -10,7 +10,7 @@
   var _paData = null;
   var _paBusy = false;
   var _paMode = 'prod';         // 'prod' | 'part'
-  var _paHidden = {'생산성':true};  // 기본: 원육·생산량·수율
+  var _paHidden = {'생산성':true};  // 기본: 원육·고기중량·생산량·수율
   var _paOff = {};
 
   function _f(n){ if(n==null||!isFinite(n)) return ''; return Math.round(n).toLocaleString(); }
@@ -78,6 +78,7 @@
   // 하위 지표 (goodDir: +1 오르면 좋음 / -1 내리면 좋음 / 0 중립)
   var SUB = [
     { key:'원육',   k:'원육',  u:'kg', dec:0, good:0,  get:function(a){return a?a.rmKg:null;} },
+    { key:'고기중량', k:'고기중량', u:'kg', dec:0, good:0, get:function(a){return a?a.meatKg:null;} },
     { key:'생산량', k:'생산량', u:'EA', dec:0, good:0,  get:function(a){return a?a.pkEa:null;} },
     { key:'수율',   k:'수율',  u:'%', dec:1, good:1,  badLow:88, get:function(a){return a?a.yieldRmPk*100:null;} },
     { key:'생산성', k:'생산성', u:'', dec:1, good:1,  get:function(a){return a?a.prodAll:null;} },
