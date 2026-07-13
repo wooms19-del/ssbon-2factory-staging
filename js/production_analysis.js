@@ -1,6 +1,6 @@
 /* ============================================================
  * 생산 분석 (1~12월 요약) — 제조원가율 형식
- * - 월 아래 [원육·생산량·수율(+개당원육·생산성)] 하위 칸
+ * - 월 아래 [원육·생산량·수율(+생산성)] 하위 칸
  * - 제품 한 줄씩 / 전체 종합 줄 / 제품별·부위별 전환
  * - 데이터 있는 달만 표시, 전월 대비 방향 색
  * - 숫자는 월단위생산량과 동일 집계(_mpAggregate)
@@ -10,7 +10,7 @@
   var _paData = null;
   var _paBusy = false;
   var _paMode = 'prod';         // 'prod' | 'part'
-  var _paHidden = {'개당원육':true,'생산성':true};  // 기본: 원육·생산량·수율
+  var _paHidden = {'생산성':true};  // 기본: 원육·생산량·수율
   var _paOff = {};
 
   function _f(n){ if(n==null||!isFinite(n)) return ''; return Math.round(n).toLocaleString(); }
@@ -80,20 +80,17 @@
     { key:'원육',   k:'원육',  u:'kg', dec:0, good:0,  get:function(a){return a?a.rmKg:null;} },
     { key:'생산량', k:'생산량', u:'EA', dec:0, good:0,  get:function(a){return a?a.pkEa:null;} },
     { key:'수율',   k:'수율',  u:'%', dec:1, good:1,  badLow:88, get:function(a){return a?a.yieldRmPk*100:null;} },
-    { key:'개당원육', k:'개당원육', u:'g', dec:1, good:-1, itemOnly:true, get:function(a){return a&&a.pkEa?a.rmKg*1000/a.pkEa:null;} },
     { key:'생산성', k:'생산성', u:'', dec:1, good:1,  get:function(a){return a?a.prodAll:null;} },
   ];
 
   // 행(전체/항목) × 지표 → 월별 값 배열 + 누적
   function _series(kind, item, metric, months){
     var arr = months.map(function(m){
-      if(metric.itemOnly && kind==='total') return null;
       var a = kind==='total' ? _totalOf(_ym(m)) : _itemAgg(_ym(m), item);
       return metric.get(a);
     });
     var cum;
-    if(metric.itemOnly && kind==='total') cum=null;
-    else cum = metric.get(kind==='total' ? _totalCum() : _itemCum(item));
+    cum = metric.get(kind==='total' ? _totalCum() : _itemCum(item));
     return {arr:arr, cum:cum};
   }
   // 전월 대비 색
@@ -190,7 +187,7 @@
     h+='</tbody></table></div>';
 
     h+='<div style="font-size:12px;color:#9ca3af;line-height:1.6;padding:12px 10px 20px">'
-      +'전체 종합 + '+(_paMode==='prod'?'제품별':'부위별')+' · 월 아래 하위 칸에 지표 · 데이터 있는 달만 표시 · 전월보다 좋아지면 파랑, 나빠지면 빨강(수율↑·생산성↑·개당원육↓이 좋음) · 수율 88%↓ 빨강 · 숫자는 월단위생산량과 동일 집계</div>';
+      +'전체 종합 + '+(_paMode==='prod'?'제품별':'부위별')+' · 월 아래 하위 칸에 지표 · 데이터 있는 달만 표시 · 전월보다 좋아지면 파랑, 나빠지면 빨강(수율↑·생산성↑이 좋음) · 수율 88%↓ 빨강 · 숫자는 월단위생산량과 동일 집계</div>';
 
     host.innerHTML=h;
   }
