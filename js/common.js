@@ -986,12 +986,17 @@ var _isRefreshing = false;
 
 // 사용자가 입력 중이거나 패널이 열려있으면 true
 function isUserEditing() {
+  // 최근 30초 내 터치/키보드/스크롤 활동이 있으면 입력 중 (창 닫힘 방지)
+  if(window._lastActivityAt && (Date.now() - window._lastActivityAt) < 30000) return true;
   // 포커스된 입력 요소가 있으면 입력 중
   const a = document.activeElement;
   if(a && (a.tagName==='INPUT'||a.tagName==='TEXTAREA'||a.tagName==='SELECT')) return true;
   // 외포장 미완료 패널이 하나라도 열려있으면 입력 중
   const panels = document.querySelectorAll('[id^="op_panel_"]');
   if(Array.from(panels).some(p=>p.style.display!=='none')) return true;
+  // 외포장 완료 상세 펼침/기록 수정 폼이 열려있으면 입력 중
+  const doneOpen = document.querySelectorAll('[id^="op_done_panel_"],[id^="op_edit_"]');
+  if(Array.from(doneOpen).some(p=>p.style.display!=='none')) return true;
   // 수정 폼이 열려있으면 입력 중
   const editForms = document.querySelectorAll('[id^="ppEdit_"],[id^="pkEdit_"],[id^="peEdit_"]');
   if(Array.from(editForms).some(p=>p.style.display!=='none')) return true;
