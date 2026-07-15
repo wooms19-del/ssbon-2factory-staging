@@ -46,7 +46,7 @@ function opSwitchTab(tab){
 window.opSwitchTab = opSwitchTab;
 
 async function loadShipment(){
-  var from='2026-01-01', to=_shipToday();
+  var from='2026-01-01', to=_plusDays(_shipToday(), 365); // 미래 출고일(예약 출고)까지 로드 — to=오늘이면 미래 출고가 안 잡혀 이력·재고 반영 누락
   try {
     var R = await Promise.all([
       fbGetRange('goodsLot', from, to).catch(function(){return [];}),
