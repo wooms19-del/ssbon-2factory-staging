@@ -828,7 +828,8 @@
       if(r.noMeat){ r._grpKey = null; return; }
       // ★ 메인 행만 그룹화 (부위별 보조 행은 제외)
       if(r._isMainRow === false) return;
-      var _isEst = window._estYields && window._estYields[r.product];
+      // 가안 제품(코스트코 등)은 6월부터만 별도 그룹 분리 — 이전 달은 일반 부위 그룹에 병합
+      var _isEst = window._estYields && window._estYields[r.product] && r.date >= '2026-06';
       if(!_isEst) __nonEstDT[r.date + '|' + (r.type || '')] = true;
       // 가안 제품(코스트코 등)은 별도 그룹으로 분리 — 다른 부위 제품과 원육 병합 방지
       var key = r.date + '|' + (r.type || '') + (_isEst ? '|__EST__|' + r.product : '');
