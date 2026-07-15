@@ -284,8 +284,10 @@ function _shipHistTable(){
   monthShips.forEach(function(s){ sumBox+=parseInt(s.boxes,10)||0; sumEa+=parseInt(s.ea,10)||0; sumPal+=parseFloat(s.pallets)||0; });
   var rows=monthShips.map(function(s){
     var fb=s.fbId||s.id||''; var box=parseInt(s.boxes,10)||0; var pal=parseFloat(s.pallets)||0;
-    return '<tr style="border-top:0.5px solid #f3f4f6">'
-      + '<td style="padding:9px 14px;font-weight:600;font-family:monospace">'+(s.date||'-')+'</td>'
+    var isFuture = String(s.date||'').slice(0,10) > _shipToday();
+    var dateCell = (s.date||'-') + (isFuture ? ' <span style="font-size:10px;color:#d97706;background:#fff7ed;border:0.5px solid #fdba74;padding:1px 6px;border-radius:20px;font-weight:600;font-family:sans-serif">예정</span>' : '');
+    return '<tr style="border-top:0.5px solid #f3f4f6'+(isFuture?';background:#fffbf5':'')+'">'
+      + '<td style="padding:9px 14px;font-weight:600;font-family:monospace">'+dateCell+'</td>'
       + '<td style="padding:9px 14px">'+(s.product||'-')+'</td>'
       + '<td style="padding:9px 14px;font-family:monospace;color:#6b7280">'+(s.lotDate||'-')+'</td>'
       + '<td style="padding:9px 10px;text-align:right">'+(box?box.toLocaleString():'-')+'</td>'
