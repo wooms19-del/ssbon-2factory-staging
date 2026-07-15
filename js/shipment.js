@@ -164,19 +164,15 @@ function _renderStockView(){
       + (pend>0?'<div style="font-size:11px;color:#d97706;margin-top:3px;font-weight:600">🚚 출고 대기 '+pend.toLocaleString()+'</div>':'')
       + '</div>';
   }).join('');
-  // 로트 표 (제품별 그룹, 소비기한 임박순)
+  // 로트 표 (제품별 그룹, 소비기한 임박순). 다 나간 로트(재고0·대기0)는 기본 숨김.
   lots.sort(function(a,b){ if(a.product!==b.product) return a.product<b.product?-1:1; return a.expiry<b.expiry?-1:1; });
-  var rows='', curProd=null;
-  lots.forEach(function(lt){
-    if(lt.product!==curProd){ curProd=lt.product;
-      rows += '<tr style="background:#eff6ff"><td colspan="6" style="padding:7px 14px;font-weight:600;color:#1d4ed8;font-size:12px">'+lt.product+'</td></tr>';
-    }
+  function _lotRow(lt){
     var sp=_shippedSplit(lt.product, lt.expiry), out=sp.done, rem=lt.inEa-out, pend=sp.pending;
     var src = lt.autoEa>0 && lt.manualEa>0 ? '외포장+수동' : (lt.autoEa>0 ? '외포장' : '수동');
     var srcColor = lt.manualEa>0 && lt.autoEa===0 ? '#7c3aed' : '#0e7490';
     var lotCell = '<span style="font-family:monospace;color:#374151">'+(lt.prodDate||'-')+'</span> <span style="font-size:11px;color:#9ca3af">생산</span>'
       + ' <span style="font-size:10px;color:'+srcColor+';background:#f1f5f9;padding:1px 5px;border-radius:4px;margin-left:4px">'+src+'</span>';
-    rows += '<tr style="border-top:0.5px solid #f3f4f6">'
+    return '<tr style="border-top:0.5px solid #f3f4f6">'
       + '<td style="padding:10px 14px">'+lotCell+'</td>'
       + '<td style="padding:10px 8px;text-align:center;font-size:12px"><span style="font-family:monospace">'+lt.expiry+'</span>'+_ddayBadge(lt.expiry)+'</td>'
       + '<td style="padding:10px 8px;text-align:right;color:#6b7280">'+lt.inEa.toLocaleString()+'</td>'
@@ -185,8 +181,30 @@ function _renderStockView(){
         + (pend>0?'<div style="font-size:11px;color:#d97706;font-weight:600;margin-top:2px">🚚 대기 '+pend.toLocaleString()+'</div>':'')+'</td>'
       + '<td style="padding:8px 14px;text-align:center"><button onclick="_shipQuick(\''+lt.product.replace(/'/g,"\\'")+'\',\''+lt.expiry+'\')" style="padding:5px 12px;background:#fff;border:1px solid #d1d5db;border-radius:5px;font-size:12px;cursor:pointer">🚚 출고</button></td>'
       + '</tr>';
+  }
+  function _lotRowsGrouped(arr){
+    var r='', cur=null;
+    arr.forEach(function(lt){
+      if(lt.product!==cur){ cur=lt.product;
+        r += '<tr style="background:#eff6ff"><td colspan="6" style="padding:7px 14px;font-weight:600;color:#1d4ed8;font-size:12px">'+lt.product+'</td></tr>';
+      }
+      r += _lotRow(lt);
+    });
+    return r;
+  }
+  // 재고 남았거나 출고 대기 있으면 active, 둘 다 없으면 완료(숨김)
+  var activeLots=[], doneLots=[];
+  lots.forEach(function(lt){
+    var sp=_shippedSplit(lt.product, lt.expiry);
+    if((lt.inEa-sp.done)>0 || sp.pending>0) activeLots.push(lt); else doneLots.push(lt);
   });
+  var rows = _lotRowsGrouped(activeLots);
   if(!rows) rows='<tr><td colspan="6" style="padding:16px;text-align:center;color:#9ca3af;font-size:13px">재고 없음 — 외포장을 완료하거나 아래에서 수동 등록하세요</td></tr>';
+  var doneSection='';
+  if(doneLots.length){
+    doneSection = '<tbody><tr style="background:#fafafa;cursor:pointer;border-top:0.5px solid #e5e7eb" onclick="_toggleDoneLots()"><td colspan="6" style="padding:9px 14px;text-align:center;color:#6b7280;font-size:12px"><span id="op_donelot_label">✅ 출고 완료 로트 '+doneLots.length+'개 보기 ▾</span></td></tr></tbody>'
+      + '<tbody id="op_donelot_body" style="display:none">'+_lotRowsGrouped(doneLots)+'</tbody>';
+  }
   var table='<div style="background:#fff;border:0.5px solid #e5e7eb;border-radius:12px;overflow:hidden"><div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">'
     + '<thead><tr style="background:#f9fafb">'
     + '<th style="padding:9px 14px;text-align:left;color:#475569;font-weight:600">로트(생산일)</th>'
@@ -195,7 +213,7 @@ function _renderStockView(){
     + '<th style="padding:9px 8px;text-align:right;color:#475569;font-weight:600">출고</th>'
     + '<th style="padding:9px 8px;text-align:right;color:#0f172a;font-weight:600">남은 재고</th>'
     + '<th style="padding:9px 14px;text-align:center;color:#475569;font-weight:600"></th>'
-    + '</tr></thead><tbody>'+rows+'</tbody></table></div></div>';
+    + '</tr></thead><tbody>'+rows+'</tbody>'+doneSection+'</table></div></div>';
   host.innerHTML = (cards?'<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px">'+cards+'</div>':'')
     + '<div style="font-size:12px;color:#9ca3af;margin:0 2px 14px">외포장 완료분은 <b style="color:#0e7490">외포장</b> 태그로 자동 표시 · 소비기한 = 생산일 + (FC 3KG 60일 / 나머지 365일)</div>'
     + '<div style="font-size:15px;font-weight:700;color:#0f172a;margin:4px 2px 10px">📦 로트별 재고</div>'
@@ -205,6 +223,17 @@ function _renderStockView(){
     + '<div style="font-size:12px;color:#9ca3af;margin-top:4px;padding:0 2px">남은 재고 = 입고 − 오늘까지 출고 · <span style="color:#d97706">🚚 대기</span> = 미래 출고일 예약분(아직 재고에서 안 뺌) · 임박 로트 색 표시</div>';
   setTimeout(function(){ _glOnProd(); var de=document.getElementById('gl_date'); if(de) de.addEventListener('change', _glExpHint); }, 0);
 }
+
+// 출고 완료 로트(재고0·대기0) 펼치기/접기
+function _toggleDoneLots(){
+  var b=document.getElementById('op_donelot_body'); if(!b) return;
+  var lbl=document.getElementById('op_donelot_label');
+  var open=b.style.display!=='none';
+  b.style.display=open?'none':'';
+  if(lbl) lbl.textContent = open ? lbl.textContent.replace('숨기기 ▴','보기 ▾') : lbl.textContent.replace('보기 ▾','숨기기 ▴');
+}
+window._toggleDoneLots=_toggleDoneLots;
+
 // ── 출고 이력 뷰 ──
 function _renderShipView(){
   var host=document.getElementById('op_view_ship'); if(!host) return;
