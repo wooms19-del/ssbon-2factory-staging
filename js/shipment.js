@@ -9,6 +9,7 @@
 var _shipData = { lots: [], ships: [], outerpacking: [] };
 var _opSubTab = 'work';
 var _shipLoaded = false;
+var _shipHistYm = null;   // 출고 이력에서 보고 있는 월 (YYYY-MM), null이면 이번 달
 var FC3KG = 'FC 장조림 3KG';
 var FC_SHELF_DAYS = 60;       // FC 3KG 소비기한
 var DEFAULT_SHELF_DAYS = 365; // 나머지 전 제품 소비기한 (생산일 + 1년)
@@ -260,9 +261,28 @@ function _renderShipView(){
     + '</div>'
     + '<textarea id="gs_copy_out" readonly style="width:100%;min-height:130px;padding:10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;font-family:monospace;line-height:1.6;background:#fff;resize:vertical" placeholder="날짜 선택 후 [출고서 생성] → 메신저에 붙여넣기"></textarea>'
     + '</div>';
-  // 출고 목록
-  var ships=_shipData.ships.slice().sort(function(a,b){ return String(b.date).localeCompare(String(a.date)); });
-  var rows=ships.map(function(s){
+  host.innerHTML = '<div style="font-size:15px;font-weight:700;color:#0f172a;margin:4px 2px 10px">🚚 출고 등록 (오늘 나갈 것 여러 개 추가)</div>'
+    + form
+    + '<div style="font-size:15px;font-weight:700;color:#0f172a;margin:4px 2px 10px">📋 출고서 복사 (메신저용)</div>'
+    + copyBox
+    + '<div id="op_shiphist_wrap">'+_shipHistTable()+'</div>';
+  setTimeout(function(){ _gsFillLots(); _gsCalcEa(); }, 0);
+}
+
+// 출고 목록 — 선택한 월(_shipHistYm)만 표시. 월 선택 드롭다운 + 월 합계 포함.
+function _shipHistTable(){
+  var curYm=_shipToday().slice(0,7);
+  var ymSet={}; ymSet[curYm]=true;   // 이번 달은 데이터 없어도 선택지에 포함
+  _shipData.ships.forEach(function(s){ var ym=String(s.date||'').slice(0,7); if(ym) ymSet[ym]=true; });
+  var ymList=Object.keys(ymSet).sort().reverse();
+  if(!_shipHistYm || !ymSet[_shipHistYm]) _shipHistYm=ymList[0];
+  var _ymLabel=function(ym){ var p=ym.split('-'); return p[0]+'년 '+parseInt(p[1],10)+'월'; };
+  var ymOpts=ymList.map(function(ym){ return '<option value="'+ym+'"'+(ym===_shipHistYm?' selected':'')+'>'+_ymLabel(ym)+'</option>'; }).join('');
+  var monthShips=_shipData.ships.filter(function(s){ return String(s.date||'').slice(0,7)===_shipHistYm; })
+    .sort(function(a,b){ return String(b.date).localeCompare(String(a.date)); });
+  var sumBox=0,sumEa=0,sumPal=0;
+  monthShips.forEach(function(s){ sumBox+=parseInt(s.boxes,10)||0; sumEa+=parseInt(s.ea,10)||0; sumPal+=parseFloat(s.pallets)||0; });
+  var rows=monthShips.map(function(s){
     var fb=s.fbId||s.id||''; var box=parseInt(s.boxes,10)||0; var pal=parseFloat(s.pallets)||0;
     return '<tr style="border-top:0.5px solid #f3f4f6">'
       + '<td style="padding:9px 14px;font-weight:600;font-family:monospace">'+(s.date||'-')+'</td>'
@@ -275,7 +295,18 @@ function _renderShipView(){
       + '<td style="padding:9px 14px;text-align:center">'+(fb?'<button onclick="goodsShipDelete(\''+fb+'\')" style="padding:4px 10px;background:#dc2626;color:#fff;border:none;border-radius:4px;font-size:12px;cursor:pointer">삭제</button>':'-')+'</td>'
       + '</tr>';
   }).join('');
-  if(!rows) rows='<tr><td colspan="8" style="padding:16px;text-align:center;color:#9ca3af;font-size:13px">출고 기록 없음</td></tr>';
+  if(!rows) rows='<tr><td colspan="8" style="padding:16px;text-align:center;color:#9ca3af;font-size:13px">'+_ymLabel(_shipHistYm)+' 출고 기록 없음</td></tr>';
+  var foot = monthShips.length ? '<tfoot><tr style="background:#f9fafb;border-top:1.5px solid #e5e7eb;font-weight:700">'
+      + '<td colspan="3" style="padding:9px 14px;color:#0f172a">'+_ymLabel(_shipHistYm)+' 합계</td>'
+      + '<td style="padding:9px 10px;text-align:right">'+sumBox.toLocaleString()+'</td>'
+      + '<td style="padding:9px 10px;text-align:right;color:#d97706">'+sumEa.toLocaleString()+'</td>'
+      + '<td style="padding:9px 10px;text-align:right;color:#6b7280">'+(sumPal?(Math.round(sumPal*10)/10):'-')+'</td>'
+      + '<td colspan="2"></td></tr></tfoot>' : '';
+  var header='<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:4px 2px 10px">'
+    + '<span style="font-size:15px;font-weight:700;color:#0f172a">📄 출고 목록</span>'
+    + '<select onchange="_shipHistSel(this.value)" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:5px;font-size:13px;font-weight:600;color:#0f172a;cursor:pointer">'+ymOpts+'</select>'
+    + '<span style="margin-left:auto;font-size:12px;color:#6b7280">'+monthShips.length+'건</span>'
+    + '</div>';
   var table='<div style="background:#fff;border:0.5px solid #e5e7eb;border-radius:12px;overflow:hidden"><div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">'
     + '<thead><tr style="background:#f9fafb">'
     + '<th style="padding:9px 14px;text-align:left;color:#475569;font-weight:600">출고일</th>'
@@ -286,15 +317,17 @@ function _renderShipView(){
     + '<th style="padding:9px 10px;text-align:right;color:#475569;font-weight:600">파레트</th>'
     + '<th style="padding:9px 14px;text-align:left;color:#475569;font-weight:600">메모</th>'
     + '<th style="padding:9px 14px;text-align:center;color:#475569;font-weight:600">관리</th>'
-    + '</tr></thead><tbody>'+rows+'</tbody></table></div></div>';
-  host.innerHTML = '<div style="font-size:15px;font-weight:700;color:#0f172a;margin:4px 2px 10px">🚚 출고 등록 (오늘 나갈 것 여러 개 추가)</div>'
-    + form
-    + '<div style="font-size:15px;font-weight:700;color:#0f172a;margin:4px 2px 10px">📋 출고서 복사 (메신저용)</div>'
-    + copyBox
-    + '<div style="font-size:15px;font-weight:700;color:#0f172a;margin:4px 2px 10px">📄 출고 목록</div>'
-    + table;
-  setTimeout(function(){ _gsFillLots(); _gsCalcEa(); }, 0);
+    + '</tr></thead><tbody>'+rows+'</tbody>'+foot+'</table></div></div>';
+  return header+table;
 }
+
+// 월 선택 → 목록만 다시 그림 (출고 입력 폼은 건드리지 않음)
+function _shipHistSel(ym){
+  _shipHistYm=ym;
+  var w=document.getElementById('op_shiphist_wrap');
+  if(w) w.innerHTML=_shipHistTable();
+}
+window._shipHistSel=_shipHistSel;
 
 // 박스 → EA 자동환산 (입수 기준)
 function _gsCalcEa(){
