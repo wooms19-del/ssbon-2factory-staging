@@ -282,7 +282,9 @@ function _shipCopyText(dateStr){
     var g=byProd[p]; lines.push('■ '+p);
     Object.keys(g.lots).sort().forEach(function(ld){
       var l=g.lots[ld];
-      lines.push('  · 소비기한 '+_fmtYY(ld)+' — '+l.box.toLocaleString()+'박스 · '+l.ea.toLocaleString()+'ea');
+      // FC 3KG는 소비기한이 짧아 제조일 병기 (제조일 = 소비기한 - (60-1)일)
+      var mfg = (p===FC3KG) ? ' (제조 '+_fmtYY(_plusDays(ld, -(FC_SHELF_DAYS-1)))+')' : '';
+      lines.push('  · 소비기한 '+_fmtYY(ld)+mfg+' — '+l.box.toLocaleString()+'박스 · '+l.ea.toLocaleString()+'ea');
     });
     lines.push('  ▶ 소계 '+g.box.toLocaleString()+'박스 · '+g.ea.toLocaleString()+'ea'+(g.pallet?' · '+(Math.round(g.pallet*10)/10)+'파레트':''));
     lines.push('');
