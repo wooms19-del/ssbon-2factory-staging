@@ -170,7 +170,7 @@ function _renderStockView(){
     var bar = urgent ? '#E24B4A' : (pend>0 ? '#EF9F27' : '#1D9E75');
     var badges='';
     if(urgent) badges+='<span style="font-size:10px;color:#A32D2D;background:#FCEBEB;padding:2px 7px;border-radius:20px">D-'+dd+'</span>';
-    if(pend>0) badges+='<span style="font-size:10px;color:#BA7517;background:#FAEEDA;padding:2px 7px;border-radius:20px">🚚 출고 예정 '+pend.toLocaleString()+'</span>';
+    if(pend>0) badges+='<span style="font-size:10px;color:#BA7517;background:#FAEEDA;padding:2px 7px;border-radius:20px">🚚 출고 예정 '+pend.toLocaleString()+' EA</span>';
     if(!urgent && !pend && pb>0) badges+='<span style="font-size:10px;color:#9ca3af;background:#f8fafc;padding:2px 7px;border-radius:20px">약 '+boxes.toLocaleString()+'박스</span>';
     return '<div style="background:#fff;border:0.5px solid #e5e7eb;border-left:3px solid '+bar+';border-radius:0 10px 10px 0;padding:12px 14px">'
       + '<div style="font-size:12px;color:#6b7280;height:32px;line-height:1.35;overflow:hidden">'+p+'</div>'
@@ -202,7 +202,7 @@ function _renderStockView(){
       + '<td style="padding:10px 8px;text-align:right;color:#6b7280">'+lt.inEa.toLocaleString()+'</td>'
       + '<td style="padding:10px 8px;text-align:right;color:'+(out>0?'#dc2626':'#9ca3af')+'">'+out.toLocaleString()+'</td>'
       + '<td style="padding:10px 8px;text-align:right;font-weight:700;color:'+(rem<=0?'#dc2626':'#0f172a')+'">'+rem.toLocaleString()
-        + (pend>0?'<div style="font-size:11px;color:#d97706;font-weight:600;margin-top:2px">🚚 출고 예정 '+pend.toLocaleString()+'</div>':'')+'</td>'
+        + (pend>0?'<div style="font-size:11px;color:#d97706;font-weight:600;margin-top:2px">🚚 출고 예정 '+pend.toLocaleString()+' EA</div>':'')+'</td>'
       + '<td style="padding:8px 14px;text-align:center"><button onclick="_shipQuick(\''+lt.product.replace(/'/g,"\\'")+'\',\''+lt.expiry+'\')" style="padding:5px 12px;background:#fff;border:1px solid #d1d5db;border-radius:5px;font-size:12px;cursor:pointer">🚚 출고</button></td>'
       + '</tr>';
   }
@@ -233,9 +233,9 @@ function _renderStockView(){
     + '<thead><tr style="background:#f9fafb">'
     + '<th style="padding:9px 14px;text-align:left;color:#475569;font-weight:600">로트(생산일)</th>'
     + '<th style="padding:9px 8px;text-align:center;color:#475569;font-weight:600">소비기한</th>'
-    + '<th style="padding:9px 8px;text-align:right;color:#475569;font-weight:600">입고</th>'
-    + '<th style="padding:9px 8px;text-align:right;color:#475569;font-weight:600">출고</th>'
-    + '<th style="padding:9px 8px;text-align:right;color:#0f172a;font-weight:600">남은 재고</th>'
+    + '<th style="padding:9px 8px;text-align:right;color:#475569;font-weight:600">입고 (EA)</th>'
+    + '<th style="padding:9px 8px;text-align:right;color:#475569;font-weight:600">출고 (EA)</th>'
+    + '<th style="padding:9px 8px;text-align:right;color:#0f172a;font-weight:600">남은 재고 (EA)</th>'
     + '<th style="padding:9px 14px;text-align:center;color:#475569;font-weight:600"></th>'
     + '</tr></thead><tbody>'+rows+'</tbody>'+doneSection+'</table></div></div>';
   host.innerHTML = cards
