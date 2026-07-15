@@ -588,8 +588,8 @@ function renderOpDone(list) {
             <div><label style="font-size:11px;color:var(--g5)">파우치 불량 EA</label><br><input class="fc" type="number" id="oe_defp_${i}" value="${item.productDefect||0}" style="width:100%;padding:5px 8px;margin-top:2px"></div>
             <div><label style="font-size:11px;color:var(--g5)">외박스 불량</label><br><input class="fc" type="number" id="oe_boxd_${i}" value="${item.boxDefect||0}" style="width:100%;padding:5px 8px;margin-top:2px"></div>
             <div><label style="font-size:11px;color:var(--g5)">트레이 사용${item.product && item.product.indexOf('코스트코')>=0 ? ' <span style="color:#0ea5e9;font-size:10px">· 자동(외박스/10)</span>' : ''}</label><br><input class="fc" type="number" id="oe_tray_${i}" value="${item.trayUsed||0}" style="width:100%;padding:5px 8px;margin-top:2px"></div>
-            <div><label style="font-size:11px;color:var(--g5)">잔여 EA</label><br><input class="fc" type="number" id="oe_rem_${i}" value="${item.remainEa||0}" style="width:100%;padding:5px 8px;margin-top:2px"></div>
-            <div><label style="font-size:11px;color:var(--g5)">잔여 박스</label><br><input class="fc" type="number" id="oe_remb_${i}" value="${item.remainBoxes||0}" style="width:100%;padding:5px 8px;margin-top:2px"></div>
+            <div><label style="font-size:11px;color:var(--g5)">잔여 박스</label><br><input class="fc" type="number" id="oe_rem_${i}" value="${item.remainEa||0}" style="width:100%;padding:5px 8px;margin-top:2px"></div>
+            <div><label style="font-size:11px;color:var(--g5)">잔량 EA</label><br><input class="fc" type="number" id="oe_remb_${i}" value="${item.remainBoxes||0}" style="width:100%;padding:5px 8px;margin-top:2px"></div>
             <div><label style="font-size:11px;color:var(--g5)">샘플</label><br><input class="fc" type="number" id="oe_sample_${i}" value="${item.sample||0}" style="width:100%;padding:5px 8px;margin-top:2px"></div>
           </div>
           <div style="margin-bottom:8px"><label style="font-size:11px;color:var(--g5)">비고</label><br><input class="fc" type="text" id="oe_note_${i}" value="${(item.note||'').replace(/"/g,'&quot;')}" style="width:100%;padding:5px 8px;margin-top:2px"></div>
