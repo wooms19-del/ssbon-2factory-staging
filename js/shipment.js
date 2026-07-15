@@ -269,12 +269,12 @@ function _renderShipView(){
       + '<div style="min-width:180px"><label style="display:block;font-size:11px;color:#6b7280;margin-bottom:4px">제품</label><select id="gs_prod" onchange="_gsFillLots();_gsCalcEa()" style="padding:7px 9px;border:1px solid #d1d5db;border-radius:5px;font-size:13px;width:100%">'+prodOpts+'</select></div>'
       + '<div style="min-width:200px"><label style="display:block;font-size:11px;color:#6b7280;margin-bottom:4px">로트(소비기한)</label><select id="gs_lot" style="padding:7px 9px;border:1px solid #d1d5db;border-radius:5px;font-size:13px;width:100%"></select></div>'
       + '<div><label style="display:block;font-size:11px;color:#6b7280;margin-bottom:4px">박스</label><input type="number" id="gs_box" min="0" oninput="_gsCalcEa()" style="padding:7px 9px;border:1px solid #d1d5db;border-radius:5px;font-size:13px;width:80px;text-align:right"></div>'
-      + '<div><label style="display:block;font-size:11px;color:#6b7280;margin-bottom:4px">수량(EA)</label><input type="number" id="gs_ea" min="1" style="padding:7px 9px;border:1px solid #d1d5db;border-radius:5px;font-size:13px;width:100px;text-align:right"></div>'
+      + '<div><label style="display:block;font-size:11px;color:#6b7280;margin-bottom:4px">수량(EA)</label><input type="number" id="gs_ea" min="1" oninput="_gsCalcBox()" style="padding:7px 9px;border:1px solid #d1d5db;border-radius:5px;font-size:13px;width:100px;text-align:right"></div>'
       + '<div><label style="display:block;font-size:11px;color:#6b7280;margin-bottom:4px">파레트</label><input type="number" id="gs_pallet" min="0" step="0.5" style="padding:7px 9px;border:1px solid #d1d5db;border-radius:5px;font-size:13px;width:75px;text-align:right"></div>'
       + '<div style="flex:1;min-width:110px"><label style="display:block;font-size:11px;color:#6b7280;margin-bottom:4px">메모</label><input type="text" id="gs_note" placeholder="거래처 등" style="padding:7px 9px;border:1px solid #d1d5db;border-radius:5px;font-size:13px;width:100%"></div>'
       + '<button onclick="goodsShipAdd()" style="padding:8px 16px;background:#d97706;color:#fff;border:none;border-radius:5px;font-size:13px;font-weight:600;cursor:pointer">출고 추가</button>'
     + '</div>'
-    + '<div style="font-size:11px;color:#9ca3af;margin-top:8px">박스 입력하면 EA 자동 계산(입수 기준) · EA 직접 수정 가능 · 파레트는 직접 입력</div></div>';
+    + '<div style="font-size:11px;color:#9ca3af;margin-top:8px">박스 ↔ EA 자동 계산(입수 기준) · 둘 중 하나만 입력하면 나머지 자동 · 파레트는 직접 입력</div></div>';
   // 출고서 복사
   var copyBox='<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:14px;margin-bottom:16px">'
     + '<div style="display:flex;gap:10px;align-items:end;flex-wrap:wrap;margin-bottom:10px">'
@@ -363,6 +363,16 @@ function _gsCalcEa(){
   if(eaEl && pb>0 && box>0) eaEl.value = box*pb;
 }
 window._gsCalcEa=_gsCalcEa;
+
+// EA 입력 → 박스 자동 계산 (온전한 박스 수 = 내림, 입수 기준)
+function _gsCalcBox(){
+  var prod=(document.getElementById('gs_prod')||{}).value;
+  var pb=_perBoxOf(prod);
+  var ea=parseInt((document.getElementById('gs_ea')||{}).value,10)||0;
+  var boxEl=document.getElementById('gs_box');
+  if(boxEl && pb>0 && ea>0) boxEl.value = Math.floor(ea/pb);
+}
+window._gsCalcBox=_gsCalcBox;
 
 function _fmtYY(ds){ var p=String(ds||'').split('-'); if(p.length<3) return ds; return p[0].slice(2)+'.'+p[1]+'.'+p[2]; }
 
