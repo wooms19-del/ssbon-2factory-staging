@@ -74,8 +74,10 @@ function _perfStartAutoRefresh(){
   // 30초마다 백그라운드 갱신 (현재 탭이 실적관리인 동안만)
   _perfTimer = setInterval(function(){
     var pg=document.getElementById('p-performance');
-    if(pg && pg.classList.contains('on')) _perfReload(false);
-    else { clearInterval(_perfTimer); _perfTimer=null; }
+    if(!pg || !pg.classList.contains('on')){ clearInterval(_perfTimer); _perfTimer=null; return; }
+    // 입력 중·최근 활동·펼친 폼 있으면 갱신 스킵 (창 닫힘 방지)
+    if(typeof isUserEditing==='function' && isUserEditing()) return;
+    _perfReload(false);
   }, 30000);
 }
 
