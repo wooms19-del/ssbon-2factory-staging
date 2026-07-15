@@ -162,7 +162,7 @@ function _renderStockView(){
       + '<div style="font-size:13px;color:#6b7280">'+p+'</div>'
       + '<div style="font-size:22px;font-weight:800;margin-top:2px;color:'+(rem<=0?'#dc2626':'#0f172a')+'">'+rem.toLocaleString()+' <span style="font-size:12px;color:#9ca3af;font-weight:500">EA</span></div>'
       + (pb>0?'<div style="font-size:11px;color:#9ca3af;margin-top:2px">약 '+boxes.toLocaleString()+'박스</div>':'')
-      + (pend>0?'<div style="font-size:11px;color:#d97706;margin-top:3px;font-weight:600">🚚 출고 대기 '+pend.toLocaleString()+'</div>':'')
+      + (pend>0?'<div style="font-size:11px;color:#d97706;margin-top:3px;font-weight:600">🚚 출고 예정 '+pend.toLocaleString()+'</div>':'')
       + '</div>';
   }).join('');
   // 로트 표 (제품별 그룹, 소비기한 임박순). 다 나간 로트(재고0·대기0)는 기본 숨김.
@@ -179,7 +179,7 @@ function _renderStockView(){
       + '<td style="padding:10px 8px;text-align:right;color:#6b7280">'+lt.inEa.toLocaleString()+'</td>'
       + '<td style="padding:10px 8px;text-align:right;color:'+(out>0?'#dc2626':'#9ca3af')+'">'+out.toLocaleString()+'</td>'
       + '<td style="padding:10px 8px;text-align:right;font-weight:700;color:'+(rem<=0?'#dc2626':'#0f172a')+'">'+rem.toLocaleString()
-        + (pend>0?'<div style="font-size:11px;color:#d97706;font-weight:600;margin-top:2px">🚚 대기 '+pend.toLocaleString()+'</div>':'')+'</td>'
+        + (pend>0?'<div style="font-size:11px;color:#d97706;font-weight:600;margin-top:2px">🚚 출고 예정 '+pend.toLocaleString()+'</div>':'')+'</td>'
       + '<td style="padding:8px 14px;text-align:center"><button onclick="_shipQuick(\''+lt.product.replace(/'/g,"\\'")+'\',\''+lt.expiry+'\')" style="padding:5px 12px;background:#fff;border:1px solid #d1d5db;border-radius:5px;font-size:12px;cursor:pointer">🚚 출고</button></td>'
       + '</tr>';
   }
@@ -221,7 +221,7 @@ function _renderStockView(){
     + table
     + '<div style="font-size:15px;font-weight:700;color:#0f172a;margin:18px 2px 10px">➕ 재고 수동 등록 (보정·특이사항용)</div>'
     + _stockAddForm()
-    + '<div style="font-size:12px;color:#9ca3af;margin-top:4px;padding:0 2px">남은 재고 = 입고 − 오늘까지 출고 · <span style="color:#d97706">🚚 대기</span> = 미래 출고일 예약분(아직 재고에서 안 뺌) · 임박 로트 색 표시</div>';
+    + '<div style="font-size:12px;color:#9ca3af;margin-top:4px;padding:0 2px">남은 재고 = 입고 − 오늘까지 출고 · <span style="color:#d97706">🚚 출고 예정</span> = 미래 출고일 예약분(아직 재고에서 안 뺌) · 임박 로트 색 표시</div>';
   setTimeout(function(){ _glOnProd(); var de=document.getElementById('gl_date'); if(de) de.addEventListener('change', _glExpHint); }, 0);
 }
 
