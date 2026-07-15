@@ -300,9 +300,6 @@ function opCalc(i, innerEa) {
   const prodName = snEl ? snEl.textContent.trim() : '';
   const perBox = getPerBox(prodName) || 0;
 
-  // 잔여 = 내포장 - (박스×입수) - 잔량박스EA - 제품불량 - 샘플
-  const rem = innerEa - boxes * perBox - partial - defp - sample;
-
   // 상단 요약
   const sbox = document.getElementById('op_sbox_'+i);
   const sdefp = document.getElementById('op_sdefp_'+i);
@@ -316,6 +313,9 @@ function opCalc(i, innerEa) {
   const outerCalc = (boxes > 0 && perBox > 0)
     ? boxes * perBox + partial
     : Math.max(0, innerEa - defp - sample);
+  // 잔여(낱개) = 내포장 - 외포장완료 - 제품불량 - 샘플
+  // 박스 미입력 시 외포장완료가 내포장 전량이므로 잔여는 0 → 집계 더블 방지
+  const rem = innerEa - outerCalc - defp - sample;
   const sOuter = document.getElementById('op_souter_'+i);
   const outerInput = document.getElementById('op_outer_'+i);
   if(sOuter){ sOuter.textContent = outerCalc.toLocaleString(); }
