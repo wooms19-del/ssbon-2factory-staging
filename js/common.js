@@ -1038,6 +1038,19 @@ function startAutoRefresh() {
   _refreshTimer = setInterval(fetchTodayFromServer, 30000);
 }
 
+// ============================================================
+// 자정 지나 날짜가 바뀌면 자동 리로드 (오늘 데이터·재고·출고대기 기준 갱신)
+//   입력 중이면 미루고, 입력 끝나면 리로드 → 값 날아감 방지
+// ============================================================
+window._appDay = (typeof tod==='function') ? tod() : new Date().toISOString().slice(0,10);
+setInterval(function(){
+  var now = (typeof tod==='function') ? tod() : new Date().toISOString().slice(0,10);
+  if(now === window._appDay) return;                                    // 날짜 그대로면 스킵
+  if(typeof isUserEditing==='function' && isUserEditing()) return;      // 입력 중이면 미룸(다음 체크 때 재시도)
+  console.log('[midnight-reload] 날짜 변경 감지', window._appDay, '->', now);
+  location.reload(true);
+}, 30000);
+
 async function fetchTodayFromServer() {
   if(_isRefreshing) return;
   if(isUserEditing()) return;   // 입력 중·패널 열림 → 스킵
