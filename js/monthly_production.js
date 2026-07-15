@@ -848,7 +848,7 @@
         var _thaw = thByDateType[d+'|'+t] || 0;
         // 형제(일반) 제품이 같은 부위에 있거나, 그 부위 방혈이 없으면 → 가안 역산
         // ★ 관리자 전용 — 게스트는 원래값(가안 미적용)
-        _useEst = window._isAdmin && (!!__nonEstDT[d+'|'+t] || !(_thaw > 0));
+        _useEst = window._isAdmin && d >= '2026-06' && (!!__nonEstDT[d+'|'+t] || !(_thaw > 0));
       }
       if(_isEstGrp && _useEst){
         var _cfg = window._estYields[grp[0].product];
