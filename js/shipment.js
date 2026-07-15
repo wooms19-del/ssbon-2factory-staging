@@ -364,13 +364,13 @@ function _gsCalcEa(){
 }
 window._gsCalcEa=_gsCalcEa;
 
-// EA 입력 → 박스 자동 계산 (온전한 박스 수 = 내림, 입수 기준)
+// EA 입력 → 박스 자동 계산 (올림 = 낱개 있으면 박스 하나 더, 입수 기준)
 function _gsCalcBox(){
   var prod=(document.getElementById('gs_prod')||{}).value;
   var pb=_perBoxOf(prod);
   var ea=parseInt((document.getElementById('gs_ea')||{}).value,10)||0;
   var boxEl=document.getElementById('gs_box');
-  if(boxEl && pb>0 && ea>0) boxEl.value = Math.floor(ea/pb);
+  if(boxEl && pb>0 && ea>0) boxEl.value = Math.ceil(ea/pb);
 }
 window._gsCalcBox=_gsCalcBox;
 
