@@ -83,3 +83,62 @@ function showRecipeDetail(code){
 
 window.loadItemMasterView = loadItemMasterView;
 window.showRecipeDetail = showRecipeDetail;
+
+// 레시피 관리에서 웹 제품 선택 시 → 매핑된 ERP 마스터 레시피를 참고로 표시
+async function renderMasterRecipeFor(prodName){
+  var el = document.getElementById('rc_master_view');
+  if(!el) return;
+  if(!prodName){ el.innerHTML=''; return; }
+  // 마스터 데이터 아직이면 조용히 로드
+  if(!_imData.master.length){
+    try {
+      var results = await Promise.all([
+        db.collection('item_master').get(),
+        db.collection('item_recipe').get(),
+        db.collection('external_key_map').get()
+      ]);
+      _imData.master = results[0].docs.map(function(d){ return d.data(); });
+      _imData.recipe = {}; results[1].docs.forEach(function(d){ _imData.recipe[d.id]=d.data(); });
+      _imData.map = results[2].docs.map(function(d){ return d.data(); });
+    } catch(e){ console.error(e); el.innerHTML=''; return; }
+  }
+  var mp = _imData.map.filter(function(m){ return m.webName===prodName; })[0];
+  if(!mp || !mp.erpCodes || !mp.erpCodes.length){
+    el.innerHTML = '<div style="margin-top:14px;font-size:12px;color:#9ca3af">이 제품은 아직 ERP 마스터에 매핑되지 않았습니다.</div>';
+    return;
+  }
+  var findM = function(code){ return _imData.master.filter(function(x){return x.code===code;})[0]; };
+  var html = '<div style="margin-top:14px;padding:12px;background:#f8fafc;border-radius:8px;border:0.5px solid #e5e7eb">';
+  html += '<div style="font-weight:600;font-size:13px;margin-bottom:2px">🗂️ ERP 마스터 레시피 <span style="color:#9ca3af;font-weight:400">(부위별 · 참고용)</span></div>';
+  html += '<div style="font-size:11px;color:#9ca3af;margin-bottom:10px">이 웹 제품에 연결된 ERP 완제품 '+mp.erpCodes.length+'종. 위 레시피 편집과 별개로, 마스터 원본을 보여줍니다.</div>';
+  mp.erpCodes.forEach(function(code){
+    var r = _imData.recipe[code], m = findM(code);
+    html += '<div style="margin-bottom:10px;padding-bottom:8px;border-bottom:0.5px dashed #ddd">';
+    html += '<div style="font-size:12px;font-weight:600;color:#1d4ed8;font-family:monospace">'+code+' <span style="font-family:inherit;color:#374151">'+(m?m.name:'')+'</span></div>';
+    if(r){
+      if(r.kind==='완제품'){
+        (r.components||[]).forEach(function(x){
+          html += '<div style="font-size:11px;color:#374151;padding-left:12px;margin-top:2px">└ 반제품 <span style="font-family:monospace">'+x.code+'</span> '+x.name+' × '+x.qty+'</div>';
+          // 반제품 내포장 펼침
+          var sub = _imData.recipe[x.code];
+          if(sub && sub.inner){ sub.inner.forEach(function(y){
+            html += '<div style="font-size:11px;color:#6b7280;padding-left:26px">· '+y.code+' '+y.name+' × '+y.qty+' '+y.unit+'</div>';
+          }); }
+        });
+        (r.outer||[]).forEach(function(x){
+          html += '<div style="font-size:11px;color:#b45309;padding-left:12px">└ 외포장 <span style="font-family:monospace">'+x.code+'</span> '+x.name+' × '+x.qty+'</div>';
+        });
+      } else {
+        (r.inner||[]).forEach(function(x){
+          html += '<div style="font-size:11px;color:#374151;padding-left:12px">└ '+x.code+' '+x.name+' × '+x.qty+' '+x.unit+'</div>';
+        });
+      }
+    } else {
+      html += '<div style="font-size:11px;color:#9ca3af;padding-left:12px">레시피 없음</div>';
+    }
+    html += '</div>';
+  });
+  html += '</div>';
+  el.innerHTML = html;
+}
+window.renderMasterRecipeFor = renderMasterRecipeFor;

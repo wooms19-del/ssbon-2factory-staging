@@ -214,6 +214,7 @@ function loadRecipe() {
   const outerSec = document.getElementById('rc_outer_section');
   if(outerSec) outerSec.style.display = isSauce ? 'none' : '';
   renderRcList();
+  if(typeof renderMasterRecipeFor==='function') renderMasterRecipeFor(prod);
 }
 
 const PKG_TYPES = ['외박스','RRP','트레이','기타'];
