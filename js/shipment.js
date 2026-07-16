@@ -330,8 +330,8 @@ function _shipHistTable(){
       + '<td style="padding:9px 10px;text-align:right">'+(box?box.toLocaleString():'-')+'</td>'
       + '<td style="padding:9px 10px;text-align:right;font-weight:600">'+(parseInt(s.ea,10)||0).toLocaleString()+'</td>'
       + '<td style="padding:9px 10px;text-align:right;color:#6b7280">'+(pal||'-')+'</td>'
-      + '<td style="padding:9px 14px;color:#6b7280">'+(s.note||'-')+'</td>'
-      + '<td style="padding:9px 14px;text-align:center">'+(fb?'<button onclick="goodsShipDelete(\''+fb+'\')" style="padding:4px 10px;background:#dc2626;color:#fff;border:none;border-radius:4px;font-size:12px;cursor:pointer">삭제</button>':'-')+'</td>'
+      + '<td style="padding:9px 14px;color:#6b7280'+(fb?';cursor:pointer':'')+'"'+(fb?' onclick="goodsShipEditNote(\''+fb+'\')" title="클릭해서 메모 수정"':'')+'>'+(s.note||'-')+(fb?' <span style="font-size:11px">✏️</span>':'')+'</td>'
+      + '<td style="padding:9px 14px;text-align:center;white-space:nowrap">'+(fb?'<button onclick="goodsShipEditNote(\''+fb+'\')" style="padding:4px 9px;background:#fff;border:1px solid #d1d5db;color:#475569;border-radius:4px;font-size:12px;cursor:pointer;margin-right:4px">메모</button><button onclick="goodsShipDelete(\''+fb+'\')" style="padding:4px 10px;background:#dc2626;color:#fff;border:none;border-radius:4px;font-size:12px;cursor:pointer">삭제</button>':'-')+'</td>'
       + '</tr>';
   }).join('');
   if(!rows) rows='<tr><td colspan="8" style="padding:16px;text-align:center;color:#9ca3af;font-size:13px">'+_ymLabel(_shipHistYm)+' 출고 기록 없음</td></tr>';
@@ -545,3 +545,20 @@ async function goodsShipDelete(fbId){
   }catch(e){ console.error(e); toast&&toast('삭제 오류: '+(e.message||e),'d'); }
 }
 window.goodsShipDelete=goodsShipDelete;
+
+// 출고 기록 메모 수정
+async function goodsShipEditNote(fbId){
+  if(!fbId) return;
+  var s=_shipData.ships.filter(function(x){ return (x.fbId||x.id)===fbId; })[0];
+  if(!s){ toast&&toast('항목을 찾을 수 없음 — 새로고침','d'); return; }
+  var nv=prompt(s.product+' ('+(s.date||'')+') 메모 수정', s.note||'');
+  if(nv===null) return;              // 취소
+  nv=String(nv).trim();
+  if(nv===(s.note||'')) return;       // 변경 없음
+  toast&&toast('저장 중...','i');
+  try{ var ok=await fbUpdate('goodsShip', fbId, { note:nv });
+    if(ok){ s.note=nv; _renderShipViews(); toast&&toast('✓ 메모 수정됨','s'); }
+    else toast&&toast('수정 실패','d');
+  }catch(e){ console.error(e); toast&&toast('오류: '+(e.message||e),'d'); }
+}
+window.goodsShipEditNote=goodsShipEditNote;
