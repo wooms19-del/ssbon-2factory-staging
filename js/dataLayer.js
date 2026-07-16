@@ -1145,73 +1145,6 @@
     };
   }
 
-  // ─── 마스터 데이터 기반 제품 생성 (품목 마스터가 원본) ───
-  // item_master / item_recipe / external_key_map + product_capa 를 읽어
-  // 기존 L.products 형식을 자동 생성. 화면들은 형식 그대로 사용.
-  var _masterCache = { master:null, recipe:null, map:null, capa:null };
-
-  async function _loadMasterData(){
-    if(typeof db === 'undefined') return null;
-    var out = { master:{}, recipe:{}, map:[], capa:{} };
-    var snaps = await Promise.all([
-      db.collection('item_master').get(),
-      db.collection('item_recipe').get(),
-      db.collection('external_key_map').get(),
-      db.collection('item_config').doc('product_capa').get()
-    ]);
-    snaps[0].docs.forEach(function(d){ out.master[d.id] = d.data(); });
-    snaps[1].docs.forEach(function(d){ out.recipe[d.id] = d.data(); });
-    out.map = snaps[2].docs.map(function(d){ return d.data(); });
-    if(snaps[3].exists){ out.capa = snaps[3].data().capaMap || {}; }
-    _masterCache = out;
-    return out;
-  }
-
-  // 마스터 → L.products 형식 배열 생성
-  function _buildProductsFromMaster(m){
-    m = m || _masterCache;
-    if(!m || !m.map) return [];
-    var out = [];
-    m.map.forEach(function(mp){
-      var web = mp.webName;
-      var codes = mp.erpCodes || [];
-      if(!codes.length) return;
-      var fin = m.recipe[codes[0]];
-      var kgea = 0, sauce = null, hasMeat = false;
-      if(fin && fin.components && fin.components.length){
-        var banCode = fin.components[0].code;
-        var ban = m.recipe[banCode];
-        if(ban && ban.inner){
-          ban.inner.forEach(function(x){
-            if(x.code === '200006' || x.code === '200007' || x.code === '200008'){ kgea = x.qty; hasMeat = true; }
-            if(x.code === '200011') sauce = 'FP 장조림 소스';
-            if(x.code === '200009') sauce = 'FC 장조림 소스';
-          });
-        }
-      }
-      var prod = { name: web, kgea: kgea, sauce: sauce };
-      if(!hasMeat) prod.noMeat = true;
-      var cp = m.capa && m.capa[web];
-      if(cp != null && cp !== '') prod.capa = parseFloat(cp) || 0;
-      out.push(prod);
-    });
-    return out;
-  }
-
-  // 검증: 마스터 생성본 vs 기존 L.products (대조)
-  function _verifyProducts(){
-    var built = _buildProductsFromMaster();
-    var report = [];
-    built.forEach(function(b){
-      var old = (typeof L !== 'undefined' && L.products) ? L.products.find(function(p){ return p.name === b.name; }) : null;
-      if(!old){ report.push({ name:b.name, status:'신규(기존없음)' }); return; }
-      var kgOk = Math.abs((parseFloat(old.kgea)||0) - (b.kgea||0)) < 0.003;
-      report.push({ name:b.name, kgeaOld:old.kgea, kgeaNew:b.kgea, kgeaOk:kgOk,
-                    capaOld:old.capa, capaNew:b.capa });
-    });
-    return report;
-  }
-
   // ─── 외부 노출 ─────────────────────────────────────────
   global.DL = {
     VERSION: DL_VERSION,
@@ -1227,11 +1160,6 @@
     getKgea: _getKgea,
     isNoMeat: _isNoMeat,
     getKgTot: _getKgTot,
-
-    // 마스터 기반 제품 생성 (품목 마스터가 원본)
-    loadMasterData: _loadMasterData,
-    buildProductsFromMaster: _buildProductsFromMaster,
-    verifyProducts: _verifyProducts,
 
     // testRun
     isTestRun: _isTestRun,

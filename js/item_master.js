@@ -18,6 +18,7 @@ async function loadItemMasterView(){
     _imData.recipe = {};
     results[1].docs.forEach(function(d){ _imData.recipe[d.id] = d.data(); });
     _imData.map = results[2].docs.map(function(d){ return d.data(); });
+    await _imLoadCapa();
     renderItemMaster();
     if(typeof toast==='function') toast('품목 마스터 '+_imData.master.length+'종 불러옴 ✓','s');
   } catch(e){
@@ -83,6 +84,67 @@ function showRecipeDetail(code){
 
 window.loadItemMasterView = loadItemMasterView;
 window.showRecipeDetail = showRecipeDetail;
+
+// ============================================================
+// 마스터 → 제품 목록 생성 (품목 마스터를 원본으로)
+// 기존 L.products 형식(name/kgea/sauce/noMeat/capa)을 마스터에서 생성.
+// 화면 14개는 형식 그대로 사용 → 코드 안 바꿔도 마스터 기반이 됨.
+// ============================================================
+var _imCapa = {};  // 제품별 생산능력 (마스터에 없는 현장값)
+
+async function _imLoadCapa(){
+  try {
+    var doc = await db.collection('item_config').doc('product_capa').get();
+    if(doc.exists){ _imCapa = doc.data().capaMap || {}; }
+  } catch(e){ console.error('capa 로드 오류', e); }
+}
+
+// 마스터 데이터로 L.products 형식 배열 생성
+function buildProductsFromMaster(){
+  if(!_imData.map || !_imData.map.length) return [];
+  var out = [];
+  _imData.map.forEach(function(mp){
+    var web = mp.webName, codes = mp.erpCodes || [];
+    if(!codes.length) return;
+    var fin = _imData.recipe[codes[0]];
+    var kgea = 0, sauce = null, hasMeat = false;
+    if(fin && fin.components && fin.components.length){
+      var ban = _imData.recipe[fin.components[0].code];
+      if(ban && ban.inner){
+        ban.inner.forEach(function(x){
+          if(x.code === '200006' || x.code === '200007' || x.code === '200008'){ kgea = x.qty; hasMeat = true; }
+          if(x.code === '200011') sauce = 'FP 장조림 소스';
+          if(x.code === '200009') sauce = 'FC 장조림 소스';
+        });
+      }
+    }
+    var prod = { name: web, kgea: kgea, sauce: sauce };
+    if(!hasMeat) prod.noMeat = true;
+    var cp = _imCapa[web];
+    if(cp != null && cp !== '') prod.capa = parseFloat(cp) || 0;
+    out.push(prod);
+  });
+  return out;
+}
+
+// 검증: 마스터 생성본 vs 기존 L.products (대조표 반환)
+function verifyProductsAgainstMaster(){
+  var built = buildProductsFromMaster();
+  var rows = [];
+  built.forEach(function(b){
+    var old = (typeof L !== 'undefined' && L.products) ? L.products.find(function(p){ return p.name === b.name; }) : null;
+    var kgOk = old ? Math.abs((parseFloat(old.kgea)||0) - (b.kgea||0)) < 0.003 : false;
+    rows.push({ name:b.name, exists:!!old,
+                kgeaOld: old?old.kgea:null, kgeaNew:b.kgea, kgeaOk:kgOk,
+                capaOld: old?old.capa:null, capaNew:b.capa,
+                sauceNew:b.sauce, noMeat:!!b.noMeat });
+  });
+  return rows;
+}
+
+window.buildProductsFromMaster = buildProductsFromMaster;
+window.verifyProductsAgainstMaster = verifyProductsAgainstMaster;
+window._imLoadCapa = _imLoadCapa;
 
 // 레시피 관리에서 웹 제품 선택 시 → 매핑된 ERP 마스터 레시피를 참고로 표시
 async function renderMasterRecipeFor(prodName){
