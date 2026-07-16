@@ -517,7 +517,7 @@ async function _goodsShipAddX(pfx, isRemn, isSmpl){
   if(ea>rem){ toast&&toast('남은 재고('+rem.toLocaleString()+') 초과','d'); return; }
   var rec={ id:(typeof gid==='function')?gid():('gs_'+Date.now()), product:prod, lotDate:lotDate, date:date, boxes:box, ea:ea, pallets:pallet, note:note };
   if(isRemn) rec.remn=true;
-  if(isSmpl) rec.smpl=true;
+  if(isSmpl){ rec.smpl=true; rec.note = '샘플 '+ea.toLocaleString()+'ea' + (note?' / '+note:''); }
   var kindLbl = isRemn?' 잔량':(isSmpl?' 샘플':'');
   toast&&toast('저장 중...','i');
   try{ var fbId=await fbSave('goodsShip', rec);
