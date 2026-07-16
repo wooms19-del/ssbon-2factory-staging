@@ -1293,10 +1293,10 @@ body{display:flex;flex-direction:column;font-family:-apple-system,BlinkMacSystem
     <div id="im_view" style="margin-top:12px"></div>
   </div>
 
-  <div class="card">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-      <div class="ct" style="margin:0">📋 레시피 관리</div>
-    </div>
+  <div class="card" style="margin-bottom:1rem">
+    <details>
+      <summary style="cursor:pointer;color:var(--g5);font-size:13px;font-weight:600">📋 기존 레시피 관리 <span style="font-weight:400">(구버전 · 품목 마스터로 대체됨 · 현장 호환용 보관)</span></summary>
+      <div style="margin-top:12px"></div>
 
     <!-- 등록된 레시피 목록 -->
     <div id="recipeList" style="margin-bottom:1rem"></div>
@@ -1351,6 +1351,7 @@ body{display:flex;flex-direction:column;font-family:-apple-system,BlinkMacSystem
     </div>
     <!-- 선택 제품의 ERP 마스터 레시피 (부위별, 참고 표시) -->
     <div id="rc_master_view"></div>
+    </details>
   </div>
 </div>
 
@@ -1681,7 +1682,7 @@ body{display:flex;flex-direction:column;font-family:-apple-system,BlinkMacSystem
 <script src="js/settings.js?v=1784176571"></script>
 <script src="js/item_master.js?v=1784176571"></script>
 <script src="js/kakao.js?v=1778129561"></script>
-<script src="js/app.js?v=1782959350"></script>
+<script src="js/app.js?v=1784179254"></script>
 <script src="js/schedule.js?v=1779409601"></script>
 <script src="js/attendance.js?v=1783557217"></script>
 <script src="js/timepicker.js?v=1778129561"></script>

@@ -241,6 +241,7 @@ function showTab(mode,tab){
   } else if(tab==='recipe'){
     updDD();
     renderRcList();
+    if(typeof loadItemMasterView==='function') loadItemMasterView();
   } else if(tab==='timetable'){
     if(typeof ttInit==='function') ttInit();
   } else if(tab==='timetable_test'){
