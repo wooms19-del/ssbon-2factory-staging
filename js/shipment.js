@@ -273,20 +273,11 @@ function _renderShipView(){
       + '<div><label style="display:block;font-size:11px;color:#6b7280;margin-bottom:4px">파레트</label><input type="number" id="gs_pallet" min="0" step="0.5" style="padding:7px 9px;border:1px solid #d1d5db;border-radius:5px;font-size:13px;width:75px;text-align:right"></div>'
       + '<div style="flex:1;min-width:110px"><label style="display:block;font-size:11px;color:#6b7280;margin-bottom:4px">메모</label><input type="text" id="gs_note" placeholder="거래처 등" style="padding:7px 9px;border:1px solid #d1d5db;border-radius:5px;font-size:13px;width:100%"></div>'
       + '<button onclick="goodsShipAdd()" style="padding:8px 16px;background:#d97706;color:#fff;border:none;border-radius:5px;font-size:13px;font-weight:600;cursor:pointer">출고 추가</button>'
-      + '<button onclick="_gsToggleRemn()" style="padding:8px 14px;background:#fff;border:1px solid #d97706;color:#d97706;border-radius:5px;font-size:13px;font-weight:600;cursor:pointer">➕ 잔량</button>'
+      + '<button onclick="_gsAddRemnRow()" style="padding:8px 14px;background:#fff;border:1px solid #d97706;color:#d97706;border-radius:5px;font-size:13px;font-weight:600;cursor:pointer">➕ 잔량</button>'
     + '</div>'
-    + '<div id="gs2_row" style="display:none;margin-top:12px;padding-top:12px;border-top:1px dashed #f59e0b">'
-      + '<div style="font-size:12px;font-weight:700;color:#92400e;margin-bottom:8px">잔량 출고 — 완박스 아닌 낱개 박스 (수량에 포함 · 출고서에 잔량으로 표시)</div>'
-      + '<div style="display:flex;gap:10px;align-items:end;flex-wrap:wrap">'
-        + '<div><label style="display:block;font-size:11px;color:#6b7280;margin-bottom:4px">출고일</label><input type="date" id="gs2_date" value="'+_shipToday()+'" style="padding:7px 9px;border:1px solid #d1d5db;border-radius:5px;font-size:13px"></div>'
-        + '<div style="min-width:180px"><label style="display:block;font-size:11px;color:#6b7280;margin-bottom:4px">제품</label><select id="gs2_prod" onchange="_gsFillLots2();_gsCalcEa2()" style="padding:7px 9px;border:1px solid #d1d5db;border-radius:5px;font-size:13px;width:100%">'+prodOpts+'</select></div>'
-        + '<div style="min-width:200px"><label style="display:block;font-size:11px;color:#6b7280;margin-bottom:4px">로트(소비기한)</label><select id="gs2_lot" style="padding:7px 9px;border:1px solid #d1d5db;border-radius:5px;font-size:13px;width:100%"></select></div>'
-        + '<div><label style="display:block;font-size:11px;color:#6b7280;margin-bottom:4px">박스</label><input type="number" id="gs2_box" min="0" oninput="_gsCalcEa2()" style="padding:7px 9px;border:1px solid #d1d5db;border-radius:5px;font-size:13px;width:80px;text-align:right"></div>'
-        + '<div><label style="display:block;font-size:11px;color:#6b7280;margin-bottom:4px">수량(EA)</label><input type="number" id="gs2_ea" min="1" oninput="_gsCalcBox2()" style="padding:7px 9px;border:1px solid #d1d5db;border-radius:5px;font-size:13px;width:100px;text-align:right"></div>'
-        + '<div><label style="display:block;font-size:11px;color:#6b7280;margin-bottom:4px">파레트</label><input type="number" id="gs2_pallet" min="0" step="0.5" style="padding:7px 9px;border:1px solid #d1d5db;border-radius:5px;font-size:13px;width:75px;text-align:right"></div>'
-        + '<div style="flex:1;min-width:110px"><label style="display:block;font-size:11px;color:#6b7280;margin-bottom:4px">메모</label><input type="text" id="gs2_note" placeholder="거래처 등" style="padding:7px 9px;border:1px solid #d1d5db;border-radius:5px;font-size:13px;width:100%"></div>'
-        + '<button onclick="goodsShipAdd2()" style="padding:8px 16px;background:#92400e;color:#fff;border:none;border-radius:5px;font-size:13px;font-weight:600;cursor:pointer">잔량 출고 추가</button>'
-      + '</div>'
+    + '<div id="gs2_wrap" style="display:none;margin-top:12px;padding-top:12px;border-top:1px dashed #f59e0b">'
+      + '<div style="font-size:12px;font-weight:700;color:#92400e;margin-bottom:8px">잔량 출고 — 완박스 아닌 낱개 박스 (수량에 포함 · 출고서에 잔량으로 표시) · [➕ 잔량]으로 여러 개 추가</div>'
+      + '<div id="gs2_rows"></div>'
     + '</div>'
     + '<div style="font-size:11px;color:#9ca3af;margin-top:8px">박스 ↔ EA 자동 계산(입수 기준) · 둘 중 하나만 입력하면 나머지 자동 · 파레트는 직접 입력</div></div>';
   // 출고서 복사
@@ -378,6 +369,7 @@ function _gsCalcEaX(pfx){
 }
 function _gsCalcEa(){ _gsCalcEaX('gs'); }
 function _gsCalcEa2(){ _gsCalcEaX('gs2'); }
+window._gsCalcEaX=_gsCalcEaX;
 window._gsCalcEa=_gsCalcEa;
 window._gsCalcEa2=_gsCalcEa2;
 
@@ -391,6 +383,7 @@ function _gsCalcBoxX(pfx){
 }
 function _gsCalcBox(){ _gsCalcBoxX('gs'); }
 function _gsCalcBox2(){ _gsCalcBoxX('gs2'); }
+window._gsCalcBoxX=_gsCalcBoxX;
 window._gsCalcBox=_gsCalcBox;
 window._gsCalcBox2=_gsCalcBox2;
 
@@ -460,6 +453,7 @@ function _gsFillLotsX(pfx){
 }
 function _gsFillLots(){ _gsFillLotsX('gs'); }
 function _gsFillLots2(){ _gsFillLotsX('gs2'); }
+window._gsFillLotsX=_gsFillLotsX;
 window._gsFillLots=_gsFillLots;
 window._gsFillLots2=_gsFillLots2;
 
@@ -518,23 +512,48 @@ async function _goodsShipAddX(pfx, isRemn){
   toast&&toast('저장 중...','i');
   try{ var fbId=await fbSave('goodsShip', rec);
     if(fbId){ rec.fbId=fbId; _shipData.ships.push(rec); toast&&toast('✓ '+prod+(isRemn?' 잔량':'')+' '+ea.toLocaleString()+'EA 출고','s');
-      [pfx+'_box',pfx+'_ea',pfx+'_pallet',pfx+'_note'].forEach(function(id){var el=document.getElementById(id); if(el)el.value='';});
-      _renderShipViews();
+      if(isRemn && pfx.indexOf('gs2_')===0){ _gsRemoveRemnRow(pfx); }   // 등록한 잔량 줄만 제거 (나머지 줄 유지)
+      else { [pfx+'_box',pfx+'_ea',pfx+'_pallet',pfx+'_note'].forEach(function(id){var el=document.getElementById(id); if(el)el.value='';}); }
+      // 폼(입력 중인 잔량 줄 포함)은 유지하고 재고·목록만 갱신
+      _renderStockView();
+      var _hw=document.getElementById('op_shiphist_wrap'); if(_hw) _hw.innerHTML=_shipHistTable();
     } else toast&&toast('저장 실패','d');
   }catch(e){ console.error(e); toast&&toast('오류: '+(e.message||e),'d'); }
 }
 async function goodsShipAdd(){ return _goodsShipAddX('gs', false); }
-async function goodsShipAdd2(){ return _goodsShipAddX('gs2', true); }
-window.goodsShipAdd2=goodsShipAdd2;
+window._goodsShipAddX=_goodsShipAddX;
 
-// 잔량 입력줄 펼치기/접기
-function _gsToggleRemn(){
-  var r=document.getElementById('gs2_row'); if(!r) return;
-  var open=r.style.display!=='none';
-  r.style.display=open?'none':'';
-  if(!open){ _gsFillLots2(); }
+// 잔량 줄 동적 추가 — [➕ 잔량] 누를 때마다 새 입력줄 생성 (여러 개 등록 가능)
+var _gs2Seq=0;
+function _gsAddRemnRow(){
+  var wrap=document.getElementById('gs2_wrap'), rows=document.getElementById('gs2_rows');
+  if(!wrap||!rows) return;
+  wrap.style.display='';
+  var pfx='gs2_'+(_gs2Seq++);
+  var prodOpts=_shipProducts().map(function(p){ return '<option value="'+p.replace(/"/g,'&quot;')+'">'+p+'</option>'; }).join('');
+  var div=document.createElement('div');
+  div.id=pfx+'_line';
+  div.style.cssText='display:flex;gap:10px;align-items:end;flex-wrap:wrap;margin-bottom:8px';
+  div.innerHTML=''
+    + '<div><label style="display:block;font-size:11px;color:#6b7280;margin-bottom:4px">출고일</label><input type="date" id="'+pfx+'_date" value="'+_shipToday()+'" style="padding:7px 9px;border:1px solid #d1d5db;border-radius:5px;font-size:13px"></div>'
+    + '<div style="min-width:180px"><label style="display:block;font-size:11px;color:#6b7280;margin-bottom:4px">제품</label><select id="'+pfx+'_prod" onchange="_gsFillLotsX(\''+pfx+'\');_gsCalcEaX(\''+pfx+'\')" style="padding:7px 9px;border:1px solid #d1d5db;border-radius:5px;font-size:13px;width:100%">'+prodOpts+'</select></div>'
+    + '<div style="min-width:200px"><label style="display:block;font-size:11px;color:#6b7280;margin-bottom:4px">로트(소비기한)</label><select id="'+pfx+'_lot" style="padding:7px 9px;border:1px solid #d1d5db;border-radius:5px;font-size:13px;width:100%"></select></div>'
+    + '<div><label style="display:block;font-size:11px;color:#6b7280;margin-bottom:4px">박스</label><input type="number" id="'+pfx+'_box" min="0" oninput="_gsCalcEaX(\''+pfx+'\')" style="padding:7px 9px;border:1px solid #d1d5db;border-radius:5px;font-size:13px;width:80px;text-align:right"></div>'
+    + '<div><label style="display:block;font-size:11px;color:#6b7280;margin-bottom:4px">수량(EA)</label><input type="number" id="'+pfx+'_ea" min="1" oninput="_gsCalcBoxX(\''+pfx+'\')" style="padding:7px 9px;border:1px solid #d1d5db;border-radius:5px;font-size:13px;width:100px;text-align:right"></div>'
+    + '<div><label style="display:block;font-size:11px;color:#6b7280;margin-bottom:4px">파레트</label><input type="number" id="'+pfx+'_pallet" min="0" step="0.5" style="padding:7px 9px;border:1px solid #d1d5db;border-radius:5px;font-size:13px;width:75px;text-align:right"></div>'
+    + '<div style="flex:1;min-width:110px"><label style="display:block;font-size:11px;color:#6b7280;margin-bottom:4px">메모</label><input type="text" id="'+pfx+'_note" placeholder="거래처 등" style="padding:7px 9px;border:1px solid #d1d5db;border-radius:5px;font-size:13px;width:100%"></div>'
+    + '<button onclick="_goodsShipAddX(\''+pfx+'\',true)" style="padding:8px 16px;background:#92400e;color:#fff;border:none;border-radius:5px;font-size:13px;font-weight:600;cursor:pointer">잔량 추가</button>'
+    + '<button onclick="_gsRemoveRemnRow(\''+pfx+'\')" title="이 줄 삭제" style="padding:8px 11px;background:#fff;border:1px solid #d1d5db;color:#dc2626;border-radius:5px;font-size:13px;cursor:pointer">✕</button>';
+  rows.appendChild(div);
+  _gsFillLotsX(pfx);
 }
-window._gsToggleRemn=_gsToggleRemn;
+window._gsAddRemnRow=_gsAddRemnRow;
+function _gsRemoveRemnRow(pfx){
+  var line=document.getElementById(pfx+'_line'); if(line) line.remove();
+  var rows=document.getElementById('gs2_rows'), wrap=document.getElementById('gs2_wrap');
+  if(rows && wrap && !rows.children.length) wrap.style.display='none';
+}
+window._gsRemoveRemnRow=_gsRemoveRemnRow;
 window.goodsShipAdd=goodsShipAdd;
 
 async function goodsShipDelete(fbId){
