@@ -92,16 +92,19 @@ window.showRecipeDetail = showRecipeDetail;
 // ============================================================
 var _imCapa = {};  // 제품별 생산능력 (마스터에 없는 현장값)
 var _imKgeaOv = {};  // kgea 보정 (웹 표시용, ERP 원본과 다를 때)
+var _imSubOv = {};  // 부재료 보정 (웹 표시용 subName/subKgea)
 
 async function _imLoadCapa(){
   try {
     var snaps = await Promise.all([
       db.collection('item_config').doc('product_capa').get(),
-      db.collection('item_config').doc('kgea_override').get()
+      db.collection('item_config').doc('kgea_override').get(),
+      db.collection('item_config').doc('submat_override').get()
     ]);
     if(snaps[0].exists){ _imCapa = snaps[0].data().capaMap || {}; }
     if(snaps[1].exists){ _imKgeaOv = snaps[1].data().kgeaMap || {}; }
-  } catch(e){ console.error('capa/kgea 로드 오류', e); }
+    if(snaps[2].exists){ _imSubOv = snaps[2].data().subMap || {}; }
+  } catch(e){ console.error('capa/kgea/submat 로드 오류', e); }
 }
 
 // 마스터 데이터로 L.products 형식 배열 생성
@@ -128,13 +131,16 @@ function buildProductsFromMaster(){
     if(!hasMeat) prod.noMeat = true;
     var cp = _imCapa[web];
     if(cp != null && cp !== '') prod.capa = parseFloat(cp) || 0;
-    // 기존 제품의 부재료·추가 필드 그대로 보존 (현장 부재료 판정 동작 유지)
+    // 기존 제품의 부재료·추가 필드 보존, 없으면 보정맵으로 부재료 부착
     var oldP = (typeof L !== 'undefined' && L.products) ? L.products.find(function(p){ return p.name === web; }) : null;
-    if(oldP){
-      if(oldP.subName != null) prod.subName = oldP.subName;
+    if(oldP && oldP.subName != null){
+      prod.subName = oldP.subName;
       if(oldP.subKgea != null) prod.subKgea = oldP.subKgea;
-      if(oldP.recipe) prod.recipe = oldP.recipe;
+    } else if(_imSubOv[web]){
+      prod.subName = _imSubOv[web].subName;
+      prod.subKgea = _imSubOv[web].subKgea;
     }
+    if(oldP && oldP.recipe) prod.recipe = oldP.recipe;
     out.push(prod);
   });
   return out;
