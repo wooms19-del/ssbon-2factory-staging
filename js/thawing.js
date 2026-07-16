@@ -150,7 +150,28 @@ async function renderThawWaiting(){
     const msgs=[];
     if(totalYst>0) msgs.push(`어제 스캔분 ${totalYst}박스(${totalYstKg.toFixed(2)}kg)`);
     if(staleCnt>0) msgs.push(`해동 끝난 지 1시간30분 넘은 ${staleCnt}박스(${r2(staleKg).toFixed(2)}kg)`);
-    warnBanner=`<div style="background:#fee2e2;border:1px solid #fca5a5;border-radius:8px;padding:10px 14px;margin-bottom:10px;color:#991b1b;font-weight:700;font-size:13px">⚠ 대차 등록 안 된 박스 있음 — ${msgs.join(' · ')}<div style="font-weight:400;font-size:12px;margin-top:3px">실물이 대차에 실렸다면 박스수가 빠진 것 → 등록 확인 필요</div></div>`;
+    // ★ 이월 원클릭 흡수 버튼 — 어제 시작한 마지막 대차를 찾아 이월분 전부 추가 제안
+    let absorbBtn='';
+    if(totalYst>0){
+      const ystBoxes=waiting.filter(b=>String(b.date||'').slice(0,10)===yesterday);
+      const ystCarts=dedupeRec([...L.thawing], r=>(r.fbId||r.id))
+        .filter(t=>t.fbId && String(t.start||'').slice(0,10)===yesterday)
+        .sort((a,b)=>String(a.start).localeCompare(String(b.start)));
+      const lastCart=ystCarts[ystCarts.length-1];
+      const partsOk=lastCart && ystBoxes.every(b=>String(lastCart.type||'').split(',').map(s=>s.trim()).includes(b.part));
+      if(lastCart && partsOk){
+        window._twYstAbsorb={
+          fbId:lastCart.fbId, cartNo:lastCart.cart,
+          codes:ystBoxes.map(b=>b.importCode),
+          addKg:r2(ystBoxes.reduce((s,b)=>s+(b.sample?0:(parseFloat(b.weightKg)||0)),0)),
+          addBoxes:ystBoxes.length,
+          curCodes:lastCart.importCodes||[], curBoxes:parseInt(lastCart.boxes)||0,
+          curTotalKg:parseFloat(lastCart.totalKg)||0, curRemainKg:parseFloat(lastCart.remainKg)||0
+        };
+        absorbBtn=`<button onclick="absorbYstLeftover()" style="margin-top:8px;padding:7px 14px;background:#dc2626;color:#fff;border:none;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer">↩ ${ystBoxes.length}박스를 어제 마지막 대차(${lastCart.cart}번)에 추가</button>`;
+      }
+    }
+    warnBanner=`<div style="background:#fee2e2;border:1px solid #fca5a5;border-radius:8px;padding:10px 14px;margin-bottom:10px;color:#991b1b;font-weight:700;font-size:13px">⚠ 대차 등록 안 된 박스 있음 — ${msgs.join(' · ')}<div style="font-weight:400;font-size:12px;margin-top:3px">실물이 대차에 실렸다면 박스수가 빠진 것 → 등록 확인 필요</div>${absorbBtn}</div>`;
   }
   el.innerHTML=warnBanner+Object.entries(byPart).map(([part,v])=>`
     <div style="padding:10px 0;border-bottom:1px solid var(--g2)">
@@ -193,9 +214,16 @@ function updateTwSummary(){
   const inputs=[...document.querySelectorAll('.tw-box-cnt')];
   if(!inputs.length){ document.getElementById('tw_summary').innerHTML=''; return; }
   let totalBoxes=0, totalKg=0;
-  const parts=[];
+  const parts=[], leftWarn=[];
   inputs.forEach(inp=>{
     const cnt=parseInt(inp.value)||0;
+    const max=parseInt(inp.dataset.max)||0;
+    // ★ 대기보다 적게 입력하면 잔여를 실시간 빨간 표시 (카운트 미스 즉시 감지)
+    if(cnt<max){
+      const weights=JSON.parse(inp.dataset.weights||'[]');
+      const leftKg=r2(weights.slice(cnt).reduce((s,w)=>s+(parseFloat(w)||0),0));
+      leftWarn.push(`${inp.dataset.part} ${max-cnt}박스(${leftKg.toFixed(2)}kg)`);
+    }
     if(cnt>0){
       parts.push(inp.dataset.part+' '+cnt+'박스');
       totalBoxes+=cnt;
@@ -206,9 +234,33 @@ function updateTwSummary(){
     }
   });
   const el=document.getElementById('tw_summary');
-  if(!totalBoxes){el.innerHTML='';return;}
-  el.innerHTML=`<div class="al al-i">${parts.join(', ')} → 합계 <b>${totalKg.toFixed(2)}kg</b></div>`;
+  const warnHtml=leftWarn.length?`<div style="color:#dc2626;font-weight:700;font-size:13px;margin-top:6px">⚠ ${leftWarn.join(' · ')} 남음 — 마지막 대차면 전부 포함하세요!</div>`:'';
+  if(!totalBoxes){el.innerHTML=warnHtml;return;}
+  el.innerHTML=`<div class="al al-i">${parts.join(', ')} → 합계 <b>${totalKg.toFixed(2)}kg</b>${warnHtml}</div>`;
 }
+
+// ★ 이월 원클릭 흡수 — 어제 마지막 대차에 이월 박스 전부 추가 (확인 후 실행)
+async function absorbYstLeftover(){
+  const a=window._twYstAbsorb;
+  if(!a){ toast('흡수 대상 정보 없음 — 새로고침 후 다시 시도','d'); return; }
+  if(!confirm(`이월 ${a.addBoxes}박스(${a.addKg.toFixed(2)}kg)를 어제 ${a.cartNo}번 대차에 추가할까요?\n\n실물이 그 대차에 실려 방혈된 경우에만 진행하세요.`)) return;
+  toast('추가 중...','i');
+  const ok=await fbUpdate('thawing', a.fbId, {
+    boxes: a.curBoxes + a.addBoxes,
+    totalKg: r2(a.curTotalKg + a.addKg),
+    remainKg: r2(a.curRemainKg + a.addKg),
+    importCodes: [...a.curCodes, ...a.codes]
+  });
+  if(ok){
+    window._twYstAbsorb=null;
+    await renderThawWaiting();
+    await renderThawList();
+    toast(`✓ ${a.cartNo}번 대차에 ${a.addBoxes}박스 추가 완료 — 이월 해소`);
+  } else {
+    toast('추가 실패 — 다시 시도해주세요','d');
+  }
+}
+window.absorbYstLeftover=absorbYstLeftover;
 
 async function startThawing(){
   const cartNo=document.getElementById('tw_cart').value.trim();
