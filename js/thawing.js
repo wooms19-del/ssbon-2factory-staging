@@ -135,7 +135,24 @@ async function renderThawWaiting(){
   const totalYst=Object.values(byPart).reduce((s,v)=>s+v.ystCount,0);
   const totalYstKg=r2(Object.values(byPart).reduce((s,v)=>s+v.ystKg,0));
   const totalTodKg=r2(Object.values(byPart).reduce((s,v)=>s+v.todKg,0));
-  el.innerHTML=Object.entries(byPart).map(([part,v])=>`
+  // ★ 상시 경고 배너 — 이월분 또는 해동 종료 후 90분 지난 미등록 박스 (토스트와 달리 사라지지 않음)
+  const _nm=nowHM().split(':'), _bnNowMin=(+_nm[0])*60+(+_nm[1]);
+  let staleCnt=0, staleKg=0;
+  waiting.forEach(b=>{
+    if(String(b.date||'').slice(0,10)!==tod()) return;
+    const re=String(b.rfEnd||'').slice(0,5);
+    if(!/^\d{2}:\d{2}$/.test(re)) return;
+    const m=(+re.slice(0,2))*60+(+re.slice(3,5));
+    if(_bnNowMin-m>=90){ staleCnt++; staleKg+=b.sample?0:(parseFloat(b.weightKg)||0); }
+  });
+  let warnBanner='';
+  if(totalYst>0 || staleCnt>0){
+    const msgs=[];
+    if(totalYst>0) msgs.push(`어제 스캔분 ${totalYst}박스(${totalYstKg.toFixed(2)}kg)`);
+    if(staleCnt>0) msgs.push(`해동 끝난 지 1시간30분 넘은 ${staleCnt}박스(${r2(staleKg).toFixed(2)}kg)`);
+    warnBanner=`<div style="background:#fee2e2;border:1px solid #fca5a5;border-radius:8px;padding:10px 14px;margin-bottom:10px;color:#991b1b;font-weight:700;font-size:13px">⚠ 대차 등록 안 된 박스 있음 — ${msgs.join(' · ')}<div style="font-weight:400;font-size:12px;margin-top:3px">실물이 대차에 실렸다면 박스수가 빠진 것 → 등록 확인 필요</div></div>`;
+  }
+  el.innerHTML=warnBanner+Object.entries(byPart).map(([part,v])=>`
     <div style="padding:10px 0;border-bottom:1px solid var(--g2)">
       <div style="display:flex;justify-content:space-between;align-items:center">
         <span style="font-size:14px;font-weight:600">${part}</span>
