@@ -251,6 +251,21 @@ async function startThawing(){
     await renderThawWaiting();
     await renderThawList();
     toast(`방혈 시작 — 해동대차 ${cartNo} · ${totalKg.toFixed(2)}kg ✓`);
+    // ★ 미등록 잔여 경고 — 스캔됐는데 어느 대차에도 안 담긴 박스가 남으면 크게 알림 (카운트 미스 방지)
+    const leftMsgs=[];
+    inputs.forEach(inp=>{
+      const cnt=parseInt(inp.value)||0;
+      const max=parseInt(inp.dataset.max)||0;
+      const left=max-cnt;
+      if(left>0){
+        const ws=JSON.parse(inp.dataset.weights||'[]');
+        const leftKg=r2(ws.slice(cnt).reduce((s,w)=>s+(parseFloat(w)||0),0));
+        leftMsgs.push(`${inp.dataset.part} ${left}박스(${leftKg.toFixed(2)}kg)`);
+      }
+    });
+    if(leftMsgs.length){
+      setTimeout(()=>toast(`⚠ 미등록 잔여: ${leftMsgs.join(', ')} — 대차에 실렸으면 박스수 다시 확인!`,'d'),1200);
+    }
   } else {
     toast('방혈 저장 실패','d');
   }
