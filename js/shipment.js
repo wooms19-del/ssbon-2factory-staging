@@ -408,7 +408,8 @@ function _shipCopyText(dateStr){
     if(s.remn){ byProd[p].lots[ld].rbox+=box; byProd[p].lots[ld].rea+=ea; }
     else if(s.smpl){ byProd[p].lots[ld].sbox+=box; byProd[p].lots[ld].sea+=ea; }
     else { byProd[p].lots[ld].box+=box; byProd[p].lots[ld].ea+=ea; }
-    byProd[p].box+=box; byProd[p].ea+=ea; byProd[p].pallet+=pal;
+    // 소계·총합은 실제 출고분(완박스+잔량)만 — 샘플은 무상이라 합계 제외 (재고에선 별도로 차감됨)
+    if(!s.smpl){ byProd[p].box+=box; byProd[p].ea+=ea; byProd[p].pallet+=pal; }
   });
   var lines=['📦 출고서 '+dateStr, ''];
   var tBox=0,tEa=0,tPal=0;
@@ -420,7 +421,7 @@ function _shipCopyText(dateStr){
       var mfg = (p===FC3KG) ? ' (제조 '+_fmtYY(_plusDays(ld, -(FC_SHELF_DAYS-1)))+')' : '';
       if(l.box||l.ea) lines.push('  · 소비기한 '+_fmtYY(ld)+mfg+' — '+l.box.toLocaleString()+'박스 · '+l.ea.toLocaleString()+'ea');
       if(l.rbox||l.rea) lines.push('  · 소비기한 '+_fmtYY(ld)+mfg+' 잔량 — '+l.rbox.toLocaleString()+'박스 · '+l.rea.toLocaleString()+'ea');
-      if(l.sbox||l.sea) lines.push('  · 소비기한 '+_fmtYY(ld)+mfg+' 샘플 — '+l.sbox.toLocaleString()+'박스 · '+l.sea.toLocaleString()+'ea');
+      if(l.sbox||l.sea) lines.push('  · 소비기한 '+_fmtYY(ld)+mfg+' 샘플 — '+l.sbox.toLocaleString()+'박스 · '+l.sea.toLocaleString()+'ea (합계 미포함)');
     });
     lines.push('  ▶ 소계 '+g.box.toLocaleString()+'박스 · '+g.ea.toLocaleString()+'ea'+(g.pallet?' · '+(Math.round(g.pallet*10)/10)+'파레트':''));
     lines.push('');
