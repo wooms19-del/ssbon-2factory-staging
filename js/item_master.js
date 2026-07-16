@@ -166,6 +166,48 @@ window.verifyProductsAgainstMaster = verifyProductsAgainstMaster;
 window._imLoadCapa = _imLoadCapa;
 
 // ============================================================
+// 마스터 → 레시피(L.recipes) 생성
+//  inner: 반제품 재료 (파쇄육·소스·파우치·부재료) — 부재료 판정용
+//  outer: 완제품 포장재 — 박스 우선 정렬 + 세트크기로 낱개 환산 (perBox 정확)
+// ============================================================
+function _imBuildRecipeFor(web){
+  var mp = _imData.map.filter(function(m){ return m.webName === web; })[0];
+  if(!mp || !mp.erpCodes || !mp.erpCodes.length) return null;
+  var fin = _imData.recipe[mp.erpCodes[0]];
+  if(!fin) return null;
+  var setSize = (fin.components && fin.components[0]) ? (fin.components[0].qty || 1) : 1;
+
+  // inner: 반제품 재료
+  var inner = [];
+  if(fin.components && fin.components[0]){
+    var ban = _imData.recipe[fin.components[0].code];
+    if(ban && ban.inner){
+      ban.inner.forEach(function(x){
+        inner.push({ name: x.name, qty: x.qty, unit: x.unit || 'kg' });
+      });
+    }
+  }
+  // outer: 포장재 — '박스' 포함 항목 먼저, qty를 세트크기로 나눠 낱개 기준
+  var outer = (fin.outer || []).slice();
+  outer.sort(function(a,b){ return (a.name.indexOf('박스')>=0?0:1) - (b.name.indexOf('박스')>=0?0:1); });
+  outer = outer.map(function(x){
+    return { name: x.name, qty: Math.round((x.qty / setSize) * 100000) / 100000, unit: x.unit || '개' };
+  });
+  return { inner: inner, outer: outer };
+}
+
+function buildRecipesFromMaster(){
+  var out = {};
+  if(!_imData.map) return out;
+  _imData.map.forEach(function(mp){
+    var r = _imBuildRecipeFor(mp.webName);
+    if(r) out[mp.webName] = r;
+  });
+  return out;
+}
+window.buildRecipesFromMaster = buildRecipesFromMaster;
+
+// ============================================================
 // 스위치: 마스터에서 제품 목록을 만들어 L.products에 적용
 // - 메모리에서만 교체 (Firestore settings 원본은 보존)
 // - 실패하거나 생성본이 비면 기존 L.products 유지 (안전망)
@@ -189,6 +231,14 @@ async function applyMasterProducts(){
       console.log('[마스터] 제품 목록 ' + built.length + '종 생성·적용 (Firestore 원본 보존)');
     } else {
       console.warn('[마스터] 생성본 비어있음 — 기존 제품 유지');
+    }
+    // 레시피(inner/outer)도 마스터에서 생성·적용
+    var recipes = buildRecipesFromMaster();
+    if(recipes && Object.keys(recipes).length){
+      L.recipes = recipes;              // 메모리 교체 (Firestore 원본 유지)
+      console.log('[마스터] 레시피 ' + Object.keys(recipes).length + '종 생성·적용 (박스 계산 포함)');
+    } else {
+      console.warn('[마스터] 레시피 생성본 비어있음 — 기존 레시피 유지');
     }
   } catch(e){
     console.error('[마스터] 제품 적용 실패 — 기존 제품 유지', e);
