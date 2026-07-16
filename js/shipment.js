@@ -274,10 +274,15 @@ function _renderShipView(){
       + '<div style="flex:1;min-width:110px"><label style="display:block;font-size:11px;color:#6b7280;margin-bottom:4px">메모</label><input type="text" id="gs_note" placeholder="거래처 등" style="padding:7px 9px;border:1px solid #d1d5db;border-radius:5px;font-size:13px;width:100%"></div>'
       + '<button onclick="goodsShipAdd()" style="padding:8px 16px;background:#d97706;color:#fff;border:none;border-radius:5px;font-size:13px;font-weight:600;cursor:pointer">출고 추가</button>'
       + '<button onclick="_gsAddRemnRow()" style="padding:8px 14px;background:#fff;border:1px solid #d97706;color:#d97706;border-radius:5px;font-size:13px;font-weight:600;cursor:pointer">➕ 잔량</button>'
+      + '<button onclick="_gsAddSmplRow()" style="padding:8px 14px;background:#fff;border:1px solid #6d28d9;color:#6d28d9;border-radius:5px;font-size:13px;font-weight:600;cursor:pointer">➕ 샘플</button>'
     + '</div>'
     + '<div id="gs2_wrap" style="display:none;margin-top:12px;padding-top:12px;border-top:1px dashed #f59e0b">'
       + '<div style="font-size:12px;font-weight:700;color:#92400e;margin-bottom:8px">잔량 출고 — 완박스 아닌 낱개 박스 (수량에 포함 · 출고서에 잔량으로 표시) · [➕ 잔량]으로 여러 개 추가</div>'
       + '<div id="gs2_rows"></div>'
+    + '</div>'
+    + '<div id="gs3_wrap" style="display:none;margin-top:12px;padding-top:12px;border-top:1px dashed #a78bfa">'
+      + '<div style="font-size:12px;font-weight:700;color:#5b21b6;margin-bottom:8px">샘플 출고 — 샘플로 나가는 물량 (수량에 포함 · 출고서에 샘플로 표시) · [➕ 샘플]로 여러 개 추가</div>'
+      + '<div id="gs3_rows"></div>'
     + '</div>'
     + '<div style="font-size:11px;color:#9ca3af;margin-top:8px">박스 ↔ EA 자동 계산(입수 기준) · 둘 중 하나만 입력하면 나머지 자동 · 파레트는 직접 입력</div></div>';
   // 출고서 복사
@@ -316,7 +321,7 @@ function _shipHistTable(){
     var dateCell = (s.date||'-') + (isFuture ? ' <span style="font-size:10px;color:#d97706;background:#fff7ed;border:0.5px solid #fdba74;padding:1px 6px;border-radius:20px;font-weight:600;font-family:sans-serif">예정</span>' : '');
     return '<tr style="border-top:0.5px solid #f3f4f6'+(isFuture?';background:#fffbf5':'')+'">'
       + '<td style="padding:9px 14px;font-weight:600;font-family:monospace">'+dateCell+'</td>'
-      + '<td style="padding:9px 14px">'+(s.product||'-')+(s.remn?' <span style="font-size:10px;color:#92400e;background:#fef3c7;border:0.5px solid #fcd34d;padding:1px 6px;border-radius:20px;font-weight:600">잔량</span>':'')+'</td>'
+      + '<td style="padding:9px 14px">'+(s.product||'-')+(s.remn?' <span style="font-size:10px;color:#92400e;background:#fef3c7;border:0.5px solid #fcd34d;padding:1px 6px;border-radius:20px;font-weight:600">잔량</span>':'')+(s.smpl?' <span style="font-size:10px;color:#5b21b6;background:#ede9fe;border:0.5px solid #c4b5fd;padding:1px 6px;border-radius:20px;font-weight:600">샘플</span>':'')+'</td>'
       + '<td style="padding:9px 14px;font-family:monospace;color:#6b7280">'+(s.lotDate||'-')+'</td>'
       + '<td style="padding:9px 10px;text-align:right">'+(box?box.toLocaleString():'-')+'</td>'
       + '<td style="padding:9px 10px;text-align:right;font-weight:600">'+(parseInt(s.ea,10)||0).toLocaleString()+'</td>'
@@ -398,9 +403,10 @@ function _shipCopyText(dateStr){
     var p=s.product||'(제품없음)';
     if(!byProd[p]) byProd[p]={lots:{}, box:0, ea:0, pallet:0};
     var ld=s.lotDate||'-';
-    if(!byProd[p].lots[ld]) byProd[p].lots[ld]={box:0,ea:0,rbox:0,rea:0};
+    if(!byProd[p].lots[ld]) byProd[p].lots[ld]={box:0,ea:0,rbox:0,rea:0,sbox:0,sea:0};
     var box=parseInt(s.boxes,10)||0, ea=parseInt(s.ea,10)||0, pal=parseFloat(s.pallets)||0;
     if(s.remn){ byProd[p].lots[ld].rbox+=box; byProd[p].lots[ld].rea+=ea; }
+    else if(s.smpl){ byProd[p].lots[ld].sbox+=box; byProd[p].lots[ld].sea+=ea; }
     else { byProd[p].lots[ld].box+=box; byProd[p].lots[ld].ea+=ea; }
     byProd[p].box+=box; byProd[p].ea+=ea; byProd[p].pallet+=pal;
   });
@@ -414,6 +420,7 @@ function _shipCopyText(dateStr){
       var mfg = (p===FC3KG) ? ' (제조 '+_fmtYY(_plusDays(ld, -(FC_SHELF_DAYS-1)))+')' : '';
       if(l.box||l.ea) lines.push('  · 소비기한 '+_fmtYY(ld)+mfg+' — '+l.box.toLocaleString()+'박스 · '+l.ea.toLocaleString()+'ea');
       if(l.rbox||l.rea) lines.push('  · 소비기한 '+_fmtYY(ld)+mfg+' 잔량 — '+l.rbox.toLocaleString()+'박스 · '+l.rea.toLocaleString()+'ea');
+      if(l.sbox||l.sea) lines.push('  · 소비기한 '+_fmtYY(ld)+mfg+' 샘플 — '+l.sbox.toLocaleString()+'박스 · '+l.sea.toLocaleString()+'ea');
     });
     lines.push('  ▶ 소계 '+g.box.toLocaleString()+'박스 · '+g.ea.toLocaleString()+'ea'+(g.pallet?' · '+(Math.round(g.pallet*10)/10)+'파레트':''));
     lines.push('');
@@ -490,7 +497,7 @@ async function goodsLotAdd(){
 }
 window.goodsLotAdd=goodsLotAdd;
 
-async function _goodsShipAddX(pfx, isRemn){
+async function _goodsShipAddX(pfx, isRemn, isSmpl){
   var date=(document.getElementById(pfx+'_date')||{}).value;
   var prod=(document.getElementById(pfx+'_prod')||{}).value;
   var lotv=(document.getElementById(pfx+'_lot')||{}).value;
@@ -509,10 +516,13 @@ async function _goodsShipAddX(pfx, isRemn){
   if(ea>rem){ toast&&toast('남은 재고('+rem.toLocaleString()+') 초과','d'); return; }
   var rec={ id:(typeof gid==='function')?gid():('gs_'+Date.now()), product:prod, lotDate:lotDate, date:date, boxes:box, ea:ea, pallets:pallet, note:note };
   if(isRemn) rec.remn=true;
+  if(isSmpl) rec.smpl=true;
+  var kindLbl = isRemn?' 잔량':(isSmpl?' 샘플':'');
   toast&&toast('저장 중...','i');
   try{ var fbId=await fbSave('goodsShip', rec);
-    if(fbId){ rec.fbId=fbId; _shipData.ships.push(rec); toast&&toast('✓ '+prod+(isRemn?' 잔량':'')+' '+ea.toLocaleString()+'EA 출고','s');
-      if(isRemn && pfx.indexOf('gs2_')===0){ _gsRemoveRemnRow(pfx); }   // 등록한 잔량 줄만 제거 (나머지 줄 유지)
+    if(fbId){ rec.fbId=fbId; _shipData.ships.push(rec); toast&&toast('✓ '+prod+kindLbl+' '+ea.toLocaleString()+'EA 출고','s');
+      if(isRemn && pfx.indexOf('gs2_')===0){ _gsRemoveRemnRow(pfx); }        // 등록한 잔량 줄만 제거
+      else if(isSmpl && pfx.indexOf('gs3_')===0){ _gsRemoveSmplRow(pfx); }   // 등록한 샘플 줄만 제거
       else { [pfx+'_box',pfx+'_ea',pfx+'_pallet',pfx+'_note'].forEach(function(id){var el=document.getElementById(id); if(el)el.value='';}); }
       // 폼(입력 중인 잔량 줄 포함)은 유지하고 재고·목록만 갱신
       _renderStockView();
@@ -520,8 +530,40 @@ async function _goodsShipAddX(pfx, isRemn){
     } else toast&&toast('저장 실패','d');
   }catch(e){ console.error(e); toast&&toast('오류: '+(e.message||e),'d'); }
 }
-async function goodsShipAdd(){ return _goodsShipAddX('gs', false); }
+async function goodsShipAdd(){ return _goodsShipAddX('gs', false, false); }
 window._goodsShipAddX=_goodsShipAddX;
+
+// 샘플 줄 동적 추가 — [➕ 샘플] 누를 때마다 새 입력줄 생성
+var _gs3Seq=0;
+function _gsAddSmplRow(){
+  var wrap=document.getElementById('gs3_wrap'), rows=document.getElementById('gs3_rows');
+  if(!wrap||!rows) return;
+  wrap.style.display='';
+  var pfx='gs3_'+(_gs3Seq++);
+  var prodOpts=_shipProducts().map(function(p){ return '<option value="'+p.replace(/"/g,'&quot;')+'">'+p+'</option>'; }).join('');
+  var div=document.createElement('div');
+  div.id=pfx+'_line';
+  div.style.cssText='display:flex;gap:10px;align-items:end;flex-wrap:wrap;margin-bottom:8px';
+  div.innerHTML=''
+    + '<div><label style="display:block;font-size:11px;color:#6b7280;margin-bottom:4px">출고일</label><input type="date" id="'+pfx+'_date" value="'+_shipToday()+'" style="padding:7px 9px;border:1px solid #d1d5db;border-radius:5px;font-size:13px"></div>'
+    + '<div style="min-width:180px"><label style="display:block;font-size:11px;color:#6b7280;margin-bottom:4px">제품</label><select id="'+pfx+'_prod" onchange="_gsFillLotsX(\''+pfx+'\');_gsCalcEaX(\''+pfx+'\')" style="padding:7px 9px;border:1px solid #d1d5db;border-radius:5px;font-size:13px;width:100%">'+prodOpts+'</select></div>'
+    + '<div style="min-width:200px"><label style="display:block;font-size:11px;color:#6b7280;margin-bottom:4px">로트(소비기한)</label><select id="'+pfx+'_lot" style="padding:7px 9px;border:1px solid #d1d5db;border-radius:5px;font-size:13px;width:100%"></select></div>'
+    + '<div><label style="display:block;font-size:11px;color:#6b7280;margin-bottom:4px">박스</label><input type="number" id="'+pfx+'_box" min="0" oninput="_gsCalcEaX(\''+pfx+'\')" style="padding:7px 9px;border:1px solid #d1d5db;border-radius:5px;font-size:13px;width:80px;text-align:right"></div>'
+    + '<div><label style="display:block;font-size:11px;color:#6b7280;margin-bottom:4px">수량(EA)</label><input type="number" id="'+pfx+'_ea" min="1" oninput="_gsCalcBoxX(\''+pfx+'\')" style="padding:7px 9px;border:1px solid #d1d5db;border-radius:5px;font-size:13px;width:100px;text-align:right"></div>'
+    + '<div><label style="display:block;font-size:11px;color:#6b7280;margin-bottom:4px">파레트</label><input type="number" id="'+pfx+'_pallet" min="0" step="0.5" style="padding:7px 9px;border:1px solid #d1d5db;border-radius:5px;font-size:13px;width:75px;text-align:right"></div>'
+    + '<div style="flex:1;min-width:110px"><label style="display:block;font-size:11px;color:#6b7280;margin-bottom:4px">메모</label><input type="text" id="'+pfx+'_note" placeholder="거래처 등" style="padding:7px 9px;border:1px solid #d1d5db;border-radius:5px;font-size:13px;width:100%"></div>'
+    + '<button onclick="_goodsShipAddX(\''+pfx+'\',false,true)" style="padding:8px 16px;background:#6d28d9;color:#fff;border:none;border-radius:5px;font-size:13px;font-weight:600;cursor:pointer">샘플 추가</button>'
+    + '<button onclick="_gsRemoveSmplRow(\''+pfx+'\')" title="이 줄 삭제" style="padding:8px 11px;background:#fff;border:1px solid #d1d5db;color:#dc2626;border-radius:5px;font-size:13px;cursor:pointer">✕</button>';
+  rows.appendChild(div);
+  _gsFillLotsX(pfx);
+}
+window._gsAddSmplRow=_gsAddSmplRow;
+function _gsRemoveSmplRow(pfx){
+  var line=document.getElementById(pfx+'_line'); if(line) line.remove();
+  var rows=document.getElementById('gs3_rows'), wrap=document.getElementById('gs3_wrap');
+  if(rows && wrap && !rows.children.length) wrap.style.display='none';
+}
+window._gsRemoveSmplRow=_gsRemoveSmplRow;
 
 // 잔량 줄 동적 추가 — [➕ 잔량] 누를 때마다 새 입력줄 생성 (여러 개 등록 가능)
 var _gs2Seq=0;
