@@ -91,12 +91,17 @@ window.showRecipeDetail = showRecipeDetail;
 // 화면 14개는 형식 그대로 사용 → 코드 안 바꿔도 마스터 기반이 됨.
 // ============================================================
 var _imCapa = {};  // 제품별 생산능력 (마스터에 없는 현장값)
+var _imKgeaOv = {};  // kgea 보정 (웹 표시용, ERP 원본과 다를 때)
 
 async function _imLoadCapa(){
   try {
-    var doc = await db.collection('item_config').doc('product_capa').get();
-    if(doc.exists){ _imCapa = doc.data().capaMap || {}; }
-  } catch(e){ console.error('capa 로드 오류', e); }
+    var snaps = await Promise.all([
+      db.collection('item_config').doc('product_capa').get(),
+      db.collection('item_config').doc('kgea_override').get()
+    ]);
+    if(snaps[0].exists){ _imCapa = snaps[0].data().capaMap || {}; }
+    if(snaps[1].exists){ _imKgeaOv = snaps[1].data().kgeaMap || {}; }
+  } catch(e){ console.error('capa/kgea 로드 오류', e); }
 }
 
 // 마스터 데이터로 L.products 형식 배열 생성
@@ -119,9 +124,17 @@ function buildProductsFromMaster(){
       }
     }
     var prod = { name: web, kgea: kgea, sauce: sauce };
+    if(_imKgeaOv[web] != null) prod.kgea = _imKgeaOv[web];  // 웹 표시용 보정값 우선
     if(!hasMeat) prod.noMeat = true;
     var cp = _imCapa[web];
     if(cp != null && cp !== '') prod.capa = parseFloat(cp) || 0;
+    // 기존 제품의 부재료·추가 필드 그대로 보존 (현장 부재료 판정 동작 유지)
+    var oldP = (typeof L !== 'undefined' && L.products) ? L.products.find(function(p){ return p.name === web; }) : null;
+    if(oldP){
+      if(oldP.subName != null) prod.subName = oldP.subName;
+      if(oldP.subKgea != null) prod.subKgea = oldP.subKgea;
+      if(oldP.recipe) prod.recipe = oldP.recipe;
+    }
     out.push(prod);
   });
   return out;
@@ -145,6 +158,37 @@ function verifyProductsAgainstMaster(){
 window.buildProductsFromMaster = buildProductsFromMaster;
 window.verifyProductsAgainstMaster = verifyProductsAgainstMaster;
 window._imLoadCapa = _imLoadCapa;
+
+// ============================================================
+// 스위치: 마스터에서 제품 목록을 만들어 L.products에 적용
+// - 메모리에서만 교체 (Firestore settings 원본은 보존)
+// - 실패하거나 생성본이 비면 기존 L.products 유지 (안전망)
+// - loadSettings_ 직후 호출됨
+// ============================================================
+async function applyMasterProducts(){
+  try {
+    var results = await Promise.all([
+      db.collection('item_master').get(),
+      db.collection('item_recipe').get(),
+      db.collection('external_key_map').get()
+    ]);
+    _imData.master = {}; results[0].docs.forEach(function(d){ _imData.master[d.id] = d.data(); });
+    _imData.recipe = {}; results[1].docs.forEach(function(d){ _imData.recipe[d.id] = d.data(); });
+    _imData.map = results[2].docs.map(function(d){ return d.data(); });
+    await _imLoadCapa();
+    var built = buildProductsFromMaster();
+    if(built && built.length){
+      L.products = built;               // 메모리 교체 (Firestore 원본 유지)
+      if(typeof updDD === 'function') updDD();
+      console.log('[마스터] 제품 목록 ' + built.length + '종 생성·적용 (Firestore 원본 보존)');
+    } else {
+      console.warn('[마스터] 생성본 비어있음 — 기존 제품 유지');
+    }
+  } catch(e){
+    console.error('[마스터] 제품 적용 실패 — 기존 제품 유지', e);
+  }
+}
+window.applyMasterProducts = applyMasterProducts;
 
 // 레시피 관리에서 웹 제품 선택 시 → 매핑된 ERP 마스터 레시피를 참고로 표시
 async function renderMasterRecipeFor(prodName){

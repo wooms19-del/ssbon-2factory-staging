@@ -38,6 +38,12 @@ async function loadSettings_(){
   } catch(e) {
     console.error('설정 로드 오류:', e);
   }
+  // 마스터에서 제품 목록 생성·적용 (마스터가 원본, 메모리 교체·원본 보존)
+  if(typeof applyMasterProducts === 'function'){
+    await applyMasterProducts();
+    if(typeof updDD === 'function') updDD();
+    if(typeof renderSettings === 'function') renderSettings();
+  }
 }
 
 // ============================================================
