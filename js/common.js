@@ -458,6 +458,16 @@ async function syncGtinMapFromFirestore(){
   }
 }
 
+// 수입코드 → gtinMap 키
+//   01... : 일반 GS1 (AI 01 뒤 14자리 GTIN)
+//   02... : 호주 EST224 16자리 (제품코드 4자리, 'AU' 접두 — 숫자 시작 필드경로 회피)
+function gtinKeyOf(importCode){
+  const ic = String(importCode || '');
+  if(ic.startsWith('01')) return ic.slice(2,16);
+  if(/^02\d{14}$/.test(ic)) return 'AU' + ic.slice(2,6);
+  return '';
+}
+
 // 신규 GTIN 등록
 async function registerGtin(gtin, part){
   gtin = String(gtin||'').trim();
@@ -524,7 +534,7 @@ async function rejudgeBarcodes(){
   const stillUnknown = {};
   for(const [docId, rec] of Object.entries(set)){
     const ic = String(rec.importCode || '');
-    const gtin = ic.startsWith('01') ? ic.slice(2,16) : '';
+    const gtin = gtinKeyOf(ic);
     const newPart = L.gtinMap[gtin];
     if(!newPart){
       if(gtin) stillUnknown[gtin] = (stillUnknown[gtin]||0) + 1;
@@ -554,7 +564,7 @@ async function findUnknownGtins(){
   const counts = {};
   for(const rec of Object.values(set)){
     const ic = String(rec.importCode || '');
-    const gtin = ic.startsWith('01') ? ic.slice(2,16) : '';
+    const gtin = gtinKeyOf(ic);
     if(!gtin) continue;
     if(L.gtinMap[gtin]) continue;  // 이미 등록된 건 제외
     counts[gtin] = (counts[gtin]||0) + 1;
@@ -564,6 +574,7 @@ async function findUnknownGtins(){
 
 // 전역 노출
 window.syncGtinMapFromFirestore = syncGtinMapFromFirestore;
+window.gtinKeyOf = gtinKeyOf;
 window.registerGtin = registerGtin;
 window.unregisterGtin = unregisterGtin;
 window.rejudgeBarcodes = rejudgeBarcodes;

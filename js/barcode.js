@@ -73,6 +73,7 @@ function parseAU224(bc){
   r.gtin = item;
   r.ctn  = String(parseInt(ctn,10)||'');
   if(AU224_PART[item]) r.part = AU224_PART[item];
+  else if(L && L.gtinMap && L.gtinMap['AU'+item]) r.part = L.gtinMap['AU'+item];  // 현장에서 등록한 신규 제품코드
   var w = parseInt(wRaw,10);
   if(isFinite(w) && w>0) r.weightKg = r2(w/20);   // 0.05kg 단위
   r.packDate = _au224Date(jul);
