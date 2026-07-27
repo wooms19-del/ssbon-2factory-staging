@@ -19,6 +19,14 @@
   /* 권한 적용: worker면 관리 메뉴 숨김 */
   function applyRole(role){
     document.body.dataset.role=role;
+    /* admin이면 기존 관리자 게이트(admin.js)도 자동 통과 — 이중 로그인 제거 */
+    if(role==='admin'){
+      try{ sessionStorage.setItem('ssbon_admin_v1','1'); }catch(e){}
+      window._isAdmin=true;
+      if(typeof window._adminLoadOverride==='function'){
+        try{ window._adminLoadOverride('2026-06'); }catch(e){}
+      }
+    }
     if(role!=='admin'){
       ['modeD','modeP','modeAI'].forEach(function(id){
         var el=document.getElementById(id); if(el) el.style.display='none';
