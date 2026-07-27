@@ -60,7 +60,7 @@
       '<div style="font-size:19px;font-weight:bold;color:#1b2a44;text-align:center">순수본 2공장</div>'+
       '<div style="font-size:12.5px;color:#78808c;text-align:center;margin:4px 0 20px">로그인이 필요합니다</div>'+
       '<input id="lgU" placeholder="아이디" autocomplete="username" style="width:100%;height:44px;font-size:15px;border:1px solid #d5dbe4;border-radius:8px;padding:0 12px;margin-bottom:8px;box-sizing:border-box">'+
-      '<input id="lgP" type="password" placeholder="비밀번호" autocomplete="current-password" style="width:100%;height:44px;font-size:15px;border:1px solid #d5dbe4;border-radius:8px;padding:0 12px;box-sizing:border-box">'+
+      '<input id="lgP" type="password" placeholder="비밀번호 (대소문자 구분)" autocomplete="current-password" style="width:100%;height:44px;font-size:15px;border:1px solid #d5dbe4;border-radius:8px;padding:0 12px;box-sizing:border-box">'+
       '<div id="lgMsg" style="font-size:12px;color:#b03933;height:18px;margin:6px 2px 2px"></div>'+
       '<button id="lgBtn" style="width:100%;height:46px;font-size:15px;font-weight:bold;color:#fff;background:#2b57c5;border:none;border-radius:8px;cursor:pointer">로그인</button>'+
       '</div>';
