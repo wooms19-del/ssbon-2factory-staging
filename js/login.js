@@ -73,12 +73,13 @@
       msg.textContent='확인 중...'; msg.style.color='#78808c';
       fetch(AUTH_URL).then(function(r){return r.json();}).then(function(doc){
         var users=(doc.fields&&doc.fields.users&&doc.fields.users.mapValue&&doc.fields.users.mapValue.fields)||{};
-        var rec=users[u]&&users[u].mapValue&&users[u].mapValue.fields;
+        var uKey=Object.keys(users).find(function(k){return k.toLowerCase()===u.toLowerCase();});
+        var rec=uKey&&users[uKey].mapValue&&users[uKey].mapValue.fields;
         if(!rec){ msg.textContent='아이디 또는 비밀번호가 다릅니다'; msg.style.color='#b03933'; return; }
         sha256(p).then(function(h){
           if(h!==(rec.h&&rec.h.stringValue)){ msg.textContent='아이디 또는 비밀번호가 다릅니다'; msg.style.color='#b03933'; return; }
           var role=(rec.role&&rec.role.stringValue)||'worker';
-          localStorage.setItem(LS_KEY, JSON.stringify({u:u, role:role, t:Date.now()}));
+          localStorage.setItem(LS_KEY, JSON.stringify({u:uKey, role:role, t:Date.now()}));
           ov.remove(); applyRole(role);
         });
       }).catch(function(){ msg.textContent='네트워크 오류 — 다시 시도하세요'; msg.style.color='#b03933'; });
