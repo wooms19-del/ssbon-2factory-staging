@@ -428,31 +428,32 @@ function _shipCopyText(dateStr){
     var g=byProd[p];
     var per=PALLET_BOX[p]||0;
     lines.push(p);
-    // 소비기한 줄 (여러 로트면 각각) + FC는 제조일 병기
-    var reaSum=0;
+    var prodPal=0;
     Object.keys(g.lots).sort().forEach(function(ld){
-      var l=g.lots[ld]; reaSum+=l.rea;
+      var l=g.lots[ld];
+      var lotBox=l.box+l.rbox, lotEa=l.ea+l.rea;
       var mfg=(p===FC3KG)?' (제조 '+_fmtYY(_plusDays(ld, -(FC_SHELF_DAYS-1)))+')':'';
-      if(l.box||l.ea||l.rbox||l.rea) lines.push('소비기한'+_fmtYY(ld)+mfg);
+      if(lotBox||lotEa){
+        lines.push('소비기한'+_fmtYY(ld)+mfg);
+        var palCnt=0;
+        if(per>0 && lotBox>0){
+          var parts=[], remain=lotBox;
+          while(remain>per){ parts.push(per); remain-=per; }
+          if(remain>0) parts.push(remain);
+          palCnt=parts.length;
+          var remTxt=l.rea>0?('잔량'+l.rea.toLocaleString()+'ea포함'):'';
+          lines.push('('+parts.join(',')+')'+remTxt);
+        }else if(l.rea>0){
+          lines.push('잔량'+l.rea.toLocaleString()+'ea포함');
+        }
+        lines.push('총'+lotBox.toLocaleString()+'box총'+lotEa.toLocaleString()+'ea');
+        if(palCnt) lines.push('총'+palCnt+'파레트');
+        prodPal+=palCnt;
+        lines.push('');
+      }
       if(l.sbox||l.sea) lines.push('샘플 '+l.sbox.toLocaleString()+'박스 '+l.sea.toLocaleString()+'ea (합계 미포함)');
     });
-    // 파레트 분해 (기준 있는 제품만)
-    var palCnt=0;
-    if(per>0 && g.box>0){
-      var parts=[], remain=g.box;
-      while(remain>per){ parts.push(per); remain-=per; }
-      if(remain>0) parts.push(remain);
-      palCnt=parts.length;
-      var remTxt=reaSum>0?('잔량'+reaSum.toLocaleString()+'ea포함'):'';
-      lines.push('('+parts.join(',')+')'+remTxt);
-    }else if(reaSum>0){
-      lines.push('잔량'+reaSum.toLocaleString()+'ea포함');
-    }
-    lines.push('총'+g.box.toLocaleString()+'box총'+g.ea.toLocaleString()+'ea');
-    var palShow=palCnt>0?palCnt:(g.palIn?Math.round(g.palIn*10)/10:0);
-    if(palShow) lines.push('총'+palShow+'파레트');
-    lines.push('');
-    tBox+=g.box; tEa+=g.ea; tPal+=palShow;
+    tBox+=g.box; tEa+=g.ea; tPal+=(prodPal>0?prodPal:(g.palIn?Math.round(g.palIn*10)/10:0));
   });
   lines.push('━━━━━━━━━━━━');
   lines.push('총 '+tBox.toLocaleString()+'박스 · '+tEa.toLocaleString()+'ea'+(tPal?' · '+(Math.round(tPal*10)/10)+'파레트':''));
