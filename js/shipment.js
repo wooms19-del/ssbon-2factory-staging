@@ -11,6 +11,16 @@ var _opSubTab = 'work';
 var _shipLoaded = false;
 var _shipHistYm = null;   // 출고 이력에서 보고 있는 월 (YYYY-MM), null이면 이번 달
 var FC3KG = 'FC 장조림 3KG';
+/* 파레트 적재 기준 (1파레트 = 몇 박스). 기준표 확정분만 등록 —
+   없는 제품은 파레트 분해 없이 박스·ea만 표시 */
+var PALLET_BOX = {
+  '시그니처 장조림 130g': 48,
+  '시그니처 장조림 130g 마트용': 100,
+  '코스트코 장조림 170g': 480,
+  '트레이더스 장조림 460g': 48,
+  'FC 장조림 3KG': 60,
+  '미니쇠고기장조림 70g 5입': 648
+};
 var FC_SHELF_DAYS = 60;       // FC 3KG 소비기한
 var DEFAULT_SHELF_DAYS = 365; // 나머지 전 제품 소비기한 (생산일 + 1년)
 var SHELF_DAYS = {};          // 제품별 override (필요시 {제품명:일수})
@@ -395,37 +405,54 @@ window._gsCalcBox2=_gsCalcBox2;
 function _fmtYY(ds){ var p=String(ds||'').split('-'); if(p.length<3) return ds; return p[0].slice(2)+'.'+p[1]+'.'+p[2]; }
 
 // 출고서 텍스트 생성 (제품 → 소비기한별 묶음)
+// 형식: 제품명 / 소비기한 / (파레트별 박스)잔량ea / 총box·총ea / 총파레트
 function _shipCopyText(dateStr){
   var ships=_shipData.ships.filter(function(s){ return String(s.date).slice(0,10)===dateStr; });
   if(!ships.length) return '('+dateStr+' 출고 항목 없음)';
   var byProd={};
   ships.forEach(function(s){
     var p=s.product||'(제품없음)';
-    if(!byProd[p]) byProd[p]={lots:{}, box:0, ea:0, pallet:0};
+    if(!byProd[p]) byProd[p]={lots:{}, box:0, ea:0, palIn:0};
     var ld=s.lotDate||'-';
     if(!byProd[p].lots[ld]) byProd[p].lots[ld]={box:0,ea:0,rbox:0,rea:0,sbox:0,sea:0};
     var box=parseInt(s.boxes,10)||0, ea=parseInt(s.ea,10)||0, pal=parseFloat(s.pallets)||0;
     if(s.remn){ byProd[p].lots[ld].rbox+=box; byProd[p].lots[ld].rea+=ea; }
     else if(s.smpl){ byProd[p].lots[ld].sbox+=box; byProd[p].lots[ld].sea+=ea; }
     else { byProd[p].lots[ld].box+=box; byProd[p].lots[ld].ea+=ea; }
-    // 소계·총합은 실제 출고분(완박스+잔량)만 — 샘플은 무상이라 합계 제외 (재고에선 별도로 차감됨)
-    if(!s.smpl){ byProd[p].box+=box; byProd[p].ea+=ea; byProd[p].pallet+=pal; }
+    // 소계·총합은 실제 출고분(완박스+잔량)만 — 샘플은 무상이라 합계 제외
+    if(!s.smpl){ byProd[p].box+=box; byProd[p].ea+=ea; byProd[p].palIn+=pal; }
   });
   var lines=['📦 출고서 '+dateStr, ''];
   var tBox=0,tEa=0,tPal=0;
   Object.keys(byProd).forEach(function(p){
-    var g=byProd[p]; lines.push('■ '+p);
+    var g=byProd[p];
+    var per=PALLET_BOX[p]||0;
+    lines.push(p);
+    // 소비기한 줄 (여러 로트면 각각) + FC는 제조일 병기
+    var reaSum=0;
     Object.keys(g.lots).sort().forEach(function(ld){
-      var l=g.lots[ld];
-      // FC 3KG는 소비기한이 짧아 제조일 병기 (제조일 = 소비기한 - (60-1)일)
-      var mfg = (p===FC3KG) ? ' (제조 '+_fmtYY(_plusDays(ld, -(FC_SHELF_DAYS-1)))+')' : '';
-      if(l.box||l.ea) lines.push('  · 소비기한 '+_fmtYY(ld)+mfg+' — '+l.box.toLocaleString()+'박스 · '+l.ea.toLocaleString()+'ea');
-      if(l.rbox||l.rea) lines.push('  · 소비기한 '+_fmtYY(ld)+mfg+' 잔량 — '+l.rbox.toLocaleString()+'박스 · '+l.rea.toLocaleString()+'ea');
-      if(l.sbox||l.sea) lines.push('  · 소비기한 '+_fmtYY(ld)+mfg+' 샘플 — '+l.sbox.toLocaleString()+'박스 · '+l.sea.toLocaleString()+'ea (합계 미포함)');
+      var l=g.lots[ld]; reaSum+=l.rea;
+      var mfg=(p===FC3KG)?' (제조 '+_fmtYY(_plusDays(ld, -(FC_SHELF_DAYS-1)))+')':'';
+      if(l.box||l.ea||l.rbox||l.rea) lines.push('소비기한'+_fmtYY(ld)+mfg);
+      if(l.sbox||l.sea) lines.push('샘플 '+l.sbox.toLocaleString()+'박스 '+l.sea.toLocaleString()+'ea (합계 미포함)');
     });
-    lines.push('  ▶ 소계 '+g.box.toLocaleString()+'박스 · '+g.ea.toLocaleString()+'ea'+(g.pallet?' · '+(Math.round(g.pallet*10)/10)+'파레트':''));
+    // 파레트 분해 (기준 있는 제품만)
+    var palCnt=0;
+    if(per>0 && g.box>0){
+      var parts=[], remain=g.box;
+      while(remain>per){ parts.push(per); remain-=per; }
+      if(remain>0) parts.push(remain);
+      palCnt=parts.length;
+      var remTxt=reaSum>0?('잔량'+reaSum.toLocaleString()+'ea포함'):'';
+      lines.push('('+parts.join(',')+')'+remTxt);
+    }else if(reaSum>0){
+      lines.push('잔량'+reaSum.toLocaleString()+'ea포함');
+    }
+    lines.push('총'+g.box.toLocaleString()+'box총'+g.ea.toLocaleString()+'ea');
+    var palShow=palCnt>0?palCnt:(g.palIn?Math.round(g.palIn*10)/10:0);
+    if(palShow) lines.push('총'+palShow+'파레트');
     lines.push('');
-    tBox+=g.box; tEa+=g.ea; tPal+=g.pallet;
+    tBox+=g.box; tEa+=g.ea; tPal+=palShow;
   });
   lines.push('━━━━━━━━━━━━');
   lines.push('총 '+tBox.toLocaleString()+'박스 · '+tEa.toLocaleString()+'ea'+(tPal?' · '+(Math.round(tPal*10)/10)+'파레트':''));
