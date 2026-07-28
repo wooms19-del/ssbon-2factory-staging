@@ -465,6 +465,7 @@ function gtinKeyOf(importCode){
   const ic = String(importCode || '');
   if(ic.startsWith('01')) return ic.slice(2,16);
   if(/^02\d{14}$/.test(ic)) return 'AU' + ic.slice(2,6);
+  if(/^\d{27}$/.test(ic) && ic.slice(12,18)==='012716') return 'NZ' + ic.slice(22,27);  // 뉴질랜드 ME127 (로트)
   return '';
 }
 
@@ -540,13 +541,24 @@ async function rejudgeBarcodes(){
       if(gtin) stillUnknown[gtin] = (stillUnknown[gtin]||0) + 1;
       continue;
     }
-    // 재판정: part, type, status, reason 필드 업데이트
-    await db.collection('barcode').doc(docId).update({
-      part: newPart,
-      type: newPart,
-      status: '적합',
-      reason: ''
-    });
+    // 재판정: part + (파서로 읽히는 경우) 중량·포장일·소비기한까지 보강
+    const upd = { part: newPart, type: newPart, status: '적합', reason: '' };
+    if(typeof parseImp === 'function'){
+      try{
+        const imp = parseImp(ic);
+        if((rec.weightKg==='' || rec.weightKg==null) && imp.weightKg!=='' && imp.weightKg!=null) upd.weightKg = imp.weightKg;
+        if(!rec.packDate && imp.packDate) upd.packDate = imp.packDate;
+        if(!rec.expiryDate && imp.expiryDate) upd.expiryDate = imp.expiryDate;
+      }catch(e){}
+    }
+    // 부위를 등록해도 중량·소비기한이 여전히 없으면 '-kg 적합' 방지 위해 부적합 유지
+    const wOk = (upd.weightKg!=null) || (rec.weightKg!=='' && rec.weightKg!=null);
+    const eOk = !!(upd.expiryDate || rec.expiryDate);
+    if(!wOk || !eOk){
+      upd.status = '부적합';
+      upd.reason = [!wOk?'중량 판독 실패':null, !eOk?'소비기한 판독 실패':null].filter(Boolean).join(', ');
+    }
+    await db.collection('barcode').doc(docId).update(upd);
     fixed++;
   }
   return { fixed, stillUnknown };
