@@ -47,6 +47,43 @@ function add24m(ds){
 // ============================================================
 var AU224_PART = { '2035':'홍두깨', '8299':'홍두깨' };   // EYE ROUND. 다른 부위코드는 확인되면 추가
 
+// ── 뉴질랜드 ME127 27자리 ─────────────────────────────
+// 예: 0279 6 051 2208 012716 0518 22266
+//     CTN  연 율리우스 중량x100  공장  ?   로트
+// 실물 라벨(CTN 0279 / 20 FEB 2026 / NET 22.1kg) 대조로 확인 (2026-07-28)
+// 부위는 코드에 없음 → 로트별 룩업. 신규 로트는 현장에서 등록(gtinMap 'NZ'+로트)
+var NZ127_PART = { '22266':'홍두깨' };   // 22-266 = B EYE ROUND
+
+function isNZ127(code){
+  var c=String(code||'');
+  return /^\d{27}$/.test(c) && c.slice(12,18)==='012716';
+}
+
+function _nz127Date(y1, j3){
+  // y1: 연도 끝자리(6=2026), j3: 율리우스 3자리
+  var y=parseInt(y1,10), doy=parseInt(j3,10);
+  if(!isFinite(y)||!isFinite(doy)||doy<1||doy>366) return '';
+  var d=new Date(Date.UTC(2020+y,0,1));
+  d.setUTCDate(d.getUTCDate()+(doy-1));
+  return d.toISOString().slice(0,10);
+}
+
+function parseNZ127(bc){
+  var r={gtin:'',part:'확인필요',weightKg:'',packDate:'',expiryDate:'',ctn:''};
+  var c=String(bc||'');
+  if(!isNZ127(c)) return r;
+  var lot=c.slice(22,27);
+  r.gtin=lot;
+  r.ctn=String(parseInt(c.slice(0,4),10)||'');
+  if(NZ127_PART[lot]) r.part=NZ127_PART[lot];
+  else if(L && L.gtinMap && L.gtinMap['NZ'+lot]) r.part=L.gtinMap['NZ'+lot];
+  var w=parseInt(c.slice(8,12),10);
+  if(isFinite(w)&&w>0) r.weightKg=r2(w/100);      // 2208 → 22.08kg
+  r.packDate=_nz127Date(c.slice(4,5), c.slice(5,8));
+  if(r.packDate) r.expiryDate=add24m(r.packDate);
+  return r;
+}
+
 function isAU224(code){ return /^02\d{14}$/.test(String(code||'')); }
 
 function _au224Date(j){
@@ -83,6 +120,7 @@ function parseAU224(bc){
 
 function parseImp(bc){
   if(isAU224(bc)) return parseAU224(bc);   // 호주 EST224 16자리
+  if(isNZ127(bc)) return parseNZ127(bc);   // 뉴질랜드 ME127 27자리
   const r={gtin:'',part:'확인필요',weightKg:'',packDate:'',expiryDate:''};
   if(!bc) return r;
   let c=bc;
