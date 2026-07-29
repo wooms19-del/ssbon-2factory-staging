@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>시안 C · 현장 태블릿 터치형</title>
+<style>
+@import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css");
+:root{--ink:#0E1A22;--steel:#5A6B79;--steel2:#93A3AE;--line:#D7DFE5;--tile:#EAEFF2;--sf:#fff;
+--sig:#0F6E8C;--live:#1F8A4C;
+--sans:"Pretendard Variable",Pretendard,-apple-system,"Malgun Gothic",sans-serif;
+--mono:ui-monospace,Menlo,Consolas,monospace}
+*{box-sizing:border-box}
+body{margin:0;font-family:var(--sans);font-size:15px;color:var(--ink);background:var(--tile);
+display:grid;grid-template-columns:132px 1fr;min-height:100vh}
+
+.rail{background:var(--ink);display:flex;flex-direction:column;padding:16px 10px;gap:4px}
+.logo{height:44px;border-radius:11px;background:var(--sig);color:#fff;display:grid;place-items:center;
+font-weight:800;margin-bottom:14px}
+.rbtn{display:flex;align-items:center;gap:10px;padding:14px 12px;border:0;border-radius:11px;
+background:transparent;color:rgba(255,255,255,.66);cursor:pointer;font-family:inherit;font-size:14px;text-align:left}
+.rbtn svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.8;flex:none}
+.rbtn:hover{background:rgba(255,255,255,.08);color:#fff}
+.rbtn.on{background:var(--sig);color:#fff;font-weight:700}
+
+.top{height:64px;background:var(--sf);border-bottom:1px solid var(--line);display:flex;
+align-items:center;padding:0 22px}
+.top h1{font-size:19px;margin:0;font-weight:800;letter-spacing:-.02em}
+.top .d{margin-left:12px;color:var(--steel);font-size:13px}
+.chip{margin-left:auto;display:flex;align-items:center;gap:9px;height:44px;padding:0 14px;
+border:1px solid var(--line);border-radius:999px}
+.av{width:28px;height:28px;border-radius:50%;background:var(--sig);color:#fff;display:grid;
+place-items:center;font-size:12px;font-weight:700}
+
+.pad{padding:20px 22px}
+.lbl{font-size:12px;font-weight:700;letter-spacing:.09em;color:var(--steel);margin:0 0 12px}
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(168px,1fr));gap:12px}
+.tile{background:var(--sf);border:1px solid var(--line);border-radius:14px;padding:16px 16px 14px;
+cursor:pointer;position:relative;min-height:112px;display:flex;flex-direction:column}
+.tile:hover{border-color:var(--sig)}
+.tile.on{border-color:var(--sig);box-shadow:inset 0 0 0 2px var(--sig);background:#F4FAFC}
+.tile .sq{font-family:var(--mono);font-size:12px;color:var(--steel2)}
+.tile .nm{font-size:20px;font-weight:800;letter-spacing:-.02em;margin-top:2px}
+.tile .st{margin-top:auto;font-size:12.5px;color:var(--steel)}
+.tile .bar{position:absolute;left:16px;right:16px;bottom:0;height:3px;border-radius:3px 3px 0 0;background:transparent}
+.tile.done .bar{background:var(--live)}
+.tile.run .bar{background:var(--sig)}
+.tile.side{background:#F7F4EE;border-style:dashed}
+.tile.side .nm{color:#7A5B1E}
+</style></head><body>
+
+<nav class="rail">
+  <div class="logo">2F</div>
+  <button class="rbtn"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>일정표</button>
+  <button class="rbtn"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>출퇴근</button>
+  <button class="rbtn on"><svg viewBox="0 0 24 24"><path d="M4 4v16M20 4v16M8 12h9M13 8l4 4-4 4"/></svg>입력</button>
+  <button class="rbtn"><svg viewBox="0 0 24 24"><path d="M4 20V9M10 20V4M16 20v-8M22 20H2"/></svg>분석</button>
+  <button class="rbtn"><svg viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>실적</button>
+  <button class="rbtn"><svg viewBox="0 0 24 24"><path d="M12 3l2 6 6 2-6 2-2 6-2-6-6-2 6-2z"/></svg>AI</button>
+</nav>
+
+<main>
+  <header class="top"><h1>입력</h1><span class="d">7월 29일 (화)</span>
+    <div class="chip"><span class="av">현</span><b>현장</b></div>
+  </header>
+  <div class="pad">
+    <p class="lbl">공정 순서</p>
+    <div class="tiles">
+      <div class="tile done"><span class="sq">01</span><span class="nm">해동기</span><span class="st">완료 · 142박스</span><span class="bar"></span></div>
+      <div class="tile done"><span class="sq">02</span><span class="nm">방혈</span><span class="st">완료 · 대차 7</span><span class="bar"></span></div>
+      <div class="tile done"><span class="sq">03</span><span class="nm">전처리</span><span class="st">완료 · 97.0%</span><span class="bar"></span></div>
+      <div class="tile done"><span class="sq">04</span><span class="nm">자숙</span><span class="st">완료 · 54.1%</span><span class="bar"></span></div>
+      <div class="tile done"><span class="sq">05</span><span class="nm">파쇄</span><span class="st">완료 · 95.5%</span><span class="bar"></span></div>
+      <div class="tile run on"><span class="sq">06</span><span class="nm">내포장</span><span class="st">진행중 · 8,140EA</span><span class="bar"></span></div>
+      <div class="tile"><span class="sq">07</span><span class="nm">레토르트</span><span class="st">대기 · 2회차 예정</span><span class="bar"></span></div>
+      <div class="tile"><span class="sq">08</span><span class="nm">외포장</span><span class="st">대기</span><span class="bar"></span></div>
+      <div class="tile side"><span class="sq">별도</span><span class="nm">소스</span><span class="st">3배치 · 내포장 투입</span></div>
+    </div>
+  </div>
+</main>
+</body></html>
