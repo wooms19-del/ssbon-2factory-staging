@@ -9,94 +9,80 @@
 </head>
 <body>
 
-<!-- 로그인 -->
 <section class="login" id="login">
   <aside class="login-aside">
     <div>
-      <div class="login-eyebrow">Ssbon Plant 2</div>
+      <div class="eyebrow">Ssbon Plant 2</div>
       <div class="login-brand">순수본 2공장 생산관리</div>
     </div>
     <div class="login-flow">
       <h2>공정 순서</h2>
-      <ul class="rail">
-        <li><span class="rail-node"></span>해동</li>
-        <li><span class="rail-node"></span>전처리</li>
-        <li><span class="rail-node"></span>자숙</li>
-        <li><span class="rail-node"></span>파쇄</li>
-        <li><span class="rail-node"></span>내포장</li>
-        <li><span class="rail-node"></span>레토르트</li>
-        <li><span class="rail-node"></span>외포장</li>
+      <ul>
+        <li>해동기</li><li>방혈</li><li>전처리</li><li>자숙</li><li>파쇄</li>
+        <li class="tr">소스</li>
+        <li>내포장</li><li>레토르트</li><li>외포장</li>
       </ul>
     </div>
     <div class="login-foot">공용 기기에서는 로그인 유지를 켜지 마세요.</div>
   </aside>
-
   <main class="login-main">
     <div class="login-card">
       <h1>로그인</h1>
       <p class="lead">공장에서 받은 아이디로 들어갑니다.</p>
-
       <form id="loginForm" novalidate>
-        <div class="field">
-          <label for="loginId">아이디</label>
-          <input id="loginId" name="id" autocomplete="username" autocapitalize="off" spellcheck="false">
-        </div>
-        <div class="field">
-          <label for="loginPw">비밀번호</label>
-          <input id="loginPw" name="pw" type="password" autocomplete="current-password">
-        </div>
-        <label class="remember">
-          <input id="loginKeep" type="checkbox">
-          이 기기에서 로그인 유지
-        </label>
+        <div class="field"><label for="loginId">아이디</label>
+          <input id="loginId" autocomplete="username" autocapitalize="off" spellcheck="false"></div>
+        <div class="field"><label for="loginPw">비밀번호</label>
+          <input id="loginPw" type="password" autocomplete="current-password"></div>
+        <label class="remember"><input id="loginKeep" type="checkbox"> 이 기기에서 로그인 유지</label>
         <button class="btn btn-primary" type="submit">로그인</button>
       </form>
-
       <button class="btn btn-ghost" id="reviewBtn" type="button">인증 연결 전 · 화면만 둘러보기</button>
       <div class="notice" id="loginMsg" hidden></div>
     </div>
   </main>
 </section>
 
-<!-- 앱 셸 -->
 <div class="shell" id="shell" hidden>
-  <nav class="side" id="side" aria-label="주 메뉴">
-    <div class="side-head">
-      <div class="login-eyebrow">Ssbon Plant 2</div>
-      <div class="name">2공장 생산관리</div>
-    </div>
-    <div class="side-nav" id="sideNav"></div>
-    <div class="side-foot" id="version"></div>
+  <nav class="rail" id="rail" aria-label="주 메뉴">
+    <div class="logo">2F</div>
   </nav>
-  <div class="scrim" id="scrim"></div>
+
+  <aside class="sub">
+    <div class="sub-hd">
+      <div>
+        <b id="subTitle"></b>
+        <div class="d" id="subDesc"></div>
+      </div>
+      <button class="fold" id="foldBtn" type="button" aria-label="메뉴 접기">‹</button>
+    </div>
+    <ul class="sub-list" id="subList"></ul>
+    <div class="sub-ft" id="version"></div>
+  </aside>
 
   <div>
     <header class="top">
-      <button class="side-toggle" id="sideToggle" type="button" aria-label="메뉴 열기">☰</button>
-      <h1 id="pageTitle">대시보드</h1>
-
-      <div class="top-right">
-        <button class="user-btn" id="userBtn" type="button" aria-haspopup="true" aria-expanded="false">
-          <span class="avatar" id="userInitial"></span>
-          <span class="user-name" id="userName"></span>
-          <span class="user-role" id="userRole"></span>
-        </button>
-        <div class="user-menu" id="userMenu" hidden>
-          <div class="who">
-            <b id="menuWho"></b>
-            <span id="menuRole"></span>
-          </div>
-          <button id="menuPw" type="button">비밀번호 변경</button>
-          <button id="menuOut" class="danger" type="button">로그아웃</button>
-        </div>
+      <button class="menu-btn" id="menuBtn" type="button" aria-label="메뉴 열기">☰</button>
+      <span class="crumb" id="crumb"></span>
+      <h1 id="pageTitle"></h1>
+      <button class="chip" id="userBtn" type="button" aria-haspopup="true" aria-expanded="false">
+        <span class="av" id="userInitial"></span>
+        <span id="userName"></span>
+        <span class="crumb" id="userRole"></span>
+      </button>
+      <div class="umenu" id="userMenu" hidden>
+        <div class="who"><b id="menuWho"></b><br><span id="menuRole"></span></div>
+        <button id="menuPw" type="button">비밀번호 변경</button>
+        <button id="menuOut" class="danger" type="button">로그아웃</button>
       </div>
     </header>
 
-    <div class="notice review-top" id="reviewBanner" hidden>
-      <strong>검토 모드</strong> — 인증을 거치지 않은 상태입니다. 계정 저장소를 연결하면 사라집니다.
+    <div class="content">
+      <div class="notice banner" id="reviewBanner" hidden>
+        <b>검토 모드</b> — 인증을 거치지 않은 상태입니다. 계정 저장소를 연결하면 사라집니다.
+      </div>
+      <div id="content"></div>
     </div>
-
-    <main class="content" id="content" tabindex="-1"></main>
   </div>
 </div>
 
