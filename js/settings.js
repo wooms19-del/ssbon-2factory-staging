@@ -10,6 +10,7 @@ async function saveSettings() {
       sauces: L.sauces || [],
       submats: L.submats || [],
       gtinMap: L.gtinMap || {},
+      palletMap: L.palletMap || {},
       recipes: L.recipes || [],
       _updatedAt: firebase.firestore.FieldValue.serverTimestamp()
     };
@@ -29,6 +30,7 @@ async function loadSettings_(){
       if(data.sauces && data.sauces.length) L.sauces = data.sauces;
       if(data.submats && data.submats.length) L.submats = data.submats;
       if(data.gtinMap && Object.keys(data.gtinMap).length) L.gtinMap = data.gtinMap;
+      if(data.palletMap && Object.keys(data.palletMap).length) L.palletMap = data.palletMap;
       if(data.recipes) L.recipes = data.recipes;
       saveL();
       updDD();
@@ -195,6 +197,17 @@ function addGt(){
   document.getElementById('ng_gt').value='';
 }
 function delGt(g){ delete L.gtinMap[g]; saveL(); renderSettings(); saveSettings(); }
+
+function addPal(){
+  const pd=document.getElementById('npal_pd').value;
+  const bx=parseInt(document.getElementById('npal_bx').value,10);
+  if(!pd){toast('제품 선택','d');return;}
+  if(!bx||bx<1){toast('박스 수 입력','d');return;}
+  if(!L.palletMap) L.palletMap={};
+  L.palletMap[pd]=bx; saveL(); renderSettings(); saveSettings(); toast('파레트 기준 저장됨');
+  document.getElementById('npal_bx').value='';
+}
+function delPal(pd){ if(L.palletMap){ delete L.palletMap[pd]; saveL(); renderSettings(); saveSettings(); } }
 
 // ============================================================
 // 레시피 관리

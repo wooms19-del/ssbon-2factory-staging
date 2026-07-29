@@ -1442,6 +1442,26 @@ body{display:flex;flex-direction:column;font-family:-apple-system,BlinkMacSystem
     </div>
     <div class="dvd"></div>
 
+    <!-- 파레트 기준 아코디언 -->
+    <div class="acc-hd" onclick="toggleAcc('acc-pallet')">
+      <span class="ct" style="margin-bottom:0">🧱 파레트 기준 <span class="bdg" id="acc-pallet-cnt"></span></span>
+      <span class="acc-arrow">▼</span>
+    </div>
+    <div class="acc-body closed" id="acc-pallet">
+      <div style="padding-top:1rem">
+        <div style="font-size:12px;color:#78808c;margin-bottom:10px">1파레트에 몇 박스인지 제품별로 등록합니다. 출고서의 파레트 분해·파레트 수 계산에 사용됩니다.</div>
+        <div id="palList" style="margin-bottom:1rem"></div>
+        <div class="dvd"></div>
+        <div style="font-size:13px;font-weight:600;margin-bottom:8px">기준 추가 · 수정</div>
+        <div class="fg">
+          <div class="fgrp"><label class="fl">제품</label><select class="fc" id="npal_pd"></select></div>
+          <div class="fgrp"><label class="fl">1파레트 박스 수</label><input class="fc" id="npal_bx" type="number" min="1" placeholder="예: 128"></div>
+        </div>
+        <button class="btn bs bsm" onclick="addPal()">+ 등록</button>
+      </div>
+    </div>
+    <div class="dvd"></div>
+
     <!-- 카카오톡 알림 아코디언 -->
     <div class="acc-hd" onclick="toggleAcc('acc-kakao')">
       <span class="ct" style="margin-bottom:0">📱 카카오톡 알림 <span id="acc-kakao-status" style="font-size:11px;color:var(--g5);font-weight:400"></span></span>
@@ -1675,11 +1695,11 @@ body{display:flex;flex-direction:column;font-family:-apple-system,BlinkMacSystem
 <script src="js/analysis.js?v=1783410402"></script>
 <script src="js/production_plan.js?v=1782893392"></script>
 <script src="js/ai_analysis.js?v=1781851878"></script>
-<script src="js/dashboard.js?v=1779947223"></script>
+<script src="js/dashboard.js?v=1785286474"></script>
 <script src="js/trace.js?v=1778809200"></script>
 <script src="js/outerpacking.js?v=1784088153"></script>
 <script src="js/retort.js?v=1783556942"></script>
-<script src="js/settings.js?v=1784181139"></script>
+<script src="js/settings.js?v=1785286474"></script>
 <script src="js/item_master.js?v=1784182557"></script>
 <script src="js/kakao.js?v=1778129561"></script>
 <script src="js/app.js?v=1784179254"></script>
@@ -1688,7 +1708,7 @@ body{display:flex;flex-direction:column;font-family:-apple-system,BlinkMacSystem
 <script src="js/timepicker.js?v=1778129561"></script>
 <script src="js/globals.js?v=1778599476"></script>
 <script src="js/stock.js?v=1783903201"></script>
-<script src="js/shipment.js?v=1785286293"></script>
+<script src="js/shipment.js?v=1785286474"></script>
 <script src="js/inedible_prod.js?v=1783495634"></script>
 <script src="js/monthly_analysis.js?v=1"></script>
 <script src="js/timetable.js?v=1781859979"></script>

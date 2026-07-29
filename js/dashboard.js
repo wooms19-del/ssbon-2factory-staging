@@ -481,6 +481,27 @@ function renderSettings(){
     }
   }
 
+  // 파레트 기준 목록
+  const palEl = document.getElementById('palList');
+  if(palEl){
+    const pm = L.palletMap || {};
+    const es = Object.entries(pm);
+    const cnt = document.getElementById('acc-pallet-cnt');
+    if(cnt) cnt.textContent = es.length ? es.length+'개' : '';
+    if(!es.length){ palEl.innerHTML='<div class="emp">등록된 기준 없음</div>'; }
+    else {
+      palEl.innerHTML = es.map(([p,b])=>`
+        <div class="si">
+          <div><div class="sn">${p}</div><div class="ss">1파레트 = ${b}박스</div></div>
+          <button class="btn bd bsm" onclick="delPal('${p.replace(/'/g,"\\'")}')">삭제</button>
+        </div>`).join('');
+    }
+    const sel = document.getElementById('npal_pd');
+    if(sel && !sel.options.length){
+      sel.innerHTML = '<option value="">선택</option>'+(L.products||[]).map(x=>`<option>${x.name}</option>`).join('');
+    }
+  }
+
   // 레시피 목록
   renderRecipeSelect();
   renderRcList();

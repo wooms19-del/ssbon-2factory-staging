@@ -428,7 +428,7 @@ function _shipCopyText(dateStr){
   var tBox=0,tEa=0,tPal=0;
   Object.keys(byProd).forEach(function(p){
     var g=byProd[p];
-    var per=PALLET_BOX[p]||0;
+    var per=(L&&L.palletMap&&L.palletMap[p])||PALLET_BOX[p]||0;
     lines.push(p);
     var prodPal=0;
     Object.keys(g.lots).sort().forEach(function(ld){
