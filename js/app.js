@@ -261,7 +261,247 @@
     return String(parseFloat(v.toFixed(6)));
   }
 
-  var VIEW={ item_master: viewItemMaster };
+
+  /* ── 다단계 전개 (공통) ─────────────── */
+  function explode(rootId, qty){
+    var acc={};
+    (function walk(id,q,d){
+      if(d>6) return;
+      CACHE.bom.forEach(function(b){
+        if(b.parent_id!==id) return;
+        var cq=q*parseFloat(b.qty);
+        acc[b.child_id]=(acc[b.child_id]||0)+cq;
+        walk(b.child_id,cq,d+1);
+      });
+    })(rootId,qty,0);
+    return acc;
+  }
+  function byId(){ var m={}; CACHE.items.forEach(function(i){ m[i.item_id]=i; }); return m; }
+  function finished(){ return CACHE.items.filter(function(i){ return i.category==='완제품'; }); }
+  function label(i){ return (i.product_group||i.name)+(i.part?' ('+i.part+')':''); }
+
+  function withMaster(c, fn){
+    var wrap=el('div');
+    wrap.appendChild(el('div','empty','불러오는 중…'));
+    c.appendChild(wrap); mwrap=wrap;
+    loadMaster().then(function(){ wrap.innerHTML=''; fn(wrap); })
+      .catch(function(e){
+        wrap.innerHTML='';
+        var k=el('div','card');
+        k.appendChild(el('h2',null,'불러오지 못했습니다.'));
+        k.appendChild(el('p','sub-t',String(e.message||e)));
+        wrap.appendChild(k);
+      });
+  }
+
+  function qtyTable(head, list, m){
+    var t=el('table','tbl');
+    t.innerHTML='<thead><tr><th style="width:86px">코드</th><th>'+head+'</th>'+
+      '<th style="width:78px">구분</th><th class="num" style="width:120px">소요량</th></tr></thead>';
+    var tb=el('tbody');
+    list.forEach(function(r){
+      var i=m[r.id]; if(!i) return;
+      var tr=el('tr');
+      var c1=el('td','code',i.erp_code);
+      var c2=el('td'); c2.appendChild(el('div','nm',i.product_group||i.name));
+      if(i.name!==(i.product_group||i.name)) c2.appendChild(el('div','erp',i.name));
+      var c3=el('td','cat',i.category||'');
+      var c4=el('td','num',trim(r.q)+' '+(i.unit||''));
+      [c1,c2,c3,c4].forEach(function(x){ tr.appendChild(x); });
+      tb.appendChild(tr);
+    });
+    t.appendChild(tb); return t;
+  }
+
+  /* ── 자재명세 (다단계 트리) ─────────── */
+  var bomSel=null;
+  function viewBom(c){ withMaster(c, drawBom); }
+  function drawBom(w){
+    var fin=finished();
+    if(bomSel==null&&fin.length) bomSel=fin[0].item_id;
+    var bar=el('div','chips');
+    var sel=el('select','search');
+    fin.forEach(function(i){
+      var o=el('option',null,label(i)); o.value=i.item_id;
+      if(i.item_id===bomSel) o.selected=true; sel.appendChild(o);
+    });
+    sel.addEventListener('change',function(){ bomSel=parseInt(sel.value,10); redrawWith(w,drawBom); });
+    bar.appendChild(sel); w.appendChild(bar);
+
+    var m=byId(), root=m[bomSel];
+    var k=el('div','card');
+    k.appendChild(el('h2',null,label(root)+' 1'+(root.unit||'EA')+' 기준'));
+    k.appendChild(el('p','sub-t',root.erp_code+' · '+root.name));
+    var t=el('table','tbl');
+    t.innerHTML='<thead><tr><th>구성</th><th style="width:78px">구분</th><th class="num" style="width:130px">소요량</th></tr></thead>';
+    var tb=el('tbody'), n=0;
+    (function walk(id,q,d){
+      if(d>5) return;
+      CACHE.bom.filter(function(b){ return b.parent_id===id; })
+        .sort(function(a,b){ return b.qty-a.qty; })
+        .forEach(function(b){
+          var ch=m[b.child_id]; if(!ch) return;
+          var cq=q*parseFloat(b.qty); n++;
+          var tr=el('tr');
+          var c1=el('td');
+          var line=el('div');
+          line.appendChild(el('span','lvl','└'.padStart(d+1,'　')));
+          line.appendChild(el('span','nm',ch.product_group||ch.name));
+          c1.appendChild(line);
+          c1.appendChild(el('div','erp',ch.erp_code+' · '+ch.name));
+          var c2=el('td','cat',ch.category||'');
+          var c3=el('td','num',trim(cq)+' '+(b.unit||''));
+          [c1,c2,c3].forEach(function(x){ tr.appendChild(x); });
+          tb.appendChild(tr);
+          walk(b.child_id,cq,d+1);
+        });
+    })(bomSel,1,0);
+    t.appendChild(tb); k.appendChild(t);
+    k.appendChild(el('div','erp','펼친 줄 '+n+'개'));
+    w.appendChild(k);
+  }
+  function redrawWith(w,fn){ w.innerHTML=''; fn(w); }
+
+  /* ── 소요량 확인 ─────────────────────── */
+  var plan=[];
+  function viewNeed(c){ withMaster(c, drawNeed); }
+  function drawNeed(w){
+    var fin=finished(), m=byId();
+
+    var k=el('div','card');
+    k.appendChild(el('h2',null,'생산계획을 넣으면 필요한 자재가 나옵니다.'));
+    k.appendChild(el('p','sub-t','품목 마스터의 자재명세를 끝까지 펼쳐 합산합니다. 소스는 원재료까지 내려갑니다.'));
+
+    var row=el('div','chips');
+    var sel=el('select','search');
+    fin.forEach(function(i){ var o=el('option',null,label(i)); o.value=i.item_id; sel.appendChild(o); });
+    var qty=el('input','search'); qty.type='number'; qty.min='1'; qty.value='1000';
+    qty.style.minWidth='120px';
+    var add=el('button','fchip on','계획에 추가');
+    add.addEventListener('click',function(){
+      var q=parseFloat(qty.value); if(!q||q<=0) return;
+      plan.push({id:parseInt(sel.value,10), q:q});
+      redrawWith(w,drawNeed);
+    });
+    row.appendChild(sel); row.appendChild(qty); row.appendChild(add);
+    k.appendChild(row);
+    w.appendChild(k);
+
+    if(!plan.length){
+      var e0=el('div','card pending');
+      e0.appendChild(el('div','tb','계획이 비어 있습니다. 위에서 제품과 수량을 넣어 보십시오.'));
+      w.appendChild(e0); return;
+    }
+
+    var pk=el('div','card');
+    pk.appendChild(el('h2',null,'계획'));
+    var pt=el('table','tbl');
+    pt.innerHTML='<thead><tr><th>제품</th><th class="num" style="width:110px">수량</th><th style="width:56px"></th></tr></thead>';
+    var ptb=el('tbody');
+    plan.forEach(function(r,idx){
+      var i=m[r.id], tr=el('tr');
+      var c1=el('td'); c1.appendChild(el('div','nm',label(i)));
+      c1.appendChild(el('div','erp',i.erp_code));
+      var c2=el('td','num',r.q.toLocaleString('ko-KR')+' '+(i.unit||'EA'));
+      var c3=el('td');
+      var del=el('button','fchip','삭제');
+      del.addEventListener('click',function(){ plan.splice(idx,1); redrawWith(w,drawNeed); });
+      c3.appendChild(del);
+      [c1,c2,c3].forEach(function(x){ tr.appendChild(x); });
+      ptb.appendChild(tr);
+    });
+    pt.appendChild(ptb); pk.appendChild(pt); w.appendChild(pk);
+
+    var acc={};
+    plan.forEach(function(r){
+      var e=explode(r.id,r.q);
+      for(var id in e) acc[id]=(acc[id]||0)+e[id];
+    });
+    var buy=[], mid=[];
+    for(var id in acc){
+      var it=m[id]; if(!it) continue;
+      var rec={id:parseInt(id,10), q:acc[id]};
+      if(['원육','원료부자재','파우치','포장재'].indexOf(it.category)>=0) buy.push(rec);
+      else mid.push(rec);
+    }
+    var order={'원육':0,'원료부자재':1,'파우치':2,'포장재':3};
+    buy.sort(function(a,b){
+      var d=(order[m[a.id].category]||9)-(order[m[b.id].category]||9);
+      return d!==0?d:b.q-a.q;
+    });
+    mid.sort(function(a,b){ return b.q-a.q; });
+
+    var bk=el('div','card');
+    bk.appendChild(el('h2',null,'필요한 자재 — 재고와 대조할 대상'));
+    bk.appendChild(el('p','sub-t','원육과 소스 원재료, 포장 자재입니다. 재고 테이블이 생기면 여기에 보유량과 부족분이 붙습니다.'));
+    bk.appendChild(qtyTable('품목',buy,m));
+    w.appendChild(bk);
+
+    var mk=el('div','card');
+    mk.appendChild(el('h2',null,'중간 산출'));
+    mk.appendChild(el('p','sub-t','공정을 거쳐 만들어지는 것들입니다. 사서 채우는 대상이 아닙니다.'));
+    mk.appendChild(qtyTable('품목',mid,m));
+    w.appendChild(mk);
+  }
+
+  /* ── 원육 부위·원산지 ────────────────── */
+  function viewMeat(c){
+    var wrap=el('div'); wrap.appendChild(el('div','empty','불러오는 중…')); c.appendChild(wrap);
+    Promise.all([
+      api.select('meat_part',{order:'part_id'}),
+      api.select('origin',{order:'origin_id'})
+    ]).then(function(r){
+      wrap.innerHTML='';
+      wrap.appendChild(simpleTable('원육 부위', r[0], ['part_id','name']));
+      wrap.appendChild(simpleTable('원산지', r[1], ['origin_id','name']));
+    }).catch(function(e){
+      wrap.innerHTML='';
+      var k=el('div','card'); k.appendChild(el('h2',null,'불러오지 못했습니다.'));
+      k.appendChild(el('p','sub-t',String(e.message||e))); wrap.appendChild(k);
+    });
+  }
+  function simpleTable(title, list, cols){
+    var k=el('div','card'); k.style.marginBottom='14px';
+    k.appendChild(el('h2',null,title));
+    if(!list.length){ k.appendChild(el('div','tb','아직 등록된 자료가 없습니다.')); return k; }
+    var keys=cols.filter(function(c){ return c in list[0]; });
+    if(!keys.length) keys=Object.keys(list[0]);
+    var t=el('table','tbl');
+    var th=el('thead'), htr=el('tr');
+    keys.forEach(function(c){ htr.appendChild(el('th',null,c)); });
+    th.appendChild(htr); t.appendChild(th);
+    var tb=el('tbody');
+    list.forEach(function(r){
+      var tr=el('tr');
+      keys.forEach(function(c){ tr.appendChild(el('td', c.indexOf('id')>=0?'code':'', String(r[c]==null?'':r[c]))); });
+      tb.appendChild(tr);
+    });
+    t.appendChild(tb); k.appendChild(t);
+    k.appendChild(el('div','erp',list.length+'건'));
+    return k;
+  }
+
+  /* ── 작업자 ─────────────────────────── */
+  function viewWorker(c){
+    var wrap=el('div'); wrap.appendChild(el('div','empty','불러오는 중…')); c.appendChild(wrap);
+    api.select('worker',{order:'worker_id'}).then(function(list){
+      wrap.innerHTML='';
+      if(!list.length){
+        var k=el('div','card pending');
+        k.appendChild(el('h2',null,'등록된 작업자가 없습니다.'));
+        k.appendChild(el('p','sub-t','테이블은 있으나 아직 옮기지 않았습니다. 기존 웹의 직원 명부에서 이관합니다.'));
+        k.appendChild(el('div','tb','worker'));
+        wrap.appendChild(k); return;
+      }
+      wrap.appendChild(simpleTable('작업자', list, Object.keys(list[0])));
+    }).catch(function(e){
+      wrap.innerHTML='';
+      var k=el('div','card'); k.appendChild(el('h2',null,'불러오지 못했습니다.'));
+      k.appendChild(el('p','sub-t',String(e.message||e))); wrap.appendChild(k);
+    });
+  }
+
+  var VIEW={ item_master: viewItemMaster, item_bom: viewBom, plan_need: viewNeed, meat: viewMeat, worker: viewWorker };
 
   /* ── 사용자 메뉴 ─────────────────────── */
   function bindTop(){
