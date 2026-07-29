@@ -436,15 +436,16 @@ function _shipCopyText(dateStr){
       if(lotBox||lotEa){
         lines.push('소비기한'+_fmtYY(ld)+mfg);
         var palCnt=0;
-        if(per>0 && lotBox>0){
-          var parts=[], remain=lotBox;
+        // 파레트 분해는 완박스(l.box)만 — 잔량박스는 파레트로 세지 않고 별도 표기
+        var remTxt=(l.rbox>0||l.rea>0)?('+잔량'+(l.rbox>0?l.rbox.toLocaleString()+'box ':'')+l.rea.toLocaleString()+'ea'):'';
+        if(per>0 && l.box>0){
+          var parts=[], remain=l.box;
           while(remain>per){ parts.push(per); remain-=per; }
           if(remain>0) parts.push(remain);
           palCnt=parts.length;
-          var remTxt=l.rea>0?('잔량'+l.rea.toLocaleString()+'ea포함'):'';
           lines.push('('+parts.join(',')+')'+remTxt);
-        }else if(l.rea>0){
-          lines.push('잔량'+l.rea.toLocaleString()+'ea포함');
+        }else if(remTxt){
+          lines.push(remTxt.slice(1));
         }
         lines.push('총'+lotBox.toLocaleString()+'box총'+lotEa.toLocaleString()+'ea');
         if(palCnt) lines.push('총'+palCnt+'파레트');
