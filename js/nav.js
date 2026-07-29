@@ -10,10 +10,10 @@ window.SSBON.nav = [
   { group:'공정', rail:true, items:[
     { id:'thaw',          label:'해동',       tables:['thaw_cart','thaw_cart_box','meat_box'] },
     { id:'preprocess',    label:'전처리',     tables:['preprocess_run','preprocess_source'] },
-    { id:'shredding',     label:'세절',       tables:['shredding_run','shredding_wagon'] },
-    { id:'cooking',       label:'취반',       tables:['cooking_run','cooking_wagon','sauce_batch'] },
+    { id:'cooking',       label:'자숙',       tables:['cooking_run','cooking_wagon'] },
+    { id:'shredding',     label:'파쇄',       tables:['shredding_run','shredding_wagon'] },
+    { id:'packing',       label:'내포장',     tables:['packing_run','packing_wagon','packing_sauce','sauce_batch'] },
     { id:'retort',        label:'레토르트',   tables:['retort_run'] },
-    { id:'packing',       label:'포장',       tables:['packing_run','packing_wagon','packing_sauce'] },
     { id:'outerpacking',  label:'외포장',     tables:['outerpacking_run','outerpacking_material','outerpacking_worklog'] }
   ]},
 
