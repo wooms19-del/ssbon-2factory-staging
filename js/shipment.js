@@ -430,33 +430,38 @@ function _shipCopyText(dateStr){
     var g=byProd[p];
     var per=(L&&L.palletMap&&L.palletMap[p])||PALLET_BOX[p]||0;
     lines.push(p);
-    var prodPal=0;
+    var prodFullBox=0;
     Object.keys(g.lots).sort().forEach(function(ld){
       var l=g.lots[ld];
       var lotBox=l.box+l.rbox, lotEa=l.ea+l.rea;
       var mfg=(p===FC3KG)?' (제조 '+_fmtYY(_plusDays(ld, -(FC_SHELF_DAYS-1)))+')':'';
       if(lotBox||lotEa){
         lines.push('소비기한'+_fmtYY(ld)+mfg);
-        var palCnt=0;
         // 파레트 분해는 완박스(l.box)만 — 잔량박스는 파레트로 세지 않고 별도 표기
+        // 파레트 '수'는 로트별이 아니라 제품 전체 완박스 합산으로 계산 (자투리 로트는 합적)
         var remTxt=(l.rbox>0||l.rea>0)?('+잔량'+(l.rbox>0?l.rbox.toLocaleString()+'box ':'')+l.rea.toLocaleString()+'ea'):'';
         if(per>0 && l.box>0){
           var parts=[], remain=l.box;
           while(remain>per){ parts.push(per); remain-=per; }
           if(remain>0) parts.push(remain);
-          palCnt=parts.length;
           lines.push('('+parts.join(',')+')'+remTxt);
         }else if(remTxt){
           lines.push(remTxt.slice(1));
         }
+        prodFullBox+=l.box;
         lines.push('총'+lotBox.toLocaleString()+'box총'+lotEa.toLocaleString()+'ea');
-        if(palCnt) lines.push('총'+palCnt+'파레트');
-        prodPal+=palCnt;
         lines.push('');
       }
       if(l.sbox||l.sea) lines.push('샘플 '+l.sbox.toLocaleString()+'박스 '+l.sea.toLocaleString()+'ea (합계 미포함)');
     });
-    tBox+=g.box; tEa+=g.ea; tPal+=(prodPal>0?prodPal:(g.palIn?Math.round(g.palIn*10)/10:0));
+    // 목록에 입력한 파레트(수동)가 우선 — 없을 때만 완박스 합산으로 자동 계산
+    var prodPal=(g.palIn>0)?Math.round(g.palIn*10)/10:((per>0&&prodFullBox>0)?Math.ceil(prodFullBox/per):0);
+    if(prodPal){
+      // 마지막 로트 뒤 빈 줄 앞에 제품 전체 파레트 수 삽입
+      if(lines[lines.length-1]==='') lines.splice(lines.length-1,0,'총'+prodPal+'파레트');
+      else lines.push('총'+prodPal+'파레트');
+    }
+    tBox+=g.box; tEa+=g.ea; tPal+=prodPal;
   });
   lines.push('━━━━━━━━━━━━');
   lines.push('총 '+tBox.toLocaleString()+'박스 · '+tEa.toLocaleString()+'ea'+(tPal?' · '+(Math.round(tPal*10)/10)+'파레트':''));
