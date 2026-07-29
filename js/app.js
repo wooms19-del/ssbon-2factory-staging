@@ -1,345 +1,231 @@
-// ============================================================
-// CSV 내보내기
-// ============================================================
-function expCSV(type){
-  const items=L[type].filter(r=>String(r.date||'').slice(0,10)===tod());
-  if(!items.length){toast('데이터 없음','d');return;}
-  const ks=Object.keys(items[0]).filter(k=>k!=='id'&&k!=='fbId');
-  dlCSV(`${type}_${tod()}.csv`,[ks,...items.map(r=>ks.map(k=>r[k]??''))]);
-}
-function dlCSV(fn,rows){
-  const csv=rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(',')).join('\n');
-  const a=document.createElement('a');
-  a.href=URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'}));
-  a.download=fn; a.click();
-}
+(function(){
+  var A = window.SSBON.auth, NAV = window.SSBON.nav, api = window.SSBON.api;
+  var cfg = window.SSBON.config;
 
-function resetAll(){ if(!confirm('⚠ 모든 로컬 데이터 초기화?'))return; L=nL(); saveL(); toast('초기화 완료','d'); renderSettings(); }
+  var $ = function(id){ return document.getElementById(id); };
+  function el(tag, cls, text){
+    var n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text != null) n.textContent = text;
+    return n;
+  }
 
-// ============================================================
-// 토스트
-// ============================================================
-function toast(msg,t='s'){
-  const el=document.createElement('div');
-  el.className=`toast ${t}`; el.textContent=msg;
-  document.body.appendChild(el);
-  setTimeout(()=>el.remove(),2500);
-}
+  var routes = {};
+  NAV.forEach(function(g){ g.items.forEach(function(it){ routes[it.id] = it; }); });
 
-// ============================================================
-// 탭 네비게이션
-// ============================================================
-function setMode(m){
-  MODE=m;
-  document.getElementById('modeI').classList.toggle('on',m==='i'); 
-  document.getElementById('modeD').classList.toggle('on',m==='d'); 
-  document.getElementById('attHdBtn').classList.remove('on');
-  var _mp=document.getElementById('modeP'); if(_mp) _mp.classList.remove('on');
-  var _mai=document.getElementById('modeAI'); if(_mai) _mai.classList.toggle('on',m==='ai');
-  document.getElementById('inav').classList.toggle('hid',m!=='i');
-  document.getElementById('dnav').classList.toggle('hid',m!=='d');
-  var _pnav=document.getElementById('pnav'); if(_pnav) _pnav.classList.add('hid');
-  document.getElementById('mscroll').scrollTop=0;
-  if(m==='ai'){
-    document.querySelectorAll('.pg').forEach(p=>p.classList.remove('on'));
-    var pgAi = document.getElementById('p-ai');
-    if(pgAi){
-      pgAi.classList.add('on');
-      _renderAIPage(pgAi);
+  /* ── 로그인 화면 ─────────────────────────────── */
+  function bindLogin(){
+    $('loginForm').addEventListener('submit', function(e){
+      e.preventDefault();
+      var id = $('loginId').value.trim();
+      var pw = $('loginPw').value;
+      if (!id || !pw){ showLoginMsg('아이디와 비밀번호를 모두 입력해 주세요.', true); return; }
+      A.verify(id, pw).then(function(s){
+        A.setSession(s, $('loginKeep').checked);
+        enterApp();
+      }).catch(function(err){
+        if (err && err.message === 'NO_BACKEND'){
+          showLoginMsg('계정 저장소가 아직 연결되지 않아 로그인할 수 없습니다. 아래 버튼으로 화면만 둘러볼 수 있습니다.', true);
+        } else {
+          showLoginMsg('로그인하지 못했습니다. ' + (err && err.message ? err.message : ''), true);
+        }
+      });
+    });
+
+    $('reviewBtn').addEventListener('click', function(){
+      A.setSession(A.reviewSession(), false);
+      enterApp();
+    });
+  }
+
+  function showLoginMsg(text, isError){
+    var box = $('loginMsg');
+    box.textContent = text;
+    box.className = 'notice' + (isError ? ' error' : '');
+    box.hidden = false;
+  }
+
+  /* ── 메뉴 ────────────────────────────────────── */
+  function renderNav(role){
+    var wrap = $('sideNav');
+    wrap.innerHTML = '';
+    NAV.forEach(function(g){
+      if (g.admin && role !== 'admin') return;
+      var sec = el('div', 'nav-group');
+      sec.appendChild(el('h3', null, g.group));
+      var ul = el('ul', 'nav-list' + (g.rail ? ' rail' : ''));
+      g.items.forEach(function(it, i){
+        var li = el('li');
+        li.dataset.route = it.id;
+        if (g.rail){
+          li.appendChild(el('span', 'rail-node'));
+        }
+        var b = el('button', 'nav-btn');
+        b.type = 'button';
+        b.appendChild(el('span', null, it.label));
+        if (g.rail) b.appendChild(el('span', 'rail-seq', String(i + 1).padStart(2, '0')));
+        b.addEventListener('click', function(){
+          go(it.id);
+          document.body.classList.remove('nav-open');
+        });
+        li.appendChild(b);
+        ul.appendChild(li);
+      });
+      sec.appendChild(ul);
+      wrap.appendChild(sec);
+    });
+  }
+
+  function markActive(id){
+    $('sideNav').querySelectorAll('li').forEach(function(li){
+      var on = li.dataset.route === id;
+      li.classList.toggle('is-active', on);
+      var b = li.querySelector('.nav-btn');
+      if (on) b.setAttribute('aria-current', 'page');
+      else b.removeAttribute('aria-current');
+    });
+  }
+
+  /* ── 라우팅 ──────────────────────────────────── */
+  function go(id){
+    var r = routes[id] ? id : 'dashboard';
+    if (location.hash !== '#' + r) { location.hash = r; return; }
+    render(r);
+  }
+
+  function render(id){
+    var it = routes[id];
+    markActive(id);
+    $('pageTitle').textContent = it.label;
+    var c = $('content');
+    c.innerHTML = '';
+    if (id === 'dashboard') renderDashboard(c);
+    else renderPending(c, it);
+    c.focus({ preventScroll:true });
+  }
+
+  function renderPending(c, it){
+    var card = el('div', 'card pending');
+    card.appendChild(el('h2', null, it.label + ' 화면은 아직 만들지 않았습니다.'));
+    card.appendChild(el('p', 'sub', '메뉴 자리만 잡아 둔 상태입니다. 데이터 이관 뒤에 이 화면을 붙입니다.'));
+    if (it.tables.length){
+      card.appendChild(el('div', 'tables', '연결 예정 테이블 · ' + it.tables.join(', ')));
     }
-    return;
+    c.appendChild(card);
   }
-  if(m==='i') showTab('i',ITAB); else showTab('d',DTAB);
-}
 
-// AI 분석 페이지 렌더 (탭 진입 시 1회)
-function _renderAIPage(el){
-  if(el.dataset.rendered === '1') return;
-  el.dataset.rendered = '1';
-  var today = (typeof tod === 'function') ? tod() : new Date().toISOString().slice(0,10);
-  var monthAgo = (typeof addDays === 'function') ? addDays(today, -7) : today;
-  var _curYm = today.slice(0,7);
-  var _mp = _curYm.split('-').map(Number), _fy = _mp[0], _fm = _mp[1] - 5;
-  while(_fm <= 0){ _fm += 12; _fy--; }
-  var _moFromDefault = _fy + '-' + String(_fm).padStart(2,'0');   // 최근 6개월 기본
-  el.innerHTML = `
-    <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:20px;margin-bottom:16px">
-      <h2 style="margin:0 0 12px;color:#0f172a;font-size:20px">🤖 AI 분석</h2>
-      <!-- 탭 -->
-      <div style="display:flex;gap:0;border-bottom:2px solid #e5e7eb;margin-bottom:16px">
-        <button id="aiTabReport" onclick="_switchAITab('report')" style="padding:10px 18px;background:none;border:none;border-bottom:2px solid #6366f1;color:#6366f1;font-size:14px;font-weight:600;cursor:pointer;margin-bottom:-2px">📊 기간 분석</button>
-        <button id="aiTabMonthly" onclick="_switchAITab('monthly')" style="padding:10px 18px;background:none;border:none;border-bottom:2px solid transparent;color:#64748b;font-size:14px;font-weight:500;cursor:pointer;margin-bottom:-2px">📈 월간 분석</button>
-        <button id="aiTabChat" onclick="_switchAITab('chat')" style="padding:10px 18px;background:none;border:none;border-bottom:2px solid transparent;color:#64748b;font-size:14px;font-weight:500;cursor:pointer;margin-bottom:-2px">💬 챗봇</button>
-      </div>
+  /* ── 대시보드: 접속 확인 ─────────────────────── */
+  var MASTERS = [
+    { t:'item_master', label:'품목 마스터' },
+    { t:'product',     label:'제품' },
+    { t:'recipe',      label:'레시피' },
+    { t:'meat_part',   label:'원육 부위' },
+    { t:'origin',      label:'원산지' }
+  ];
 
-      <!-- 탭 1: 기간 분석 -->
-      <div id="aiTabPanel_report">
-        <div style="color:#64748b;font-size:13px;margin-bottom:16px">기간을 선택하면 AI가 모든 공정 데이터를 종합 분석합니다.</div>
-        <div style="display:flex;gap:12px;align-items:end;flex-wrap:wrap">
-          <div>
-            <label style="display:block;font-size:12px;color:#475569;margin-bottom:4px">시작일</label>
-            <input type="date" id="ai_from" value="${monthAgo}" style="padding:8px;border:1px solid #cbd5e1;border-radius:6px;font-size:14px">
-          </div>
-          <div>
-            <label style="display:block;font-size:12px;color:#475569;margin-bottom:4px">종료일</label>
-            <input type="date" id="ai_to" value="${today}" style="padding:8px;border:1px solid #cbd5e1;border-radius:6px;font-size:14px">
-          </div>
-          <button id="ai_run_btn" onclick="runAIAnalysis()" style="padding:10px 20px;background:#6366f1;color:#fff;border:none;border-radius:6px;font-size:14px;font-weight:600;cursor:pointer">🤖 AI 분석 시작</button>
-        </div>
-        <div style="font-size:11px;color:#94a3b8;margin-top:8px">최대 35일까지 가능. 기간이 길수록 분석 시간 증가 (10~30초).</div>
-      </div>
+  function renderDashboard(c){
+    var card = el('div', 'card');
+    var h = el('h2');
+    var dot = el('span', 'dot');
+    h.appendChild(dot);
+    h.appendChild(document.createTextNode('데이터베이스 연결'));
+    card.appendChild(h);
+    var sub = el('p', 'sub', '기준정보 건수를 실제로 읽어 연결 상태를 확인합니다.');
+    card.appendChild(sub);
 
-      <!-- 탭 2: 월간 분석 -->
-      <div id="aiTabPanel_monthly" style="display:none">
-        <div style="color:#64748b;font-size:13px;margin-bottom:12px">월 범위를 골라 추이·보고서를 봅니다. "이 달만"을 켜면 선택한 달과 전월을 비교합니다.</div>
-        <div style="display:flex;gap:10px;align-items:end;flex-wrap:wrap;margin-bottom:16px">
-          <div>
-            <label style="display:block;font-size:12px;color:#475569;margin-bottom:4px">시작월</label>
-            <input type="month" id="aiMoFrom" value="${_moFromDefault}" max="${_curYm}" style="padding:8px;border:1px solid #cbd5e1;border-radius:6px;font-size:14px">
-          </div>
-          <div id="aiMoToBox">
-            <label style="display:block;font-size:12px;color:#475569;margin-bottom:4px">종료월</label>
-            <input type="month" id="aiMoTo" value="${_curYm}" max="${_curYm}" style="padding:8px;border:1px solid #cbd5e1;border-radius:6px;font-size:14px">
-          </div>
-          <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:#334155;cursor:pointer;padding-bottom:8px">
-            <input type="checkbox" id="aiMoSingle" onchange="var t=document.getElementById('aiMoTo'); if(t){t.disabled=this.checked; t.style.opacity=this.checked?0.4:1;}" style="width:15px;height:15px;cursor:pointer"> 이 달만
-          </label>
-          <button onclick="_aiReloadMonthly()" style="padding:9px 18px;background:#6366f1;color:#fff;border:none;border-radius:6px;font-size:14px;font-weight:600;cursor:pointer">조회</button>
-        </div>
-        <div id="aiMonthlyWrap"><div style="padding:30px;text-align:center;color:#94a3b8;font-size:13px">월간 데이터를 불러오는 중...</div></div>
-      </div>
-
-      <!-- 탭 3: 챗봇 -->
-      <div id="aiTabPanel_chat" style="display:none">
-        <div style="color:#64748b;font-size:13px;margin-bottom:12px">공정 데이터/도메인 지식 기반 자유 질문이 가능합니다. 📎 버튼으로 이미지/엑셀/PDF 첨부 가능.</div>
-        <div id="aiChatLog" style="background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;padding:12px;height:480px;overflow-y:auto;font-size:14px;line-height:1.5"></div>
-
-        <!-- 첨부 파일 미리보기 영역 -->
-        <div id="aiChatAttachPreview" style="display:none;margin-top:8px;padding:8px;background:#f1f5f9;border:1px dashed #cbd5e1;border-radius:6px;font-size:12px"></div>
-
-        <div style="display:flex;gap:8px;margin-top:10px;align-items:center">
-          <!-- 파일 첨부 버튼 -->
-          <label for="aiChatFileInput" style="cursor:pointer;padding:10px 12px;background:#fff;color:#64748b;border:1px solid #cbd5e1;border-radius:6px;font-size:14px;display:flex;align-items:center;justify-content:center" title="파일 첨부 (이미지/엑셀/PDF)">📎</label>
-          <input type="file" id="aiChatFileInput" accept="image/*,.xlsx,.xls,.csv,.pdf,.txt,.md" multiple style="display:none" onchange="_aiChatHandleFiles(event)">
-
-          <input type="text" id="aiChatInput" placeholder="질문을 입력하세요 (예: 5월 수율 떨어진 원인이 뭐야?)"
-            onkeydown="if(event.key==='Enter' && !event.shiftKey){event.preventDefault(); _sendChatMsg();}"
-            style="flex:1;padding:10px 12px;border:1px solid #cbd5e1;border-radius:6px;font-size:14px">
-          <button onclick="_sendChatMsg()" id="aiChatSend" style="padding:10px 20px;background:#6366f1;color:#fff;border:none;border-radius:6px;font-size:14px;font-weight:600;cursor:pointer">전송</button>
-          <button onclick="_clearChat()" style="padding:10px 14px;background:#fff;color:#64748b;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;cursor:pointer">초기화</button>
-        </div>
-      </div>
-    </div>
-    
-    <div id="ai_result"></div>
-  `;
-  // 챗봇 이력 로드
-  if(typeof _loadChatHistory === 'function') _loadChatHistory();
-  // 월간 분석 탭은 처음 열 때 1회 로드 (진입할 때마다 최신 데이터로 갱신)
-  window._aiMonthlyLoaded = false;
-}
-
-// 탭 전환
-function _switchAITab(tab){
-  var panels = { report:'aiTabPanel_report', monthly:'aiTabPanel_monthly', chat:'aiTabPanel_chat' };
-  var btns   = { report:'aiTabReport',       monthly:'aiTabMonthly',       chat:'aiTabChat' };
-  Object.keys(panels).forEach(function(k){
-    var p = document.getElementById(panels[k]); if(p) p.style.display = (k===tab) ? 'block' : 'none';
-    var b = document.getElementById(btns[k]);
-    if(b){ var on = (k===tab); b.style.borderBottomColor = on ? '#6366f1' : 'transparent'; b.style.color = on ? '#6366f1' : '#64748b'; b.style.fontWeight = on ? '600' : '500'; }
-  });
-  if(tab==='chat'){ var input = document.getElementById('aiChatInput'); if(input) input.focus(); }
-  if(tab==='monthly' && !window._aiMonthlyLoaded){
-    window._aiMonthlyLoaded = true;
-    if(typeof _aiReloadMonthly === 'function') _aiReloadMonthly();
-  }
-}
-window._switchAITab = _switchAITab;
-
-// 월간 분석: 선택한 월 범위/단일로 추이·보고서 로드
-function _aiReloadMonthly(){
-  var fromEl = document.getElementById('aiMoFrom');
-  var toEl = document.getElementById('aiMoTo');
-  var singleEl = document.getElementById('aiMoSingle');
-  var single = !!(singleEl && singleEl.checked);
-  var fromYm = fromEl ? fromEl.value : '';
-  var toYm = toEl ? toEl.value : '';
-  if(!fromYm){ return; }
-  if(single){ toYm = fromYm; }   // 이 달만: 시작월을 그 달로 (전월은 자동 비교)
-  var go = function(){ if(typeof _aiLoadMonthlyTrend === 'function') _aiLoadMonthlyTrend(fromYm, toYm, single); };
-  if(typeof _ensureChartJs === 'function') _ensureChartJs(go); else go();
-}
-window._aiReloadMonthly = _aiReloadMonthly;
-
-function showTab(mode,tab){
-  if(mode==='i') ITAB=tab; else DTAB=tab;
-  const nav=mode==='i'?'inav':'dnav';
-  const tabs=mode==='i'?['barcode','thawing','preprocess','cooking','shredding','packing','retort','sauce','outerpacking','attendance']:['daily','monthly','trace','recipe','timetable','timetable_test','settings'];
-  document.querySelectorAll(`#${nav} .ti`).forEach((el,i)=>el.classList.toggle('on',tabs[i]===tab));
-  document.querySelectorAll('.pg').forEach(p=>p.classList.remove('on'));
-  const pg=document.getElementById('p-'+tab); if(pg) pg.classList.add('on');
-  document.getElementById('mscroll').scrollTop=0;
-
-  const today=tod();
-  if(tab==='thawing'){
-    const yd=getYesterday_();
-    Promise.all([loadFromServer(today), loadFromServer(yd)]).then(()=>{ renderThawWaiting(); renderThawList(); });
-  } else if(tab==='barcode'){
-    loadFromServer(today).then(()=>renderBC());
-  } else if(tab==='preprocess'){
-    const yd2=getYesterday_();
-    Promise.all([loadOpenThawing(), loadFromServer(today), loadFromServer(yd2)])
-      .then(()=>{ if(typeof pp2Render==='function') pp2Render(); });
-  } else if(tab==='cooking'){
-    if(!L.cooking_pending) L.cooking_pending=[];
-    // ★ loadOpenCooking 추가 (다른 디바이스 진행중 자숙 가시성)
-    Promise.all([loadFromServer(today), loadOpenCooking()]).then(()=>{
-      renderCkCageList(); renderPL('cooking'); renderCkPending();
-      const hasPending = L.cooking_pending.some(r=>String(r.date||'').slice(0,10)===tod());
-      document.getElementById('ck_startCard').style.display = hasPending ? 'none' : '';
-      document.getElementById('ck_pendingCard').style.display = hasPending ? '' : 'none';
+    var grid = el('div', 'stat-grid');
+    MASTERS.forEach(function(m){
+      var s = el('div', 'stat');
+      s.appendChild(el('div', 'k', m.label));
+      var v = el('div', 'v', '…');
+      v.id = 'stat-' + m.t;
+      s.appendChild(v);
+      grid.appendChild(s);
     });
-  } else if(tab==='shredding'){
-    // ★ loadOpenPacking 추가 — shredding은 packing/packing_pending도 표시 (사용된 wagon 추적)
-    // ★ 어제 데이터도 필요 (어제 만든 자숙 와건이 오늘 파쇄 대기)
-    const yd3 = getYesterday_();
-    Promise.all([loadFromServer(today), loadFromServer(yd3), loadOpenPacking()]).then(()=>{ if(typeof sh2Render==='function') sh2Render(); });
-  } else if(tab==='packing'){
-    if(!L.packing_pending) L.packing_pending = [];
-    // ★ 탭 진입 시 수정 모드 상태 초기화 (잔재 방지)
-    if(typeof _pkEditingId !== 'undefined') _pkEditingId = null;
-    if(typeof _restorePkStartCardUI === 'function') _restorePkStartCardUI();
-    Promise.all([loadFromServer(today), loadOpenPacking()]).then(()=>{
-      renderPkWagonList();
-      renderPL('packing');
-      renderPkPending();
-      // 진행중 있으면 진행중 카드 표시, 없으면 시작 카드 표시
-      const hasPending = L.packing_pending.some(r=>String(r.date||'').slice(0,10)===tod());
-      document.getElementById('pk_startCard').style.display = hasPending ? 'none' : '';
-      document.getElementById('pk_pendingCard').style.display = hasPending ? '' : 'none';
-    });
-  } else if(tab==='sauce'){
-    loadFromServer(today).then(()=>renderPL(tab));
-  } else if(tab==='monthly'){
-    renderMonthly();
-  } else if(tab==='daily'){
-    renderDaily();
-  } else if(tab==='trace'){
-    renderTrTbl();
-  } else if(tab==='settings'){
-    loadSettings_().then(()=>renderSettings()).catch(()=>renderSettings());
-    // AI key 상태도 함께 표시 (acc-ai 펼치지 않아도 미리 로드)
-    if(typeof aiKeyRefresh === 'function') setTimeout(aiKeyRefresh, 100);
-  } else if(tab==='schedule'){
-    if(typeof initSchedule==='function') initSchedule();
-  } else if(tab==='outerpacking'){
-    loadOuterPacking();
-  } else if(tab==='retort'){
-    loadFromServer(today).then(()=>{ if(typeof renderRetort==='function') renderRetort(); });
-  } else if(tab==='attendance'){
-    initAttendance();
-  } else if(tab==='recipe'){
-    updDD();
-    renderRcList();
-    if(typeof loadItemMasterView==='function') loadItemMasterView();
-  } else if(tab==='timetable'){
-    if(typeof ttInit==='function') ttInit();
-  } else if(tab==='timetable_test'){
-    if(typeof tttInit==='function') tttInit();
-  }
-}
+    card.appendChild(grid);
+    c.appendChild(card);
 
-// ============================================================
-// 초기화
-// ============================================================
-function clearStaleLocalData(){
-  L.barcodes=L.barcodes.filter(b=>String(b.date||'').slice(0,10)===tod());
-  ['thawing','preprocess','cooking','shredding','packing','sauce'].forEach(key=>{
-    const seen=new Set();
-    L[key]=L[key].filter(r=>{ const k=r.id||JSON.stringify(r); if(seen.has(k))return false; seen.add(k);return true; });
-  });
-  saveL();
-}
-
-function init(){
-  if(!L) L = loadL(); // 여기서 초기화
-  // ★ Firestore에서 gtinMap 동기화 (디바이스 간 공유)
-  if(typeof syncGtinMapFromFirestore === 'function'){
-    syncGtinMapFromFirestore().catch(e => console.warn('[gtinMap sync]', e));
-  }
-  // 일지 출력 날짜 기본값
-  const upDate = document.getElementById('up_date');
-  if(upDate) upDate.value = tod();
-  const expDate = document.getElementById('exp_date');
-  if(expDate) expDate.value = tod();
-  // 페이지 로드 시 저장된 _testDate 복원
-  const _saved = sessionStorage.getItem('_testDate');
-  if(_saved && /^\d{4}-\d{2}-\d{2}$/.test(_saved)){
-    window._testDate = _saved;
-    window.tod = ()=> window._testDate || new Date().toISOString().slice(0,10);
-    const d=new Date(_saved+'T00:00:00');
-    const dys2=['일','월','화','수','목','금','토'];
-    document.getElementById('hDate').textContent=`${d.getMonth()+1}/${d.getDate()}(${dys2[d.getDay()]}) ✏️`;
-  } else {
-    const n=new Date(), dys=['일','월','화','수','목','금','토'];
-    document.getElementById('hDate').textContent=`${n.getMonth()+1}/${n.getDate()}(${dys[n.getDay()]})`;
-  }
-  // 날짜 클릭 시 날짜 변경 (테스트용)
-  document.getElementById('hDate').style.cursor='pointer';
-  document.getElementById('hDate').title='클릭하여 날짜 변경';
-  document.getElementById('hDate').onclick=(ev)=>{
-    if(ev){ ev.preventDefault(); ev.stopPropagation(); }
-    const val = prompt('날짜 입력 (예: 2026-04-13). 비우고 확인 시 오늘로 복귀.', tod());
-    if(val === null) return;
-    if(val === ''){ sessionStorage.removeItem('_testDate'); window._testDate = null; location.reload(); return; }
-    if(!/^\d{4}-\d{2}-\d{2}$/.test(val)){ toast('날짜 형식 오류 (YYYY-MM-DD)','d'); return; }
-    sessionStorage.setItem('_testDate', val);
-    const d=new Date(val+'T00:00:00');
-    const dys2=['일','월','화','수','목','금','토'];
-    document.getElementById('hDate').textContent=`${d.getMonth()+1}/${d.getDate()}(${dys2[d.getDay()]}) ✏️`;
-    window._testDate = val;
-    window.tod = ()=> window._testDate || new Date().toISOString().slice(0,10);
-    toast(`날짜 변경: ${val}`,'i');
-    // 날짜 변경 후 어제+오늘 데이터 새로 로드
-    const yd = (()=>{const d=new Date(val+'T00:00:00');d.setDate(d.getDate()-1);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');})();
-    Promise.all([loadFromServer(val), loadFromServer(yd)]).then(()=>{
-      showTab(MODE, MODE==='i'?ITAB:DTAB);
+    Promise.all(MASTERS.map(function(m){
+      return api.count(m.t).then(function(n){ return { t:m.t, n:n }; })
+                           .catch(function(){ return { t:m.t, n:null }; });
+    })).then(function(res){
+      var bad = 0;
+      res.forEach(function(r){
+        var v = $('stat-' + r.t);
+        if (!v) return;
+        if (r.n === null){ v.textContent = '실패'; bad++; }
+        else v.textContent = r.n.toLocaleString('ko-KR');
+      });
+      dot.className = 'dot ' + (bad ? 'bad' : 'ok');
+      sub.textContent = bad
+        ? bad + '개 항목을 읽지 못했습니다. 접속 주소와 키를 확인해 주세요.'
+        : '정상으로 읽었습니다. 공정 데이터는 아직 이관 전이라 비어 있습니다.';
     });
-  };
-  clearStaleLocalData();
-  updDD();
-  renderBC();
-  ['preprocess','cooking','shredding','packing','sauce'].forEach(t=>renderPL(t));
-  renderThawList();
-  loadSettings_();
-  startAutoRefresh();
-  // ★ 페이지 시작 시 오늘+어제 둘 다 로드 (전처리/파쇄가 어제 thawing/cooking 필요)
-  const _today = tod();
-  const _ydDate = new Date(_today + 'T00:00:00');
-  _ydDate.setDate(_ydDate.getDate() - 1);
-  const _yd = _ydDate.getFullYear()+'-'+String(_ydDate.getMonth()+1).padStart(2,'0')+'-'+String(_ydDate.getDate()).padStart(2,'0');
-  Promise.all([loadFromServer(_today), loadFromServer(_yd)]).then(()=>{
-    renderBC();
-    renderThawWaiting();
-    renderThawList();
-    // 현재 탭이 v2면 다시 렌더 (Firestore 로드 후)
-    if(MODE==='i' && ITAB==='preprocess' && typeof pp2Refresh==='function') pp2Refresh();
-    if(MODE==='i' && ITAB==='shredding' && typeof sh2Refresh==='function') sh2Refresh();
-  });
-}
-function setModeAtt(){
-  // 입력/분석 버튼 off
-  document.querySelectorAll('.mb').forEach(function(b){b.classList.remove('on');});
-  document.getElementById('attHdBtn').classList.add('on');
-  // 모든 nav 숨김
-  ['inav','dnav','pnav'].forEach(function(id){
-    var el=document.getElementById(id);
-    if(el)el.className='tnav hid';
-  });
-  // 모든 pg 숨김 후 출퇴근만 표시
-  document.querySelectorAll('.pg').forEach(function(p){p.classList.remove('on');});
-  var ap=document.getElementById('p-attendance');
-  if(ap)ap.classList.add('on');
-  document.getElementById('mscroll').scrollTop=0;
-  initAttendance();
-}
+  }
+
+  /* ── 상단 사용자 설정 ────────────────────────── */
+  function renderUser(s){
+    $('userInitial').textContent = s.id.slice(0, 1);
+    $('userName').textContent = s.id;
+    $('userRole').textContent = s.role === 'admin' ? '관리자' : '작업자';
+    $('menuWho').textContent = s.id;
+    $('menuRole').textContent = (s.role === 'admin' ? '관리자' : '작업자')
+      + (s.review ? ' · 검토 모드' : '');
+  }
+
+  function bindUserMenu(){
+    var btn = $('userBtn'), menu = $('userMenu');
+    btn.addEventListener('click', function(e){
+      e.stopPropagation();
+      var open = !menu.hidden;
+      menu.hidden = open;
+      btn.setAttribute('aria-expanded', String(!open));
+    });
+    document.addEventListener('click', function(){
+      menu.hidden = true;
+      btn.setAttribute('aria-expanded', 'false');
+    });
+    menu.addEventListener('click', function(e){ e.stopPropagation(); });
+
+    $('menuPw').addEventListener('click', function(){
+      alert('비밀번호 변경은 계정 저장소를 연결한 뒤에 열립니다.');
+    });
+    $('menuOut').addEventListener('click', function(){
+      A.clear();
+      location.hash = '';
+      location.reload();
+    });
+
+    $('sideToggle').addEventListener('click', function(e){
+      e.stopPropagation();
+      document.body.classList.toggle('nav-open');
+    });
+    $('scrim').addEventListener('click', function(){
+      document.body.classList.remove('nav-open');
+    });
+  }
+
+  /* ── 진입 ────────────────────────────────────── */
+  function enterApp(){
+    var s = A.session;
+    $('login').hidden = true;
+    $('shell').hidden = false;
+    $('reviewBanner').hidden = !s.review;
+    renderNav(s.role);
+    renderUser(s);
+    render(routes[location.hash.slice(1)] ? location.hash.slice(1) : 'dashboard');
+  }
+
+  function boot(){
+    $('version').textContent = cfg.version;
+    bindLogin();
+    bindUserMenu();
+    window.addEventListener('hashchange', function(){
+      if (!A.session) return;
+      render(routes[location.hash.slice(1)] ? location.hash.slice(1) : 'dashboard');
+    });
+    if (A.restore()) enterApp();
+  }
+
+  document.addEventListener('DOMContentLoaded', boot);
+})();
