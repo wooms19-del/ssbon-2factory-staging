@@ -103,12 +103,16 @@
   var CATS=['완제품','반제품','소스','공정중간','원육','원료부자재','파우치','포장재'];
   var ui={cat:'완제품',q:'',sel:null};
 
+  var loading=null;
   function loadMaster(){
     if(CACHE.items) return Promise.resolve();
-    return Promise.all([
+    if(loading) return loading;
+    loading = Promise.all([
       api.select('item_master',{select:'item_id,erp_code,name,category,part,unit,product_group',order:'erp_code'}),
       api.select('item_bom',{select:'parent_id,child_id,qty,unit',limit:1000})
-    ]).then(function(r){ CACHE.items=r[0]; CACHE.bom=r[1]; });
+    ]).then(function(r){ CACHE.items=r[0]; CACHE.bom=r[1]; loading=null; })
+      .catch(function(e){ loading=null; throw e; });
+    return loading;
   }
 
   function viewItemMaster(c){
@@ -425,8 +429,9 @@
       else mid.push(rec);
     }
     var order={'원육':0,'원료부자재':1,'파우치':2,'포장재':3};
+    function rank(id){ var c=m[id].category; return (c in order)?order[c]:9; }
     buy.sort(function(a,b){
-      var d=(order[m[a.id].category]||9)-(order[m[b.id].category]||9);
+      var d=rank(a.id)-rank(b.id);
       return d!==0?d:b.q-a.q;
     });
     mid.sort(function(a,b){ return b.q-a.q; });
