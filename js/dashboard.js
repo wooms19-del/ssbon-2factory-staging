@@ -485,20 +485,24 @@ function renderSettings(){
   const palEl = document.getElementById('palList');
   if(palEl){
     const pm = L.palletMap || {};
-    const es = Object.entries(pm);
+    const PAL_ALIAS = {'미니쇠고기 장조림 70g 맥스용':'= 롯데마트용', '미니쇠고기장조림 70g 낱개':'= 기준표 「미니쇠고기장조림 70」'};
+    const es = Object.entries(pm).sort((a,b)=>a[0].localeCompare(b[0],'ko'));
     const cnt = document.getElementById('acc-pallet-cnt');
     if(cnt) cnt.textContent = es.length ? es.length+'개' : '';
     if(!es.length){ palEl.innerHTML='<div class="emp">등록된 기준 없음</div>'; }
     else {
       palEl.innerHTML = es.map(([p,b])=>`
         <div class="si">
-          <div><div class="sn">${p}</div><div class="ss">1파레트 = ${b}박스</div></div>
+          <div><div class="sn">${p}${PAL_ALIAS[p]?` <span style="color:#9a5b0b;font-size:11px;font-weight:600">${PAL_ALIAS[p]}</span>`:''}</div><div class="ss">1파레트 = ${b}박스</div></div>
           <button class="btn bd bsm" onclick="delPal('${p.replace(/'/g,"\\'")}')">삭제</button>
         </div>`).join('');
     }
     const sel = document.getElementById('npal_pd');
     if(sel && !sel.options.length){
-      sel.innerHTML = '<option value="">선택</option>'+(L.products||[]).map(x=>`<option>${x.name}</option>`).join('');
+      sel.innerHTML = '<option value="">선택</option>'+(L.products||[]).map(x=>{
+        const reg = pm[x.name];
+        return `<option value="${x.name}">${x.name}${reg?` (등록됨 · ${reg}박스)`:' (미등록)'}</option>`;
+      }).join('');
     }
   }
 
