@@ -507,6 +507,9 @@
   }
 
   var VIEW={ item_master: viewItemMaster, item_bom: viewBom, plan_need: viewNeed, meat: viewMeat, worker: viewWorker };
+  // 별도 파일에서 등록한 화면 병합
+  var EXT=window.SSBON.views||{};
+  for(var _k in EXT) VIEW[_k]=EXT[_k];
 
   /* ── 사용자 메뉴 ─────────────────────── */
   function bindTop(){
