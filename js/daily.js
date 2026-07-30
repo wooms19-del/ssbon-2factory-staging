@@ -82,13 +82,14 @@
     var rows=[
       {n:'전처리', L:d.pp, in:sum(d.pp,'input_kg')||base, out:sum(d.pp,'output_kg'), w:sum(d.pp,'waste_kg'), prev:base, note:boxes?f(boxes)+'박스':''},
       {n:'자숙',   L:d.ck, in:sum(d.ck,'input_kg'), out:sum(d.ck,'output_kg'), w:0, prev:sum(d.pp,'output_kg')},
-      {n:'파쇄',   L:d.sh, in:sum(d.sh,'input_kg'), out:sum(d.sh,'output_kg'), w:sum(d.sh,'waste_kg'), prev:sum(d.ck,'output_kg')}
+      {n:'파쇄',   L:d.sh, in:sum(d.sh,'input_kg'), wash:sum(d.sh,'washed_kg'), out:sum(d.sh,'output_kg'), w:sum(d.sh,'waste_kg'), prev:sum(d.ck,'output_kg')}
     ];
     var k=el('div','card'); k.style.marginBottom='14px';
     k.appendChild(el('h2',null,'공정별 현황'));
+    k.appendChild(el('p','sub-t','공정수율은 직전 공정 산출 대비입니다. 파쇄는 세척에서 물을 머금어 무게가 늘 수 있어 세척 칸을 따로 둡니다.'));
     var t=el('table','tbl');
     t.innerHTML='<thead><tr><th style="width:72px">공정</th><th style="width:74px">부위</th>'+
-      '<th class="num" style="width:104px">투입 KG</th><th class="num" style="width:96px">산출 KG</th>'+
+      '<th class="num" style="width:104px">투입 KG</th><th class="num" style="width:104px">세척 KG</th><th class="num" style="width:96px">산출 KG</th>'+
       '<th class="num" style="width:104px">비가식부</th><th class="num" style="width:82px">원육수율</th>'+
       '<th class="num" style="width:82px">공정수율</th><th class="num" style="width:82px">작업시간</th>'+
       '<th class="num" style="width:58px">인원</th><th class="num" style="width:104px">생산성</th></tr></thead>';
@@ -103,6 +104,14 @@
       c3.appendChild(el('div',null,r.in?f(r.in,2):'—'));
       if(r.note) c3.appendChild(el('div','erp',r.note));
       tr.appendChild(c3);
+      var c4=el('td','num');
+      if(r.wash){
+        c4.appendChild(el('div',null,f(r.wash,2)));
+        var gain=r.in?(r.wash-r.in):0;
+        if(gain>0){ var g=el('div','erp','+'+f(gain,1)+'kg 흡수'); g.style.color='#0F6E8C'; c4.appendChild(g); }
+        else if(gain<0) c4.appendChild(el('div','erp',f(gain,1)+'kg'));
+      } else c4.textContent='—';
+      tr.appendChild(c4);
       tr.appendChild(el('td','num',r.out?f(r.out,2):'—'));
       var c5=el('td','num');
       if(r.w){ c5.style.color='#B4342C';
