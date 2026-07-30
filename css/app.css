@@ -136,8 +136,9 @@ body.folded .shell{grid-template-columns:var(--rail-w) 0 1fr}
 
 /* 표 밀도 */
 .tbl th{padding:8px 12px}
+.tbl th.num{text-align:right}
+.tbl td.num{white-space:nowrap}
 .tbl td{padding:7px 12px}
-.tbl tbody tr td:first-child{color:var(--steel)}
 .card h2{margin-bottom:3px}
 .card .sub-t{margin-bottom:10px}
 
