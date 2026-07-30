@@ -86,10 +86,10 @@
     ];
     var k=el('div','card'); k.style.marginBottom='14px';
     k.appendChild(el('h2',null,'공정별 현황'));
-    k.appendChild(el('p','sub-t','공정수율은 직전 공정 산출 대비입니다. 파쇄는 세척에서 물을 머금어 무게가 늘 수 있어 세척 칸을 따로 둡니다.'));
+    k.appendChild(el('p','sub-t','공정수율은 직전 공정 산출 대비입니다. 파쇄는 세척 후 무게가 늘 수 있어 세척 후 칸을 따로 둡니다.'));
     var t=el('table','tbl');
     t.innerHTML='<thead><tr><th style="width:72px">공정</th><th style="width:74px">부위</th>'+
-      '<th class="num" style="width:104px">투입 KG</th><th class="num" style="width:104px">세척 KG</th><th class="num" style="width:96px">산출 KG</th>'+
+      '<th class="num" style="width:104px">투입 KG</th><th class="num" style="width:104px">세척 후 KG</th><th class="num" style="width:96px">산출 KG</th>'+
       '<th class="num" style="width:104px">비가식부</th><th class="num" style="width:82px">원육수율</th>'+
       '<th class="num" style="width:82px">공정수율</th><th class="num" style="width:82px">작업시간</th>'+
       '<th class="num" style="width:58px">인원</th><th class="num" style="width:104px">생산성</th></tr></thead>';
@@ -108,7 +108,7 @@
       if(r.wash){
         c4.appendChild(el('div',null,f(r.wash,2)));
         var gain=r.in?(r.wash-r.in):0;
-        if(gain>0){ var g=el('div','erp','+'+f(gain,1)+'kg 흡수'); g.style.color='#0F6E8C'; c4.appendChild(g); }
+        if(gain>0){ var g=el('div','erp','+'+f(gain,1)+'kg'); g.style.color='#0F6E8C'; c4.appendChild(g); }
         else if(gain<0) c4.appendChild(el('div','erp',f(gain,1)+'kg'));
       } else c4.textContent='—';
       tr.appendChild(c4);
