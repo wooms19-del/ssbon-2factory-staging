@@ -27,14 +27,15 @@
   function rng(ym){ return ['gte.'+ym+'-01','lte.'+ym+'-'+String(lastDay(ym)).padStart(2,'0')]; }
 
   function loadMonth(ym){
-    var r=rng(ym);
-    var w='work_date=gte.'+ym+'-01&work_date=lte.'+ym+'-'+String(lastDay(ym)).padStart(2,'0');
+    var a=ym+'-01', b=ym+'-'+String(lastDay(ym)).padStart(2,'0');
+    var w='work_date=gte.'+a+'&work_date=lte.'+b;
+    var wo='outerpacking_run.work_date=gte.'+a+'&outerpacking_run.work_date=lte.'+b;
     return Promise.all([
       q('preprocess_run?select=work_date,input_kg,output_kg,waste_kg,workers,start_time,end_time,part_id&'+w),
       q('cooking_run?select=work_date,output_kg,workers,start_time,end_time,part_id&'+w),
       q('shredding_run?select=work_date,output_kg,waste_kg,workers,start_time,end_time,part_id&'+w),
       q('packing_run?select=work_date,ea,defect&'+w),
-      q('outerpacking_part?select=ea,part_id,item_id,outerpacking_run!inner(work_date)&outerpacking_run.'+w)
+      q('outerpacking_part?select=ea,part_id,item_id,outerpacking_run!inner(work_date)&'+wo)
     ]).then(function(a){
       return {pp:a[0],ck:a[1],sh:a[2],pk:a[3],op:a[4]};
     });
