@@ -387,48 +387,62 @@
         tb.appendChild(tr);
       });
     } else {
-      /* 날짜 묶음 → 페이지 단위는 '날짜' 기준 */
-      var byDate=[], last=null;
-      rows.forEach(function(r){
-        if(r.date!==last){ byDate.push({date:r.date, list:[]}); last=r.date; }
-        byDate[byDate.length-1].list.push(r);
+      /* 병합 단위 = 그룹키(날짜|부위, 가안 제품은 분리). 본서버 규칙과 동일.
+         페이지 단위는 생산일 기준. */
+      var byDate=[], lastD=null;
+      s.rows.forEach(function(r){
+        if(r.date!==lastD){ byDate.push({date:r.date, groups:[], n:0}); lastD=r.date; }
+        var day=byDate[byDate.length-1];
+        var gk=r._g||('solo|'+r.date+'|'+r.product);
+        var grp=null;
+        for(var i2=0;i2<day.groups.length;i2++) if(day.groups[i2].key===gk){ grp=day.groups[i2]; break; }
+        if(!grp){ grp={key:gk, part:r.part, list:[]}; day.groups.push(grp); }
+        grp.list.push(r); day.n++;
       });
       var per=st.per, page=st.page, tot=Math.ceil(byDate.length/per)||1;
       if(page>tot){ page=tot; st.page=tot; }
       var slice=byDate.slice((page-1)*per, page*per);
       var no=(page-1)*per;
-      slice.forEach(function(d,di){
+      slice.forEach(function(d){
         no++;
-        var merged=d.list.length>1;
-        d.list.forEach(function(r,i){
-          var tr=el('tr');
-          if(i===0) tr.classList.add('dstart');
-          if(no%2===0) tr.classList.add('dalt');
-          if(merged) tr.classList.add('mg');
-          if(i===0){
-            var c1=el('td','cnum',String(no)); c1.rowSpan=d.list.length; tr.appendChild(c1);
-            var c2=el('td','cnum',d.date.slice(5)); c2.rowSpan=d.list.length; tr.appendChild(c2);
-            var c3=el('td','cnum'); c3.rowSpan=d.list.length;
-            if(r.part) c3.appendChild(el('span','badge g-'+r.part,r.part));
-            if(merged) c3.appendChild(el('div','mgnote','동일 원육 사용<br>(병합)'));
-            tr.appendChild(c3);
-          }
-          var pc2=el('td','pcell');
-          pc2.appendChild(el('span','nm',r.product));
-          tr.appendChild(pc2);
-          C.forEach(function(cd){
-            var td=el('td','num'+(cd.key?' key':''));
-            if(cd.get==='EA'){
-              td.appendChild(document.createTextNode(f(r.ea,0)));
-              td.appendChild(el('span','src','('+r.eaSrc+')'));
-            } else td.textContent=cd.get(r);
-            if(merged && !r._first && cd.get!=='EA' && td.textContent===''){ td.classList.add('mgcell'); }
-            if(r.est && r._first && cd.sec==='원육 / 공통공정 (KG)'){
-              td.classList.add('est'); td.title='가안 — 6월 코스트코 평균수율로 역산';
+        var first=true;
+        d.groups.forEach(function(grp){
+          var merged=grp.list.length>1;
+          grp.list.forEach(function(r,i){
+            var tr=el('tr');
+            if(first&&i===0) tr.classList.add('dstart');
+            else if(i===0) tr.classList.add('gstart');
+            if(no%2===0) tr.classList.add('dalt');
+            if(first&&i===0){
+              var c1=el('td','cnum',String(no)); c1.rowSpan=d.n; tr.appendChild(c1);
+              var c2=el('td','cnum',d.date.slice(5)); c2.rowSpan=d.n; tr.appendChild(c2);
             }
-            tr.appendChild(td);
+            if(i===0){
+              var c3=el('td','cnum'); c3.rowSpan=grp.list.length;
+              if(r.part) c3.appendChild(el('span','badge g-'+r.part,r.part));
+              tr.appendChild(c3);
+            }
+            var pcell=el('td','pcell');
+            pcell.appendChild(el('span','nm',r.product));
+            tr.appendChild(pcell);
+            C.forEach(function(cd){
+              var td=el('td','num'+(cd.key?' key':''));
+              if(cd.get==='EA'){
+                td.appendChild(document.createTextNode(f(r.ea,0)));
+                td.appendChild(el('span','src','('+r.eaSrc+')'));
+              } else {
+                var v=cd.get(r);
+                if(v==='' && merged && !r._first) td.classList.add('mgcell');
+                td.textContent=v;
+              }
+              if(r.est && r._first && cd.sec==='원육 / 공통공정 (KG)'){
+                td.classList.add('est'); td.title='가안 — 6월 코스트코 평균수율로 역산';
+              }
+              tr.appendChild(td);
+            });
+            tb.appendChild(tr);
+            first=false;
           });
-          tb.appendChild(tr);
         });
       });
       k._pages={tot:tot, page:page, all:byDate.length};

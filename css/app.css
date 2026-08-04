@@ -243,10 +243,10 @@ body.folded .shell{grid-template-columns:var(--rail-w) 0 1fr}
 .mono-t td.pcell{white-space:normal;word-break:keep-all;line-height:1.35}
 .mono-t td.pcell .nm{font-size:12px;font-weight:600;color:var(--ink)}
 .mono-t td.mgcell{background:repeating-linear-gradient(135deg,#FAFCFD,#FAFCFD 5px,#F1F5F8 5px,#F1F5F8 10px)}
-.mgnote{font-size:9.5px;color:var(--sig);line-height:1.25;margin-top:3px}
 .mono-t .badge{font-size:10px;padding:0 5px}
 .mono-t .src{font-size:10px;color:var(--steel2);margin-left:2px}
 .mono-t tr.dstart td{border-top:2px solid #7E939F}
+.mono-t tr.gstart td{border-top:1px solid #A9BAC4}
 .mono-t tr.dalt td{background:#FAFCFD}
 .mono-t tr.dalt td.key{background:#F2F8FB}
 .mono-t td.est,.mono-t tr.dalt td.est{background:#FEF3C7}
