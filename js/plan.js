@@ -108,7 +108,7 @@
     if(!e) return null;
     var k=el('div','card'); k.style.marginBottom='14px';
     k.appendChild(el('h2',null, e.plan?'계획 수정':'계획 추가'));
-    k.appendChild(el('p','sub-t', e.date+' · 생산 수량(EA)을 넣으면 원육 필요량과 팩 수가 계산됩니다.'));
+    k.appendChild(el('p','sub-t', e.date+' · 생산 수량(EA)을 넣으면 원육 필요량과 팩 수가 계산됩니다. 같은 날 같은 제품도 여러 건 넣을 수 있습니다.'));
 
     var r1=el('div','frow');
     var sel=el('select','search');
@@ -167,9 +167,10 @@
         plan_ea: cur.ea, plan_kg: cur.kg, plan_pk: cur.pk,
         updated_at: new Date().toISOString()};
       save.disabled=true; save.textContent='저장 중…';
-      api('production_plan?on_conflict=plan_date,product_group',
-          {method:'POST',body:[body],prefer:'resolution=merge-duplicates,return=minimal'})
-        .then(function(){ st.edit=null; return load(); })
+      var req = e.plan
+        ? api('production_plan?plan_id=eq.'+e.plan.plan_id,{method:'PATCH',body:body,prefer:'return=minimal'})
+        : api('production_plan',{method:'POST',body:[body],prefer:'return=minimal'});
+      req.then(function(){ st.edit=null; return load(); })
         .then(redraw)
         .catch(function(err){ save.disabled=false; save.textContent='저장 실패'; alert('저장하지 못했습니다.\n'+err.message); });
     });
@@ -197,8 +198,8 @@
     k.appendChild(el('h2',null,'월 계획 합계'));
     var byP={}, ea=0, kg=0;
     st.plans.forEach(function(p){
-      var g=byP[p.product_group]=byP[p.product_group]||{ea:0,kg:0,days:0};
-      g.ea+=p.plan_ea||0; g.kg+=parseFloat(p.plan_kg)||0; g.days++;
+      var g=byP[p.product_group]=byP[p.product_group]||{ea:0,kg:0,rows:0,dset:{}};
+      g.ea+=p.plan_ea||0; g.kg+=parseFloat(p.plan_kg)||0; g.rows++; g.dset[p.plan_date]=1;
       ea+=p.plan_ea||0; kg+=parseFloat(p.plan_kg)||0;
     });
     var names=Object.keys(byP).sort(function(a,b){return byP[b].ea-byP[a].ea;});
@@ -210,7 +211,7 @@
     names.forEach(function(n){
       var g=byP[n], tr=el('tr');
       tr.appendChild(el('td','nm',n));
-      tr.appendChild(el('td','num',g.days+'일'));
+      tr.appendChild(el('td','num',Object.keys(g.dset).length+'일'+(g.rows>Object.keys(g.dset).length?' ('+g.rows+'건)':'')));
       tr.appendChild(el('td','num',f(g.ea)));
       tr.appendChild(el('td','num',f(g.kg,1)));
       tb.appendChild(tr);
@@ -219,7 +220,7 @@
     var st2=el('div','stat-grid');
     [['총 EA',f(ea)+' EA'],['총 원육',f(kg,1)+' kg'],
      ['계획일수',Object.keys(st.plans.reduce(function(a,p){a[p.plan_date]=1;return a;},{})).length+'일'],
-     ['적용 수율',(st.yield*100).toFixed(0)+'%']
+     ['적용 수율',(st.yield*100).toFixed(0)+'% (기본값)']
     ].forEach(function(x){
       var s=el('div','stat'); s.appendChild(el('div','k',x[0])); s.appendChild(el('div','v',x[1])); st2.appendChild(s);
     });
@@ -241,14 +242,6 @@
     i.addEventListener('change',function(){ if(i.value){st.ym=i.value;reload();} });
     var n=el('button','fchip','▶'); n.addEventListener('click',function(){shift(1);reload();});
     b.appendChild(p); b.appendChild(i); b.appendChild(n);
-    var y=el('select','search');
-    [40,45,50,55,60].forEach(function(v){
-      var o=el('option',null,'수율 '+v+'%'); o.value=v/100;
-      if(Math.abs(st.yield-v/100)<0.001) o.selected=true;
-      y.appendChild(o);
-    });
-    y.addEventListener('change',function(){ st.yield=parseFloat(y.value); redraw(); });
-    b.appendChild(y);
     return b;
   }
   function redraw(){
