@@ -15,7 +15,7 @@
   var EST_FORCE={'2026-07-02':1,'2026-07-10':1};
   var EST_FROM='2026-06';
 
-  var st={ym:null, items:null, group:'없음',
+  var st={ym:null, items:null, group:'없음', view:'B',
     cols:{'투입/배출':true,'작업인원':false,'작업시간':false,'생산성':false,'수율':false,'사용량':false}};
 
   function el(t,c,x){var n=document.createElement(t);if(c)n.className=c;if(x!=null)n.textContent=x;return n;}
@@ -297,6 +297,17 @@
       g2.appendChild(lb);
     });
     tools.appendChild(g2);
+    var g3=el('div','tgroup');
+    g3.appendChild(el('span','tlab','보기:'));
+    [['A','원본형'],['B','정리형']].forEach(function(v){
+      var lb=el('label','tchk');
+      var rd=el('input'); rd.type='radio'; rd.name='mpview'; rd.checked=(st.view===v[0]);
+      rd.addEventListener('change',function(){ st.view=v[0]; redraw(); });
+      lb.appendChild(rd); lb.appendChild(el('span',null,v[1]));
+      g3.appendChild(lb);
+    });
+    tools.appendChild(g3);
+
     var xls=el('button','fchip','엑셀 다운로드');
     xls.addEventListener('click',function(){ download(s); });
     tools.appendChild(xls);
@@ -304,7 +315,7 @@
 
     var C=colDefs();
     var wrap=el('div','tscroll');
-    var t=el('table','tbl mono-t');
+    var t=el('table','tbl mono-t'+(st.view==='B'?' vB':''));
     var th='<thead><tr><th style="width:52px">생산<br>일수</th><th style="width:64px">생산일자</th>'+
       '<th style="min-width:186px">제품명</th>';
     C.forEach(function(c){ th+='<th class="num" style="width:'+c.w+'px">'+c.label+'</th>'; });
@@ -321,14 +332,17 @@
       s.rows.forEach(function(r){
         var tr=el('tr'), newDay=(r.date!==lastDate);
         if(newDay){ dayNo++; lastDate=r.date; }
+        if(newDay) tr.classList.add('dstart');
+        if(dayNo%2===0) tr.classList.add('dalt');
         tr.appendChild(el('td','cnum', newDay?String(dayNo):''));
         tr.appendChild(el('td','cnum', newDay?r.date.slice(5):''));
-        var c=el('td');
+        var c=el('td','pcell'+(newDay?'':' sub'));
         c.appendChild(el('span','nm',r.product));
         if(r.part) c.appendChild(el('span','badge g-'+r.part,r.part));
         tr.appendChild(c);
+        var KEY={'원육 사용량<br>(KG)':1,'내포장<br>(EA)':1,'완제품 고기<br>중량(KG)':1};
         C.forEach(function(cd){
-          var td=el('td','num');
+          var td=el('td','num'+(KEY[cd.label]?' key':''));
           if(cd.get==='EA'){
             td.appendChild(document.createTextNode(f(r.ea,0)));
             td.appendChild(el('span','src','('+r.eaSrc+')'));
