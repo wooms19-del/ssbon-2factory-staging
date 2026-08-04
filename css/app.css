@@ -299,6 +299,9 @@ body.folded .shell{grid-template-columns:var(--rail-w) 0 1fr}
 .mono-t tbody tr:hover td{background:#E8F2F7}
 .mono-t tbody tr:hover td.est{background:#FBEBB8}
 .mono-t tr.mg td{border-bottom-color:#E4EAEE}
+.mono-t tr.subtot td{background:#EFF4F7;font-weight:700;border-top:1px solid #A9BAC4;
+  border-bottom:2px solid #A9BAC4}
+.mono-t tr.subtot td:first-child{text-align:right;padding-right:10px;color:var(--ink)}
 .mono-t tr.sum td{background:#E5EBEF;font-weight:700;border-top:2px solid #7E939F}
 .mono-t tr.sum2 td{background:#F2F5F7;color:var(--steel)}
 
@@ -469,6 +472,7 @@ body.folded .shell{grid-template-columns:var(--rail-w) 0 1fr}
 .badge.g-홍두께{background:#FAEEDA;color:#854F0B}
 .badge.g-설도{background:#E6F1FB;color:#0C447C}
 .badge.g-우둔{background:#E1F5EE;color:#0F6E56}
+.badge.g-설깃{background:#F3EAF7;color:#5B2C6F}
 .erp{font-size:11.5px;color:var(--steel2);margin-top:2px}
 .cat{font-size:12px;color:var(--steel)}
 .empty{padding:24px;text-align:center;color:var(--steel2)}

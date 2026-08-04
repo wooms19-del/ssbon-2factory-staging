@@ -5,7 +5,7 @@
 (function(){
   window.SSBON = window.SSBON || {};
   var cfg=null;
-  var PARTN={1:'홍두깨',2:'설도',3:'우둔'};
+  var PARTN={1:'홍두깨',2:'설도',3:'우둔',4:'설깃'};
   var st={date:null, items:null};
 
   function el(t,c,x){var n=document.createElement(t);if(c)n.className=c;if(x!=null)n.textContent=x;return n;}

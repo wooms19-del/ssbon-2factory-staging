@@ -8,7 +8,7 @@
 (function(){
   window.SSBON = window.SSBON || {};
   var cfg=null;
-  var PARTN={1:'홍두깨',2:'설도',3:'우둔'};
+  var PARTN={1:'홍두깨',2:'설도',3:'우둔',4:'설깃'};
 
   /* 가안 설정 — 운영과 동일 */
   var EST_YIELD={'코스트코 장조림 170g':{pp:0.9525,ck:0.625,sh:0.5593,final:0.574931}};
@@ -359,32 +359,110 @@
     var tb=el('tbody');
     var rows=s.rows;
     if(st.group!=='없음'){
-      var m={};
-      rows.forEach(function(r){
-        var key=(st.group==='제품별')?r.product:(r.part||'(미정)');
-        var x=m[key]=m[key]||{key:key,rmKg:0,ppKg:0,ckKg:0,shKg:0,ea:0,outerEa:0,meatKg:0,prodKg:0,
-          pouch:0,sauce:0,sub:0,boxes:0,pkManh:0,opManh:0,pkWorkers:0,opWorkers:0,days:{},
-          pp_:{manh:0,workers:0},ck_:{manh:0,workers:0},sh_:{manh:0,workers:0},_first:true,eaSrc:''};
-        ['rmKg','ppKg','ckKg','shKg','ea','outerEa','meatKg','prodKg','pouch','sauce','sub','boxes','pkManh','opManh']
-          .forEach(function(f2){ x[f2]+=r[f2]||0; });
-        ['pp_','ck_','sh_'].forEach(function(f2){
-          x[f2].manh+=((r[f2]||{}).manh)||0;
-          x[f2].workers=Math.max(x[f2].workers,((r[f2]||{}).workers)||0);
+      if(st.group==='제품별'){
+        /* 본서버와 동일: 같은 그룹 안에서는 완제품 고기중량 비율로 원육·공정을 나눈다.
+           날짜별 행을 그대로 보여주고 제품마다 소계를 단다. */
+        var gsum={};
+        s.rows.forEach(function(r){ if(r._g) gsum[r._g]=(gsum[r._g]||0)+r.meatKg; });
+        var split=s.rows.map(function(r){
+          var tot=gsum[r._g]||r.meatKg;
+          var n2=0; s.rows.forEach(function(x){ if(x._g===r._g) n2++; });
+          var ratio = tot>0 ? r.meatKg/tot : (n2?1/n2:1);
+          var src=null; s.rows.forEach(function(x){ if(x._g===r._g && x._first) src=x; });
+          src=src||r;
+          return {date:r.date, product:r.product, part:r.part, ea:r.ea, eaSrc:r.eaSrc,
+            outerEa:r.outerEa, meatKg:r.meatKg, prodKg:r.prodKg,
+            pouch:r.pouch, sauce:r.sauce, sub:r.sub, boxes:r.boxes,
+            pkWorkers:r.pkWorkers, pkManh:r.pkManh, pkFrom:r.pkFrom, pkTo:r.pkTo,
+            opWorkers:r.opWorkers, opManh:r.opManh, opFrom:r.opFrom, opTo:r.opTo,
+            rmKg:(src.rmKg||0)*ratio, ppKg:(src.ppKg||0)*ratio,
+            ckKg:(src.ckKg||0)*ratio, shKg:(src.shKg||0)*ratio,
+            pp_:{manh:((src.pp_||{}).manh||0)*ratio, workers:(src.pp_||{}).workers,
+                 from:(src.pp_||{}).from, to:(src.pp_||{}).to},
+            ck_:{manh:((src.ck_||{}).manh||0)*ratio, workers:(src.ck_||{}).workers,
+                 from:(src.ck_||{}).from, to:(src.ck_||{}).to},
+            sh_:{manh:((src.sh_||{}).manh||0)*ratio, workers:(src.sh_||{}).workers,
+                 from:(src.sh_||{}).from, to:(src.sh_||{}).to},
+            est:src.est, _first:true};
         });
-        x.days[r.date]=1; x._grpMeat=x.meatKg;
-      });
-      Object.keys(m).sort(function(a,b){return m[b].meatKg-m[a].meatKg;}).forEach(function(key){
-        var x=m[key], tr=el('tr','dstart');
-        tr.appendChild(el('td','cnum',String(Object.keys(x.days).length)));
-        tr.appendChild(el('td','cnum','일'));
-        var c=el('td','pcell'); c.appendChild(el('span','nm',x.key)); tr.appendChild(c);
-        C.forEach(function(cd){
-          var td=el('td','num'+(cd.key?' key':''));
-          td.textContent=(cd.get==='EA')?f(x.ea,0):cd.get(x);
-          tr.appendChild(td);
+        split.forEach(function(r){ r._grpMeat=r.meatKg; });
+        var byProd={};
+        split.forEach(function(r){ (byProd[r.product]=byProd[r.product]||[]).push(r); });
+        var order=Object.keys(byProd).sort(function(a,b){
+          return byProd[b].reduce(function(t,x){return t+x.meatKg;},0)
+               - byProd[a].reduce(function(t,x){return t+x.meatKg;},0); });
+        order.forEach(function(pn2){
+          var list=byProd[pn2].sort(function(a,b){return a.date<b.date?-1:1;});
+          var dayNo2=0;
+          list.forEach(function(r,i){
+            var tr=el('tr'); if(i===0) tr.classList.add('dstart');
+            dayNo2++;
+            tr.appendChild(el('td','cnum',String(dayNo2)));
+            tr.appendChild(el('td','cnum',r.date.slice(5)));
+            var c=el('td','pcell');
+            c.appendChild(el('span','nm',r.product));
+            if(r.part) c.appendChild(el('span','badge g-'+r.part,r.part));
+            tr.appendChild(c);
+            C.forEach(function(cd){
+              var td=el('td','num'+(cd.key?' key':''));
+              if(cd.get==='EA'){
+                td.appendChild(document.createTextNode(f(r.ea,0)));
+                td.appendChild(el('span','src','('+r.eaSrc+')'));
+              } else td.textContent=cd.get(r);
+              if(r.est && cd.sec==='원육 / 공통공정 (KG)') td.classList.add('est');
+              tr.appendChild(td);
+            });
+            tb.appendChild(tr);
+          });
+          /* 소계 */
+          var sub={_first:true,eaSrc:''};
+          ['rmKg','ppKg','ckKg','shKg','ea','outerEa','meatKg','prodKg','pouch','sauce','sub','boxes','pkManh','opManh']
+            .forEach(function(f2){ sub[f2]=list.reduce(function(t,x){return t+(x[f2]||0);},0); });
+          sub.pp_={manh:list.reduce(function(t,x){return t+((x.pp_||{}).manh||0);},0)};
+          sub.ck_={manh:list.reduce(function(t,x){return t+((x.ck_||{}).manh||0);},0)};
+          sub.sh_={manh:list.reduce(function(t,x){return t+((x.sh_||{}).manh||0);},0)};
+          sub._grpMeat=sub.meatKg;
+          var str=el('tr','subtot');
+          var c0=el('td','cnum',pn2+' 소계 ('+list.length+'일)'); c0.colSpan=3; tr=null;
+          str.appendChild(c0);
+          C.forEach(function(cd){
+            var td=el('td','num'+(cd.key?' key':''));
+            td.textContent=(cd.get==='EA')?f(sub.ea,0):cd.get(sub);
+            str.appendChild(td);
+          });
+          tb.appendChild(str);
         });
-        tb.appendChild(tr);
-      });
+      } else {
+        /* 원육별: 부위 단위 집계 */
+        var m={};
+        s.rows.forEach(function(r){
+          var key=r.part||'(미정)';
+          var x=m[key]=m[key]||{key:key,rmKg:0,ppKg:0,ckKg:0,shKg:0,ea:0,outerEa:0,meatKg:0,prodKg:0,
+            pouch:0,sauce:0,sub:0,boxes:0,pkManh:0,opManh:0,pkWorkers:0,opWorkers:0,days:{},
+            pp_:{manh:0,workers:0},ck_:{manh:0,workers:0},sh_:{manh:0,workers:0},_first:true,eaSrc:''};
+          ['rmKg','ppKg','ckKg','shKg','ea','outerEa','meatKg','prodKg','pouch','sauce','sub','boxes','pkManh','opManh']
+            .forEach(function(f2){ x[f2]+=r[f2]||0; });
+          ['pp_','ck_','sh_'].forEach(function(f2){
+            x[f2].manh+=((r[f2]||{}).manh)||0;
+            x[f2].workers=Math.max(x[f2].workers,((r[f2]||{}).workers)||0);
+          });
+          x.days[r.date]=1; x._grpMeat=x.meatKg;
+        });
+        Object.keys(m).sort(function(a,b){return m[b].meatKg-m[a].meatKg;}).forEach(function(key){
+          var x=m[key], tr=el('tr','dstart');
+          tr.appendChild(el('td','cnum',String(Object.keys(x.days).length)+'일'));
+          tr.appendChild(el('td','cnum','—'));
+          var c=el('td','pcell');
+          c.appendChild(el('span','nm',x.key));
+          tr.appendChild(c);
+          C.forEach(function(cd){
+            var td=el('td','num'+(cd.key?' key':''));
+            td.textContent=(cd.get==='EA')?f(x.ea,0):cd.get(x);
+            tr.appendChild(td);
+          });
+          tb.appendChild(tr);
+        });
+      }
     } else {
       /* 병합 단위 = 그룹키(날짜|부위, 가안 제품은 분리). 본서버 규칙과 동일.
          페이지 단위는 생산일 기준. */
