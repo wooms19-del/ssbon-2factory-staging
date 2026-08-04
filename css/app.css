@@ -276,7 +276,9 @@ body.folded .shell{grid-template-columns:var(--rail-w) 0 1fr}
   padding:5px 4px;line-height:1.3;text-align:right;white-space:normal;word-break:keep-all;
   vertical-align:bottom}
 .mono-t thead tr:nth-child(1) th{text-align:center;vertical-align:middle}
-.mono-t thead th:nth-child(1),.mono-t thead th:nth-child(2){text-align:center}
+.mono-t thead th.num{text-align:right}
+.mono-t thead tr:nth-child(1) th:nth-child(1),
+.mono-t thead tr:nth-child(1) th:nth-child(2){text-align:center}
 .mono-t thead tr:nth-child(1) th:nth-child(3){text-align:left}
 .mono-t th.sec{background:#E1E9EE;font-size:11.5px;font-weight:700;letter-spacing:-.01em}
 .mono-t th.keyh{background:#DEEBF2}

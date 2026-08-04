@@ -349,7 +349,7 @@
       var th=el('th','sec',x.name); th.colSpan=x.n; tr1.appendChild(th);
     });
     C.forEach(function(c){
-      var th=el('th'); th.innerHTML=c.label; th.style.width=c.w+'px';
+      var th=el('th','num'); th.innerHTML=c.label; th.style.width=c.w+'px';
       if(c.key) th.classList.add('keyh');
       tr2.appendChild(th);
     });
