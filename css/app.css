@@ -206,6 +206,19 @@ body.folded .shell{grid-template-columns:var(--rail-w) 0 1fr}
 .calc-i b{font-family:var(--mono);font-size:16px;font-weight:700;letter-spacing:-.02em}
 .calc-l{font-size:11px;color:var(--steel2)}
 
+/* 월단위 표 */
+.tscroll{overflow-x:auto;margin:0 -1px}
+.mono-t th{white-space:nowrap;line-height:1.35;vertical-align:bottom}
+.mono-t td.cnum{font-family:var(--mono);font-size:12px;color:var(--steel);text-align:center;white-space:nowrap}
+.mono-t td.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.mono-t td.est{background:#FEF3C7}
+.mono-t .src{font-size:10.5px;color:var(--steel2);margin-left:2px}
+.mono-t tr.sum td{background:#F2F5F7;font-weight:600;border-top:1px solid var(--line)}
+.mono-t tr.sum2 td{background:#FAFBFC;color:var(--steel)}
+.est-note{margin-top:8px;font-size:11.5px;color:#8A6414}
+.est-note::before{content:"";display:inline-block;width:9px;height:9px;background:#FEF3C7;
+  border:1px solid #E3C77A;margin-right:5px;vertical-align:baseline}
+
 /* 필터칩 */
 .chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
 .fchip{height:32px;padding:0 12px;border:1px solid var(--line);border-radius:999px;
