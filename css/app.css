@@ -275,6 +275,7 @@ body.folded .shell{grid-template-columns:var(--rail-w) 0 1fr}
 .mono-t th{background:#EEF3F6;font-size:11px;font-weight:600;color:var(--ink-2);
   padding:5px 4px;line-height:1.3;text-align:center;white-space:normal;word-break:keep-all;
   vertical-align:middle}
+.mono-t th.num,.mono-t thead th.num{text-align:center}
 .mono-t thead tr:nth-child(1) th:nth-child(3){text-align:left}
 .mono-t th.sec{background:#E1E9EE;font-size:11.5px;font-weight:700;letter-spacing:-.01em}
 .mono-t th.keyh{background:#DEEBF2}
