@@ -175,6 +175,31 @@ body.folded .shell{grid-template-columns:var(--rail-w) 0 1fr}
 .t-amber{background:#C9761F} .t-purple{background:#6B4E9B}
 .tl-info{grid-column:2;font-family:var(--mono);font-size:11px;color:var(--steel);margin:0 0 8px}
 
+
+/* 계획 캘린더 */
+.cal{width:100%;border-collapse:collapse;table-layout:fixed}
+.cal th{background:#F7F9FA;font-size:11.5px;font-weight:600;color:var(--steel);
+  padding:6px 4px;border:1px solid var(--line)}
+.cal th.sun{color:#B4342C} .cal th.sat{color:#2563A8}
+.cal td{border:1px solid var(--line);vertical-align:top;height:96px;padding:4px;position:relative}
+.cal td.off{background:#FAFBFC}
+.day-n{font-family:var(--mono);font-size:11.5px;font-weight:600;color:var(--steel);text-align:right}
+.day-n.sun{color:#B4342C} .day-n.sat{color:#2563A8}
+.plan{background:#F4F8FA;border:1px solid #DCE8EE;border-left:3px solid var(--sig);
+  border-radius:5px;padding:4px 6px;margin-top:3px;cursor:pointer;font-size:11px;line-height:1.45}
+.plan:hover{background:#E9F2F7}
+.plan-p{font-weight:700;color:var(--ink)}
+.plan-kg{font-family:var(--mono);color:#B4342C}
+.plan-ea{font-family:var(--mono);color:var(--ink-2)}
+.plan-pk{font-family:var(--mono);color:var(--steel2)}
+.day-add{position:absolute;right:4px;bottom:4px;width:20px;height:20px;line-height:1;
+  border:1px solid var(--line);border-radius:5px;background:var(--sf);color:var(--steel2);
+  cursor:pointer;opacity:0;font-size:13px}
+.cal td.day:hover .day-add{opacity:1}
+.day-add:hover{border-color:var(--sig);color:var(--sig)}
+.frow{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:8px}
+.frow .search{min-width:150px}
+
 /* 필터칩 */
 .chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
 .fchip{height:32px;padding:0 12px;border:1px solid var(--line);border-radius:999px;
