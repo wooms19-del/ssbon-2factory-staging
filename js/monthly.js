@@ -331,7 +331,7 @@
     s.rows.forEach(function(r){ r._grpMeat=gm[r._g]||r.meatKg; });
 
     var C=colDefs();
-    var wrap=el('div','tscroll');
+    var wrap=el('div','tscroll frozen');
     var t=el('table','tbl mono-t');
 
     /* 2단 헤더 */
@@ -398,10 +398,7 @@
         if(!grp){ grp={key:gk, part:r.part, list:[]}; day.groups.push(grp); }
         grp.list.push(r); day.n++;
       });
-      var per=st.per, page=st.page, tot=Math.ceil(byDate.length/per)||1;
-      if(page>tot){ page=tot; st.page=tot; }
-      var slice=byDate.slice((page-1)*per, page*per);
-      var no=(page-1)*per;
+      var slice=byDate, no=0;
       slice.forEach(function(d){
         no++;
         var first=true;
@@ -441,7 +438,7 @@
           });
         });
       });
-      k._pages={tot:tot, page:page, all:byDate.length};
+      k._rows=byDate.length;
     }
 
     /* 합계 */
@@ -467,28 +464,11 @@
     tb.appendChild(footRow('일 평 균',agg(s,n),'sum2'));
     t.appendChild(tb); wrap.appendChild(t); k.appendChild(wrap);
 
-    /* 페이지 */
-    if(k._pages && k._pages.tot>1){
-      var pg=el('div','mp-page');
-      pg.appendChild(el('span','erp','생산일 '+k._pages.all+'일 중 '+k._pages.page+' / '+k._pages.tot+' 쪽'));
-      var nav=el('div','pg-nav');
-      function btn(lab,to,dis,on){
-        var b=el('button','pgb'+(on?' on':''),lab);
-        if(dis) b.disabled=true;
-        else b.addEventListener('click',function(){ st.page=to; redraw(); });
-        return b;
-      }
-      nav.appendChild(btn('‹',k._pages.page-1,k._pages.page<=1));
-      for(var i=1;i<=k._pages.tot;i++) nav.appendChild(btn(String(i),i,false,i===k._pages.page));
-      nav.appendChild(btn('›',k._pages.page+1,k._pages.page>=k._pages.tot));
-      pg.appendChild(nav);
-      var sel=el('select','search');
-      [5,10,20,50].forEach(function(v){
-        var o=el('option',null,v+'일씩'); o.value=v; if(st.per===v) o.selected=true; sel.appendChild(o);
-      });
-      sel.addEventListener('change',function(){ st.per=parseInt(sel.value,10); st.page=1; redraw(); });
-      pg.appendChild(sel);
-      k.appendChild(pg);
+    if(k._rows){
+      var info=el('div','mp-foot');
+      info.appendChild(el('span','erp','생산일 '+k._rows+'일 · 총 '+s.rows.length+'건'));
+      info.appendChild(el('span','erp','헤더와 왼쪽 3열은 스크롤해도 고정됩니다.'));
+      k.appendChild(info);
     }
     if(s.rows.some(function(r){return r.est;}))
       k.appendChild(el('div','est-note','노란 칸은 가안입니다. 방혈·공정 기록이 없어 6월 코스트코 평균수율로 역산한 값입니다.'));
