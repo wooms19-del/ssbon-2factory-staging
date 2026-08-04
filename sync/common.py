@@ -169,6 +169,6 @@ def wagons(s):
     return [x.strip() for x in str(s or "").replace("，", ",").split(",") if x.strip()]
 
 
-PART = {"홍두깨": 1, "설도": 2, "우둔": 3}
-PARTN = {1: "홍두깨", 2: "설도", 3: "우둔"}
+PART = {"홍두깨": 1, "설도": 2, "우둔": 3, "설깃": 4}
+PARTN = {1: "홍두깨", 2: "설도", 3: "우둔", 4: "설깃"}
 ORIGIN = {"호주": 1, "뉴질랜드": 2}
