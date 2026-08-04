@@ -1,0 +1,39 @@
+name: 실적 동기화
+
+# 매일 한국시간 새벽 2시 (UTC 17:00) 자동 실행.
+# Actions 탭에서 수동 실행도 가능하며, 이때 기간을 지정할 수 있다.
+on:
+  schedule:
+    - cron: '0 17 * * *'
+  workflow_dispatch:
+    inputs:
+      days:
+        description: '동기화할 기간(일). all 을 넣으면 전체'
+        required: false
+        default: '30'
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 동기화 실행
+        env:
+          FIREBASE_API_KEY: ${{ secrets.FIREBASE_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          ARG="--days 30"
+          if [ "${{ github.event.inputs.days }}" = "all" ]; then
+            ARG="--all"
+          elif [ -n "${{ github.event.inputs.days }}" ]; then
+            ARG="--days ${{ github.event.inputs.days }}"
+          fi
+          echo "실행: python sync/run.py $ARG"
+          python sync/run.py $ARG
