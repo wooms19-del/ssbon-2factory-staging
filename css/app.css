@@ -326,6 +326,17 @@ body.folded .shell{grid-template-columns:var(--rail-w) 0 1fr}
 .g-reflab.r-hi{fill:#15803D} .g-reflab.r-lo{fill:#DC2626}
 .g-reflab.r-avg{fill:#7C3AED} .g-reflab.r-pavg{fill:#9CA3AF}
 .g-line{fill:none;stroke:#7E8C97;stroke-width:1.8;stroke-linejoin:round;stroke-linecap:round}
+/* 막대 */
+.bar{stroke:none}
+.bar.b-now{fill:#2E7D9A}
+.bar.b-prev{fill:#C6D3DA}
+.bar-v{font-family:var(--mono);font-size:11px;font-weight:700;text-anchor:middle}
+.bar-v.b-now{fill:#0F6E8C} .bar-v.b-prev{fill:#8B9BA6;font-weight:600}
+.bar-d{font-family:var(--mono);font-size:11px;font-weight:700;text-anchor:middle}
+.bar-d.up{fill:#15803D} .bar-d.dn{fill:#DC2626}
+.g-axis{stroke:#B4C1CA;stroke-width:1.2}
+.lgd-b{width:12px;height:12px;border-radius:2px;flex:none}
+.lgd-b.b-now{background:#2E7D9A} .lgd-b.b-prev{background:#C6D3DA}
 .g-pline{fill:none;stroke:#9CA3AF;stroke-width:1.6;stroke-dasharray:5 4;
   stroke-linejoin:round;stroke-linecap:round}
 .g-pdot{fill:#fff;stroke:#9CA3AF;stroke-width:1.6}
