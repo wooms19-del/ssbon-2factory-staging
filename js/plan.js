@@ -26,22 +26,15 @@
   function lastDay(ym){return new Date(+ym.slice(0,4),+ym.slice(5,7),0).getDate();}
   function ymd(ym,d){return ym+'-'+String(d).padStart(2,'0');}
 
-  /* ── 환산 ── */
-  function conv(g, src, val){
-    var out={ea:null,kg:null,pk:null};
-    var gw=g.unit_weight_g, pk=g.ea_per_pack;
-    val=parseFloat(val);
-    if(!val||val<=0) return out;
-    if(src==='ea') out.ea=Math.round(val);
-    else if(src==='kg') out.ea = gw? Math.round(val*st.yield*1000/gw) : null;
-    else if(src==='pk') out.ea = pk? Math.round(val*pk) : null;
-    if(out.ea!=null){
-      out.kg = gw? Math.round(out.ea*gw/1000/st.yield*100)/100 : null;
-      out.pk = pk? Math.round(out.ea/pk) : null;
-    }
-    if(src==='kg') out.kg=Math.round(val*100)/100;
-    if(src==='pk') out.pk=Math.round(val);
-    return out;
+  /* ── 환산 (EA 기준) ── */
+  function calc(g, ea){
+    ea=parseInt(ea,10);
+    if(!ea||ea<=0) return {ea:null,kg:null,pk:null};
+    return {
+      ea: ea,
+      kg: g.unit_weight_g ? Math.round(ea*g.unit_weight_g/1000/st.yield*100)/100 : null,
+      pk: g.ea_per_pack ? Math.ceil(ea/g.ea_per_pack) : null
+    };
   }
 
   function load(){
@@ -115,7 +108,7 @@
     if(!e) return null;
     var k=el('div','card'); k.style.marginBottom='14px';
     k.appendChild(el('h2',null, e.plan?'계획 수정':'계획 추가'));
-    k.appendChild(el('p','sub-t', e.date+' · ea·kg·pk 중 아무 칸에나 넣으면 나머지가 채워집니다. 수율 '+(st.yield*100).toFixed(0)+'% 기준입니다.'));
+    k.appendChild(el('p','sub-t', e.date+' · 생산 수량(EA)을 넣으면 원육 필요량과 팩 수가 계산됩니다.'));
 
     var r1=el('div','frow');
     var sel=el('select','search');
@@ -134,42 +127,44 @@
     r1.appendChild(sel); r1.appendChild(psel); k.appendChild(r1);
 
     var r2=el('div','frow');
-    function num(ph,val){
-      var i=el('input','search'); i.type='number'; i.min='0'; i.placeholder=ph;
-      if(val!=null) i.value=val;
-      i.style.minWidth='120px';
-      return i;
-    }
-    var iea=num('EA', e.plan&&e.plan.plan_ea);
-    var ikg=num('KG', e.plan&&e.plan.plan_kg);
-    var ipk=num('PK', e.plan&&e.plan.plan_pk);
-    var hint=el('span','erp');
-    function sync(src,inp){
-      var g=st.items[sel.value]||{};
-      var o=conv(g,src,inp.value);
-      if(src!=='ea') iea.value=o.ea==null?'':o.ea;
-      if(src!=='kg') ikg.value=o.kg==null?'':o.kg;
-      if(src!=='pk') ipk.value=o.pk==null?'':o.pk;
-      hint.textContent = g.unit_weight_g
-        ? '개당 원육 '+g.unit_weight_g+'g'+(g.ea_per_pack?' · '+g.ea_per_pack+'입/팩':' · 팩 기준 없음')
-        : '개당 원육 기준이 없어 kg 환산이 안 됩니다.';
-    }
-    iea.addEventListener('input',function(){sync('ea',iea);});
-    ikg.addEventListener('input',function(){sync('kg',ikg);});
-    ipk.addEventListener('input',function(){sync('pk',ipk);});
-    sel.addEventListener('change',function(){ if(iea.value) sync('ea',iea); else sync('ea',{value:''}); });
-    r2.appendChild(iea); r2.appendChild(ikg); r2.appendChild(ipk); r2.appendChild(hint);
+    var iea=el('input','search'); iea.type='number'; iea.min='0'; iea.placeholder='생산 수량 (EA)';
+    iea.style.minWidth='170px';
+    if(e.plan&&e.plan.plan_ea!=null) iea.value=e.plan.plan_ea;
+    r2.appendChild(iea);
+    var out=el('div','calc-out');
+    r2.appendChild(out);
     k.appendChild(r2);
-    sync('ea',iea);
+
+    var cur={ea:null,kg:null,pk:null};
+    function sync(){
+      var g=st.items[sel.value]||{};
+      cur=calc(g, iea.value);
+      out.innerHTML='';
+      if(cur.ea==null){ out.appendChild(el('span','erp','수량을 넣으면 원육과 팩 수가 나옵니다.')); return; }
+      var a=el('span','calc-i');
+      a.appendChild(el('b',null, cur.kg==null?'—':f(cur.kg,1)+' kg'));
+      a.appendChild(el('span','calc-l','원육 필요량'));
+      out.appendChild(a);
+      if(cur.pk!=null){
+        var b=el('span','calc-i');
+        b.appendChild(el('b',null, f(cur.pk)+' pk'));
+        b.appendChild(el('span','calc-l', g.ea_per_pack+'입 기준'));
+        out.appendChild(b);
+      }
+      var c=el('span','calc-i');
+      c.appendChild(el('span','erp','개당 원육 '+(g.unit_weight_g||'?')+'g · 수율 '+(st.yield*100).toFixed(0)+'%'));
+      out.appendChild(c);
+    }
+    iea.addEventListener('input',sync);
+    sel.addEventListener('change',sync);
+    sync();
 
     var r3=el('div','frow');
     var save=el('button','fchip on', e.plan?'수정':'추가');
     save.addEventListener('click',function(){
       var body={plan_date:e.date, product_group:sel.value,
         part_id: psel.value?parseInt(psel.value,10):null,
-        plan_ea: iea.value?parseInt(iea.value,10):null,
-        plan_kg: ikg.value?parseFloat(ikg.value):null,
-        plan_pk: ipk.value?parseInt(ipk.value,10):null,
+        plan_ea: cur.ea, plan_kg: cur.kg, plan_pk: cur.pk,
         updated_at: new Date().toISOString()};
       save.disabled=true; save.textContent='저장 중…';
       api('production_plan?on_conflict=plan_date,product_group',
