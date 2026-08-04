@@ -157,7 +157,7 @@
       ckKg:rows.reduce(function(s,r){return s+(r.ckKg||0);},0),
       shKg:rows.reduce(function(s,r){return s+(r.shKg||0);},0),
       ea:rows.reduce(function(s,r){return s+r.ea;},0),
-      innerEa:rows.reduce(function(s,r){return s+r.innerEa;},0),
+      innerEa:rows.reduce(function(s,r){return s+r.ea;},0),
       outerEa:rows.reduce(function(s,r){return s+r.outerEa;},0),
       meatKg:rows.reduce(function(s,r){return s+r.meatKg;},0),
       prodKg:rows.reduce(function(s,r){return s+r.prodKg;},0),
@@ -206,8 +206,9 @@
           tr.appendChild(td);
         });
         var ci=el('td','num');
-        ci.appendChild(document.createTextNode(f(r.innerEa||r.ea,0)));
-        if(r.eaSrc) ci.appendChild(el('span','src','('+r.eaSrc+')'));
+        ci.appendChild(document.createTextNode(f(r.ea,0)));
+        ci.appendChild(el('span','src','('+r.eaSrc+')'));
+        if(r.eaSrc==='외') ci.title='외포장 완료 — 확정 수량입니다.';
         tr.appendChild(ci);
         tr.appendChild(el('td','num', f(r.outerEa,0)));
         tr.appendChild(el('td','num', f(r.meatKg,2)));
@@ -220,7 +221,7 @@
         var key = st.group==='제품별' ? r.product : (r.part||'(미정)');
         var x=m[key]=m[key]||{key:key,rm:0,pp:0,ck:0,sh:0,inner:0,outer:0,meat:0,prod:0,days:{}};
         x.rm+=r.rmKg||0; x.pp+=r.ppKg||0; x.ck+=r.ckKg||0; x.sh+=r.shKg||0;
-        x.inner+=r.innerEa; x.outer+=r.outerEa; x.meat+=r.meatKg; x.prod+=r.prodKg;
+        x.inner+=r.ea; x.outer+=r.outerEa; x.meat+=r.meatKg; x.prod+=r.prodKg;
         x.days[r.date]=1;
       });
       Object.keys(m).sort(function(a,b){return m[b].meat-m[a].meat;}).forEach(function(key){

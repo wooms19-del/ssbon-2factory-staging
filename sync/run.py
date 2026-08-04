@@ -27,6 +27,17 @@ else:
 
 print(f"[동기화 시작] 범위: {SINCE or '전체'}", flush=True)
 
+# 기존 웹 제품명 -> 품목 마스터 제품군 (이름이 다른 것만)
+ALIAS = {
+    "미니쇠고기 장조림 70g 맥스용": "미니쇠고기 장조림 70g 맥스용(5입)",
+}
+
+
+def pg_of(name):
+    """기존 웹 제품명을 품목 마스터의 제품군 이름으로 바꾼다."""
+    return ALIAS.get(name, name)
+
+
 # 강제 지정 (관리자 확인분)
 FORCE_PART = {
     ("2026-06-17", "코스트코 장조림 170g"): "설도",
@@ -259,7 +270,7 @@ UNRESOLVED = []
 
 def part_kg(o):
     """부위별 투입 kg. 근거: typeKgs > wagonDist×와곤부위 > 단일판정."""
-    d, prod = dt(o.get("date")), o.get("product") or ""
+    d, prod = dt(o.get("date")), pg_of(o.get("product") or "")
     tk = {k: float(v) for k, v in (o.get("typeKgs") or {}).items()
           if k in PART and float(v or 0) > 0}
     if tk:
@@ -355,7 +366,7 @@ for o in pk:
     pid = pkmap.get(o["_id"])
     if not pid:
         continue
-    d, prod = dt(o.get("date")), o.get("product") or ""
+    d, prod = dt(o.get("date")), pg_of(o.get("product") or "")
     if not prod:
         continue
     if prod in IM_NOMEAT and prod not in AVAIL:
@@ -449,7 +460,7 @@ for coll, table, key, ptab, eaf, docs in [
         if not ent:
             continue
         oid, d = ent
-        prod = o.get("product") or ""
+        prod = pg_of(o.get("product") or "")
         if not prod:
             continue
         if prod in IM_NOMEAT and prod not in AVAIL:
