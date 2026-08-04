@@ -280,7 +280,7 @@ body.folded .shell{grid-template-columns:var(--rail-w) 0 1fr}
 
 /* 흐름도 */
 .flow{margin:2px 0 18px}
-.flow-r{display:grid;grid-template-columns:74px 1fr 132px 96px;gap:10px;align-items:center;
+.flow-r{display:grid;grid-template-columns:74px 1fr 132px 116px;gap:10px;align-items:center;
   padding:5px 0}
 .flow-n{font-size:12.5px;font-weight:600;color:var(--ink-2);text-align:right}
 .flow-t{height:26px;background:#F1F5F7;border-radius:4px;overflow:hidden}
@@ -291,7 +291,26 @@ body.folded .shell{grid-template-columns:var(--rail-w) 0 1fr}
 .flow-v{display:flex;flex-direction:column;line-height:1.25}
 .flow-v b{font-family:var(--mono);font-size:14px;font-weight:700}
 .flow-y{font-family:var(--mono);font-size:11px;color:var(--steel)}
-.flow-l{font-family:var(--mono);font-size:11.5px;color:#B4342C;text-align:right}
+.flow-l{text-align:right;line-height:1.3}
+.flow-loss{font-family:var(--mono);font-size:11.5px;color:#B4342C}
+.flow-diff{font-family:var(--mono);font-size:10.5px;color:var(--steel2)}
+.flow-diff.up{color:#1F8A4C} .flow-diff.dn{color:#B4342C}
+.flow-t{position:relative}
+.flow-prev{position:absolute;top:-3px;bottom:-3px;width:2px;background:#5A6B79;
+  border-radius:1px;transform:translateX(-1px);z-index:2}
+.flow-prev::after{content:"";position:absolute;top:-3px;left:-2.5px;
+  border-left:3.5px solid transparent;border-right:3.5px solid transparent;
+  border-top:5px solid #5A6B79}
+.flow-lg{display:flex;gap:14px;justify-content:flex-end;margin-bottom:6px;
+  font-size:11px;color:var(--steel)}
+.lg-now::before,.lg-prev::before,.lg-line::before,.lg-avg::before,.lg-pavg::before{
+  content:"";display:inline-block;margin-right:5px;vertical-align:middle}
+.lg-now::before{width:14px;height:9px;background:#0F6E8C;border-radius:2px}
+.lg-prev::before{width:2px;height:11px;background:#5A6B79}
+.chart-lg{display:flex;gap:16px;margin-top:6px;font-size:11px;color:var(--steel)}
+.lg-line::before{width:14px;height:2px;background:#0F6E8C}
+.lg-avg::before{width:14px;height:0;border-top:2px dashed #B0BEC6}
+.lg-pavg::before{width:14px;height:0;border-top:2px dashed #C9761F}
 
 /* 추이 그래프 */
 .chart{margin-bottom:16px;padding:12px 14px;border:1px solid var(--line);border-radius:8px;background:#FCFDFE}
@@ -302,6 +321,7 @@ body.folded .shell{grid-template-columns:var(--rail-w) 0 1fr}
 .spark .line{fill:none;stroke:#0F6E8C;stroke-width:.7;vector-effect:non-scaling-stroke;
   stroke-linejoin:round;stroke-linecap:round}
 .spark .avg{stroke:#B0BEC6;stroke-width:.6;stroke-dasharray:2 2;vector-effect:non-scaling-stroke}
+.spark .pavg{stroke:#C9761F;stroke-width:.6;stroke-dasharray:3 2;vector-effect:non-scaling-stroke}
 .spark .dot{fill:#0F6E8C}
 .spark .dot.low{fill:#B4342C;r:1.4}
 .spark .dot.high{fill:#1F8A4C}

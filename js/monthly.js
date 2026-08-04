@@ -522,14 +522,19 @@
     k.appendChild(hd);
 
     /* 1) 단계별 흐름 — 막대 길이가 곧 남은 비율 */
+    function yv(x,key){ return x&&x.rmKg? x[key]/x.rmKg*100 : null; }
     var steps=[
-      {n:'원육 투입', kg:cur.rmKg, y:100},
-      {n:'전처리',   kg:cur.ppKg, y:pc(cur.ppKg,cur.rmKg)},
-      {n:'자숙',     kg:cur.ckKg, y:pc(cur.ckKg,cur.rmKg)},
-      {n:'파쇄',     kg:cur.shKg, y:pc(cur.shKg,cur.rmKg)},
-      {n:'완제품',   kg:cur.meatKg, y:pc(cur.meatKg,cur.rmKg)}
+      {n:'원육 투입', kg:cur.rmKg,   y:100,                  py:100},
+      {n:'전처리',   kg:cur.ppKg,   y:yv(cur,'ppKg'),       py:yv(pSame,'ppKg')},
+      {n:'자숙',     kg:cur.ckKg,   y:yv(cur,'ckKg'),       py:yv(pSame,'ckKg')},
+      {n:'파쇄',     kg:cur.shKg,   y:yv(cur,'shKg'),       py:yv(pSame,'shKg')},
+      {n:'완제품',   kg:cur.meatKg, y:yv(cur,'meatKg'),     py:yv(pSame,'meatKg')}
     ];
     var flow=el('div','flow');
+    var lg=el('div','flow-lg');
+    lg.appendChild(el('span','lg-now','이번달'));
+    lg.appendChild(el('span','lg-prev','전월 동기간'));
+    flow.appendChild(lg);
     steps.forEach(function(st2,i){
       var row=el('div','flow-r');
       row.appendChild(el('div','flow-n',st2.n));
@@ -537,18 +542,30 @@
       var bar=el('div','flow-b'+(i===0?' first':(i===steps.length-1?' last':'')));
       bar.style.width=Math.max(st2.y||0,2)+'%';
       track.appendChild(bar);
+      if(st2.py!=null && i>0){
+        var mk=el('div','flow-prev');
+        mk.style.left=Math.max(st2.py,2)+'%';
+        mk.title='전월 동기간 '+st2.py.toFixed(1)+'%';
+        track.appendChild(mk);
+      }
       row.appendChild(track);
       var v=el('div','flow-v');
       v.appendChild(el('b',null,f(st2.kg,0)+' kg'));
       v.appendChild(el('span','flow-y',st2.y==null?'':st2.y.toFixed(1)+'%'));
       row.appendChild(v);
+      var d=el('div','flow-l');
       if(i>0){
-        var prevKg=steps[i-1].kg, loss=prevKg-st2.kg;
-        var l=el('div','flow-l');
-        if(loss>0) l.textContent='− '+f(loss,0)+' kg';
-        else if(loss<0) l.textContent='+ '+f(-loss,0)+' kg';
-        row.appendChild(l);
-      } else row.appendChild(el('div','flow-l'));
+        var loss=steps[i-1].kg-st2.kg;
+        var ls=el('div','flow-loss', (loss>0?'− ':'+ ')+f(Math.abs(loss),0)+' kg');
+        d.appendChild(ls);
+        if(st2.py!=null && st2.y!=null){
+          var diff=st2.y-st2.py;
+          var dd=el('div','flow-diff'+(Math.abs(diff)<0.05?'':(diff>0?' up':' dn')),
+            '전월 '+(diff>=0?'▲ ':'▼ ')+Math.abs(diff).toFixed(1)+'%p');
+          d.appendChild(dd);
+        }
+      }
+      row.appendChild(d);
       flow.appendChild(row);
     });
     k.appendChild(flow);
@@ -565,7 +582,9 @@
                 .filter(function(x){ return x.v!=null; });
     if(pts.length>1){
       var avg=cur.rmKg? cur.meatKg/cur.rmKg*100 : 0;
+      var pavg=(pSame&&pSame.rmKg)? pSame.meatKg/pSame.rmKg*100 : null;
       var vals=pts.map(function(x){return x.v;});
+      if(pavg!=null) vals=vals.concat([pavg]);
       var lo=Math.min.apply(null,vals), hi=Math.max.apply(null,vals);
       var pad=Math.max((hi-lo)*0.25, 2);
       lo=Math.floor(lo-pad); hi=Math.ceil(hi+pad);
@@ -575,7 +594,14 @@
       var ch=el('div','chart');
       var chd=el('div','chart-hd');
       chd.appendChild(el('b',null,'일별 최종수율'));
-      chd.appendChild(el('span','erp','평균 '+avg.toFixed(1)+'% · 최저 '+Math.min.apply(null,vals).toFixed(1)+'% · 최고 '+Math.max.apply(null,vals).toFixed(1)+'%'));
+      var dvals=pts.map(function(x){return x.v;});
+      chd.appendChild(el('span','erp','평균 '+avg.toFixed(1)+'% · 최저 '+Math.min.apply(null,dvals).toFixed(1)+'% · 최고 '+Math.max.apply(null,dvals).toFixed(1)+'%'));
+      if(pavg!=null){
+        var gap=avg-pavg;
+        var b2=el('span','cmp-n'+(Math.abs(gap)<0.05?'':(gap>0?' up':' dn')),
+          '전월 '+pavg.toFixed(1)+'% → '+(gap>=0?'▲ ':'▼ ')+Math.abs(gap).toFixed(1)+'%p');
+        chd.appendChild(b2);
+      }
       ch.appendChild(chd);
       var svgns='http://www.w3.org/2000/svg';
       var svg=document.createElementNS(svgns,'svg');
@@ -588,6 +614,17 @@
       al.setAttribute('y1',ay); al.setAttribute('y2',ay);
       al.setAttribute('class','avg');
       svg.appendChild(al);
+      if(pavg!=null){
+        var py2=Y(pavg);
+        var pl=document.createElementNS(svgns,'line');
+        pl.setAttribute('x1',0); pl.setAttribute('x2',W);
+        pl.setAttribute('y1',py2); pl.setAttribute('y2',py2);
+        pl.setAttribute('class','pavg');
+        var pt2=document.createElementNS(svgns,'title');
+        pt2.textContent='전월 동기간 평균 '+pavg.toFixed(1)+'%';
+        pl.appendChild(pt2);
+        svg.appendChild(pl);
+      }
       var dstr=pts.map(function(p2,i){ return (i?'L':'M')+X(i).toFixed(2)+' '+Y(p2.v).toFixed(2); }).join(' ');
       var area=document.createElementNS(svgns,'path');
       area.setAttribute('d',dstr+' L'+W+' '+H+' L0 '+H+' Z');
@@ -604,7 +641,11 @@
         ti.textContent=p2.d.slice(5)+' · '+p2.v.toFixed(1)+'%';
         c.appendChild(ti); svg.appendChild(c);
       });
-      ch.appendChild(svg);
+      var leg=el('div','chart-lg');
+      leg.appendChild(el('span','lg-line','이번달 일별'));
+      leg.appendChild(el('span','lg-avg','이번달 평균 '+avg.toFixed(1)+'%'));
+      if(pavg!=null) leg.appendChild(el('span','lg-pavg','전월 평균 '+pavg.toFixed(1)+'%'));
+      ch.appendChild(svg); ch.appendChild(leg);
       var ax=el('div','chart-ax');
       pts.forEach(function(p2,i){
         if(pts.length<=12 || i===0 || i===pts.length-1 || i%Math.ceil(pts.length/8)===0)
