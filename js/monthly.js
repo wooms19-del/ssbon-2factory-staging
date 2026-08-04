@@ -15,7 +15,7 @@
   var EST_FORCE={'2026-07-02':1,'2026-07-10':1};
   var EST_FROM='2026-06';
 
-  var st={ym:null, items:null, group:'없음', page:1, per:10,
+  var st={ym:null, items:null, group:'없음', page:1, per:10, target:55, risk:50,
     cols:{'투입/배출':true,'작업인원':false,'작업시간':false,'생산성':false,'수율':false,'사용량':false}};
 
   function el(t,c,x){var n=document.createElement(t);if(c)n.className=c;if(x!=null)n.textContent=x;return n;}
@@ -603,86 +603,84 @@
     if(pts.length>1){
       var avg=cur.rmKg? cur.meatKg/cur.rmKg*100 : 0;
       var pavg=(pSame&&pSame.rmKg)? pSame.meatKg/pSame.rmKg*100 : null;
-      var vals=pts.map(function(x){return x.v;});
-      if(pavg!=null) vals=vals.concat([pavg]);
-      var lo=Math.min.apply(null,vals), hi=Math.max.apply(null,vals);
-      var pad=Math.max((hi-lo)*0.25, 2);
-      lo=Math.floor(lo-pad); hi=Math.ceil(hi+pad);
-      var W=100, H=42;
-      function X(i){ return pts.length<2?0:(i/(pts.length-1))*W; }
-      function Y(v){ return H-((v-lo)/(hi-lo))*H; }
-      var ch=el('div','chart');
+      var TARGET=st.target, RISK=st.risk;
+      var all=pts.map(function(x){return x.v;}).concat([avg,TARGET,RISK]);
+      if(pavg!=null) all.push(pavg);
+      var lo=Math.floor((Math.min.apply(null,all)-2)/2)*2;
+      var hi=Math.ceil((Math.max.apply(null,all)+2)/2)*2;
+
+      var ch=el('div','chart big');
       var chd=el('div','chart-hd');
       chd.appendChild(el('b',null,'일별 최종수율'));
-      var dvals=pts.map(function(x){return x.v;});
-      chd.appendChild(el('span','erp','평균 '+avg.toFixed(1)+'% · 최저 '+Math.min.apply(null,dvals).toFixed(1)+'% · 최고 '+Math.max.apply(null,dvals).toFixed(1)+'%'));
-      if(pavg!=null){
-        var gap=avg-pavg;
-        var b2=el('span','cmp-n'+(Math.abs(gap)<0.05?'':(gap>0?' up':' dn')),
-          '전월 '+pavg.toFixed(1)+'% → '+(gap>=0?'▲ ':'▼ ')+Math.abs(gap).toFixed(1)+'%p');
-        chd.appendChild(b2);
-      }
+      chd.appendChild(el('span','erp',pts.length+'일 · 평균 '+avg.toFixed(1)+'%'
+        +(pavg!=null?' · 전월 '+pavg.toFixed(1)+'%':'')));
       ch.appendChild(chd);
-      var svgns='http://www.w3.org/2000/svg';
-      var svg=document.createElementNS(svgns,'svg');
-      svg.setAttribute('viewBox','0 0 '+W+' '+H);
-      svg.setAttribute('preserveAspectRatio','none');
-      svg.setAttribute('class','spark');
-      var ay=Y(avg);
-      var al=document.createElementNS(svgns,'line');
-      al.setAttribute('x1',0); al.setAttribute('x2',W);
-      al.setAttribute('y1',ay); al.setAttribute('y2',ay);
-      al.setAttribute('class','avg');
-      svg.appendChild(al);
-      if(pavg!=null){
-        var py2=Y(pavg);
-        var pl=document.createElementNS(svgns,'line');
-        pl.setAttribute('x1',0); pl.setAttribute('x2',W);
-        pl.setAttribute('y1',py2); pl.setAttribute('y2',py2);
-        pl.setAttribute('class','pavg');
-        var pt2=document.createElementNS(svgns,'title');
-        pt2.textContent='전월 동기간 평균 '+pavg.toFixed(1)+'%';
-        pl.appendChild(pt2);
-        svg.appendChild(pl);
-      }
-      var dstr=pts.map(function(p2,i){ return (i?'L':'M')+X(i).toFixed(2)+' '+Y(p2.v).toFixed(2); }).join(' ');
-      var area=document.createElementNS(svgns,'path');
-      area.setAttribute('d',dstr+' L'+W+' '+H+' L0 '+H+' Z');
-      area.setAttribute('class','area');
-      svg.appendChild(area);
-      var line=document.createElementNS(svgns,'path');
-      line.setAttribute('d',dstr); line.setAttribute('class','line');
-      svg.appendChild(line);
-      pts.forEach(function(p2,i){
-        var c=document.createElementNS(svgns,'circle');
-        c.setAttribute('cx',X(i)); c.setAttribute('cy',Y(p2.v)); c.setAttribute('r',0.9);
-        c.setAttribute('class','dot'+(p2.v<avg-3?' low':(p2.v>avg+3?' high':'')));
-        var ti=document.createElementNS(svgns,'title');
-        ti.textContent=p2.d.slice(5)+' · '+p2.v.toFixed(1)+'%';
-        c.appendChild(ti); svg.appendChild(c);
-      });
-      var leg=el('div','chart-lg');
-      leg.appendChild(el('span','lg-line','이번달 일별'));
-      leg.appendChild(el('span','lg-avg','이번달 평균 '+avg.toFixed(1)+'%'));
-      if(pavg!=null) leg.appendChild(el('span','lg-pavg','전월 평균 '+pavg.toFixed(1)+'%'));
-      ch.appendChild(svg); ch.appendChild(leg);
-      var ax=el('div','chart-ax');
-      pts.forEach(function(p2,i){
-        if(pts.length<=12 || i===0 || i===pts.length-1 || i%Math.ceil(pts.length/8)===0)
-          ax.appendChild(el('span',null,p2.d.slice(5)));
-        else ax.appendChild(el('span','',''));
-      });
-      ch.appendChild(ax);
-      /* 눈에 띄는 날 */
-      var low=pts.filter(function(p2){return p2.v<avg-3;}).sort(function(a,b){return a.v-b.v;}).slice(0,3);
-      if(low.length){
-        var w=el('div','chart-note');
-        w.appendChild(el('span','warn','평균보다 낮은 날'));
-        low.forEach(function(p2){
-          w.appendChild(el('span','wpill',p2.d.slice(5)+' '+p2.v.toFixed(1)+'%'));
+
+      var lg=el('div','lgd');
+      [['이번달 수율','d-nm'],['이번달 평균','d-avg'],
+       (pavg!=null?['전월 일평균','d-pavg']:null),
+       ['목표 '+TARGET+'%','d-hi'],['위험 '+RISK+'%','d-lo']]
+        .filter(Boolean).forEach(function(x){
+          var i2=el('span','lgd-i');
+          i2.appendChild(el('span','lgd-m '+x[1]));
+          i2.appendChild(document.createTextNode(x[0]));
+          lg.appendChild(i2);
         });
-        ch.appendChild(w);
+      ch.appendChild(lg);
+
+      /* 좌표계: 실좌표 사용(왜곡 없음) */
+      var PL=46, PR=62, PT2=18, PB2=44;
+      var w=Math.max(pts.length*72+PL+PR, 760), h=300;
+      function X(i){ return PL + (pts.length<2?0:(i/(pts.length-1))*(w-PL-PR)); }
+      function Y(v){ return PT2 + (hi-v)/(hi-lo)*(h-PT2-PB2); }
+      var svg=svgEl('svg',{viewBox:'0 0 '+w+' '+h,'class':'g2'});
+      svg.setAttribute('width',w);
+
+      /* y 격자 + 눈금 */
+      for(var g2=lo; g2<=hi; g2+=2){
+        svg.appendChild(svgEl('line',{x1:PL,x2:w-PR,y1:Y(g2),y2:Y(g2),'class':'g-grid'}));
+        var yl=svgEl('text',{x:PL-8,y:Y(g2)+3.5,'class':'g-ylab'});
+        yl.textContent=g2+'%'; svg.appendChild(yl);
       }
+      /* 기준선 */
+      function refLine(v,cls,lab){
+        if(v==null) return;
+        svg.appendChild(svgEl('line',{x1:PL,x2:w-PR,y1:Y(v),y2:Y(v),'class':'g-ref '+cls}));
+        var t2=svgEl('text',{x:w-PR+6,y:Y(v)+3.5,'class':'g-reflab '+cls});
+        t2.textContent=lab; svg.appendChild(t2);
+      }
+      refLine(TARGET,'r-hi',TARGET+'%');
+      refLine(RISK,'r-lo',RISK+'%');
+      refLine(avg,'r-avg',avg.toFixed(1)+'%');
+      refLine(pavg,'r-pavg',pavg==null?'':pavg.toFixed(1)+'%');
+
+      /* 선 */
+      var d2=pts.map(function(p2,i){ return (i?'L':'M')+X(i).toFixed(1)+' '+Y(p2.v).toFixed(1); }).join(' ');
+      svg.appendChild(svgEl('path',{d:d2,'class':'g-line'}));
+
+      /* 점 + 라벨 */
+      pts.forEach(function(p2,i){
+        var cls = p2.v>=TARGET?'d-hi' : (p2.v<RISK?'d-lo' : (p2.v<avg?'d-mid':'d-nm'));
+        var cx=X(i), cy=Y(p2.v);
+        svg.appendChild(svgEl('circle',{cx:cx,cy:cy,r:6,'class':'g-halo '+cls}));
+        var c=svgEl('circle',{cx:cx,cy:cy,r:4.2,'class':'g-dot '+cls});
+        var ti=svgEl('title'); ti.textContent=p2.d+' · '+p2.v.toFixed(1)+'%';
+        c.appendChild(ti); svg.appendChild(c);
+        var up=(i>0 && pts[i-1].v>p2.v) || i===0;
+        var ly=up? cy+22 : cy-14;
+        var g3=svgEl('g',{'class':'g-lab '+cls});
+        g3.appendChild(svgEl('rect',{x:cx-22,y:ly-11,width:44,height:16,rx:4,'class':'g-labbg'}));
+        var tx=svgEl('text',{x:cx,y:ly+1,'class':'g-labtx'});
+        tx.textContent=p2.v.toFixed(1)+'%';
+        g3.appendChild(tx); svg.appendChild(g3);
+        /* x축 */
+        var x1=svgEl('text',{x:cx,y:h-24,'class':'g-xlab'}); x1.textContent=(i+1)+'일차';
+        svg.appendChild(x1);
+        var x2=svgEl('text',{x:cx,y:h-11,'class':'g-xlab2'}); x2.textContent=p2.d.slice(5);
+        svg.appendChild(x2);
+      });
+      var sc=el('div','gscroll'); sc.appendChild(svg);
+      ch.appendChild(sc);
       k.appendChild(ch);
     }
 
