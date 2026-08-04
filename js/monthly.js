@@ -224,29 +224,29 @@
   function colDefs(){
     var C=[];
     function add(g,label,w,get){ C.push({g:g,label:label,w:w,get:get}); }
-    add(null,'원육 사용량<br>(KG)',104,function(r){return r._first?f(r.rmKg,2):'';});
-    add('투입/배출','전처리<br>(KG)',92,function(r){return r._first?f(r.ppKg,2):'';});
+    add(null,'원육<br>사용량(KG)',86,function(r){return r._first?f(r.rmKg,2):'';});
+    add('투입/배출','전처리<br>(KG)',78,function(r){return r._first?f(r.ppKg,2):'';});
     add('작업인원','전처리<br>작업인원',80,function(r){return r._first?f((r.pp_||{}).workers,1):'';});
     add('작업시간','전처리<br>작업시간',80,function(r){return r._first?hm(span((r.pp_||{}).from,(r.pp_||{}).to)):'';});
     add('작업시간','전처리<br>총작업(인시)',92,function(r){return r._first?f((r.pp_||{}).manh,1):'';});
-    add('투입/배출','자숙<br>(KG)',88,function(r){return r._first?f(r.ckKg,2):'';});
+    add('투입/배출','자숙<br>(KG)',74,function(r){return r._first?f(r.ckKg,2):'';});
     add('작업인원','자숙<br>작업인원',80,function(r){return r._first?f((r.ck_||{}).workers,1):'';});
     add('작업시간','자숙<br>작업시간',80,function(r){return r._first?hm(span((r.ck_||{}).from,(r.ck_||{}).to)):'';});
     add('작업시간','자숙<br>총작업(인시)',92,function(r){return r._first?f((r.ck_||{}).manh,1):'';});
-    add('투입/배출','파쇄<br>(KG)',88,function(r){return r._first?f(r.shKg,2):'';});
+    add('투입/배출','파쇄<br>(KG)',74,function(r){return r._first?f(r.shKg,2):'';});
     add('작업인원','파쇄<br>작업인원',80,function(r){return r._first?f((r.sh_||{}).workers,1):'';});
     add('작업시간','파쇄<br>작업시간',80,function(r){return r._first?hm(span((r.sh_||{}).from,(r.sh_||{}).to)):'';});
     add('작업시간','파쇄<br>총작업(인시)',92,function(r){return r._first?f((r.sh_||{}).manh,1):'';});
-    add(null,'내포장<br>(EA)',96,'EA');
+    add(null,'내포장<br>(EA)',86,'EA');
     add('작업인원','내포장<br>작업인원',80,function(r){return f(r.pkWorkers,1);});
     add('작업시간','내포장<br>작업시간',80,function(r){return hm(span(r.pkFrom,r.pkTo));});
     add('작업시간','내포장<br>총작업(인시)',92,function(r){return f(r.pkManh,1);});
-    add(null,'외포장<br>(EA)',92,function(r){return f(r.outerEa,0);});
+    add(null,'외포장<br>(EA)',80,function(r){return f(r.outerEa,0);});
     add('작업인원','외포장<br>작업인원(평균)',96,function(r){return f(r.opWorkers,1);});
     add('작업시간','외포장<br>작업시간',80,function(r){return hm(span(r.opFrom,r.opTo));});
     add('작업시간','외포장<br>총작업(인시)',92,function(r){return f(r.opManh,1);});
-    add(null,'완제품 고기<br>중량(KG)',106,function(r){return f(r.meatKg,2);});
-    add(null,'완제품 중량<br>(KG)',100,function(r){return f(r.prodKg,2);});
+    add(null,'완제품고기<br>중량(KG)',88,function(r){return f(r.meatKg,2);});
+    add(null,'완제품<br>중량(KG)',84,function(r){return f(r.prodKg,2);});
     add('생산성','생산성<br>전처리',82,function(r){return r._first?f(div(r.ppKg,(r.pp_||{}).manh),2):'';});
     add('생산성','생산성<br>자숙',78,function(r){return r._first?f(div(r.ckKg,(r.ck_||{}).manh),2):'';});
     add('생산성','생산성<br>파쇄',78,function(r){return r._first?f(div(r.shKg,(r.sh_||{}).manh),2):'';});
@@ -316,8 +316,8 @@
     var C=colDefs();
     var wrap=el('div','tscroll');
     var t=el('table','tbl mono-t'+(st.view==='B'?' vB':''));
-    var th='<thead><tr><th style="width:52px">생산<br>일수</th><th style="width:64px">생산일자</th>'+
-      '<th style="min-width:186px">제품명</th>';
+    var th='<thead><tr><th style="width:34px">일<br>수</th><th style="width:50px">일자</th>'+
+      '<th style="width:180px">제품명</th>';
     C.forEach(function(c){ th+='<th class="num" style="width:'+c.w+'px">'+c.label+'</th>'; });
     t.innerHTML=th+'</tr></thead>';
     var tb=el('tbody');
@@ -340,14 +340,14 @@
         c.appendChild(el('span','nm',r.product));
         if(r.part) c.appendChild(el('span','badge g-'+r.part,r.part));
         tr.appendChild(c);
-        var KEY={'원육 사용량<br>(KG)':1,'내포장<br>(EA)':1,'완제품 고기<br>중량(KG)':1};
+        var KEY={'원육<br>사용량(KG)':1,'내포장<br>(EA)':1,'완제품고기<br>중량(KG)':1};
         C.forEach(function(cd){
           var td=el('td','num'+(KEY[cd.label]?' key':''));
           if(cd.get==='EA'){
             td.appendChild(document.createTextNode(f(r.ea,0)));
             td.appendChild(el('span','src','('+r.eaSrc+')'));
           } else td.textContent=cd.get(r);
-          if(r.est && r._first && ['원육 사용량<br>(KG)','전처리<br>(KG)','자숙<br>(KG)','파쇄<br>(KG)'].indexOf(cd.label)>=0){
+          if(r.est && r._first && ['원육<br>사용량(KG)','전처리<br>(KG)','자숙<br>(KG)','파쇄<br>(KG)'].indexOf(cd.label)>=0){
             td.classList.add('est'); td.title='가안 — 6월 코스트코 평균수율로 역산(방혈·공정 미기록분)';
           }
           tr.appendChild(td);
