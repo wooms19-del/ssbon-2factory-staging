@@ -406,7 +406,7 @@
         no++;
         var first=true;
         d.groups.forEach(function(grp){
-          var merged=grp.list.length>1;
+          var span=grp.list.length;
           grp.list.forEach(function(r,i){
             var tr=el('tr');
             if(first&&i===0) tr.classList.add('dstart');
@@ -416,20 +416,21 @@
               var c1=el('td','cnum',String(no)); c1.rowSpan=d.n; tr.appendChild(c1);
               var c2=el('td','cnum',d.date.slice(5)); c2.rowSpan=d.n; tr.appendChild(c2);
             }
-            var pcell=el('td','pcell'+(i>0?' gsub':''));
+            var pcell=el('td','pcell');
             pcell.appendChild(el('span','nm',r.product));
             if(r.part) pcell.appendChild(el('span','badge g-'+r.part,r.part));
             tr.appendChild(pcell);
             C.forEach(function(cd){
+              /* 그룹 공통값(첫 행만 값 보유)은 rowspan 으로 실제 병합 */
+              var shared = (cd.get!=='EA') && (cd.get(grp.list[0])!=='' ) &&
+                           grp.list.length>1 && grp.list.some(function(x,xi){ return xi>0 && cd.get(x)===''; });
+              if(shared && i>0) return;
               var td=el('td','num'+(cd.key?' key':''));
+              if(shared){ td.rowSpan=span; td.classList.add('mgspan'); }
               if(cd.get==='EA'){
                 td.appendChild(document.createTextNode(f(r.ea,0)));
                 td.appendChild(el('span','src','('+r.eaSrc+')'));
-              } else {
-                var v=cd.get(r);
-                if(v==='' && merged && !r._first) td.classList.add('mgcell');
-                td.textContent=v;
-              }
+              } else td.textContent=cd.get(r);
               if(r.est && r._first && cd.sec==='원육 / 공통공정 (KG)'){
                 td.classList.add('est'); td.title='가안 — 6월 코스트코 평균수율로 역산';
               }
@@ -512,72 +513,147 @@
     a.download='월단위생산실적_'+st.ym+'.csv'; a.click(); URL.revokeObjectURL(a.href);
   }
 
-  /* ── 비교 (표 아래 가로) ── */
+  /* ── 비교: 수율 추이 + 흐름 ── */
   function compare(ym,cur,pSame,pAll,upto,lastY,lastYm){
     var k=el('div','card');
     var hd=el('div','mp-head');
-    hd.appendChild(el('h2',null,'비교'));
-    hd.appendChild(el('span','sub-t','동기간은 전월 같은 일차('+upto+'일차)까지만 잘라 비교한 값입니다.'
-      +(lastY?'':' 전년 같은 달 자료가 없어 전년 비교는 표시하지 않습니다.')));
+    hd.appendChild(el('h2',null,'수율 흐름'));
+    hd.appendChild(el('span','sub-t','원육이 어디서 얼마나 줄어드는지, 어느 날이 평소와 달랐는지를 봅니다.'));
     k.appendChild(hd);
 
-    function avg(x){return x&&x.dayCount?x.rmKg/x.dayCount:null;}
-    function y(x,key){return x&&x.rmKg?x[key]/x.rmKg*100:null;}
-    var items=[
-      {lab:'일평균 원육사용량', cur:avg(cur), pv:avg(pSame), ly:avg(lastY), unit:'kg', dec:1},
-      {lab:'생산일수', cur:cur.dayCount, pv:pSame.dayCount, ly:lastY&&lastY.dayCount, unit:'일', dec:0},
-      {lab:'월 누적 원육', cur:cur.rmKg, pv:pSame.rmKg, ly:lastY&&lastY.rmKg, unit:'kg', dec:1},
-      {lab:'월 누적 EA', cur:cur.ea, pv:pSame.ea, ly:lastY&&lastY.ea, unit:'EA', dec:0},
-      {lab:'완제품 고기중량', cur:cur.meatKg, pv:pSame.meatKg, ly:lastY&&lastY.meatKg, unit:'kg', dec:1},
-      {lab:'전처리 수율', cur:y(cur,'ppKg'), pv:y(pSame,'ppKg'), ly:y(lastY,'ppKg'), pct:1},
-      {lab:'자숙 수율', cur:y(cur,'ckKg'), pv:y(pSame,'ckKg'), ly:y(lastY,'ckKg'), pct:1},
-      {lab:'파쇄 수율', cur:y(cur,'shKg'), pv:y(pSame,'shKg'), ly:y(lastY,'shKg'), pct:1},
-      {lab:'최종 수율', cur:y(cur,'meatKg'), pv:y(pSame,'meatKg'), ly:y(lastY,'meatKg'), pct:1}
+    /* 1) 단계별 흐름 — 막대 길이가 곧 남은 비율 */
+    var steps=[
+      {n:'원육 투입', kg:cur.rmKg, y:100},
+      {n:'전처리',   kg:cur.ppKg, y:pc(cur.ppKg,cur.rmKg)},
+      {n:'자숙',     kg:cur.ckKg, y:pc(cur.ckKg,cur.rmKg)},
+      {n:'파쇄',     kg:cur.shKg, y:pc(cur.shKg,cur.rmKg)},
+      {n:'완제품',   kg:cur.meatKg, y:pc(cur.meatKg,cur.rmKg)}
     ];
-    function fv(v,it){
-      if(v==null||isNaN(v)) return '—';
-      return it.pct? v.toFixed(1)+'%' : Number(v).toLocaleString('ko-KR',
-        {minimumFractionDigits:it.dec,maximumFractionDigits:it.dec})+(it.unit?' '+it.unit:'');
-    }
-    function delta(a,b,it){
-      if(a==null||b==null||isNaN(a)||isNaN(b)) return null;
-      var d=a-b;
-      var txt=(d>=0?'▲ ':'▼ ')+(it.pct?Math.abs(d).toFixed(1)+'%p'
-        :Math.abs(d).toLocaleString('ko-KR',{minimumFractionDigits:it.dec,maximumFractionDigits:it.dec}));
-      var pctv=b?((d/b)*100):null;
-      return {txt:txt, pct:pctv==null?null:(pctv>=0?'▲ ':'▼ ')+Math.abs(pctv).toFixed(1)+'%', up:d>0, zero:d===0};
-    }
-    var grid=el('div','cmp-grid');
-    items.forEach(function(it){
-      var c=el('div','cmp-c');
-      c.appendChild(el('div','cmp-k',it.lab));
-      c.appendChild(el('div','cmp-v',fv(it.cur,it)));
-      var dp=delta(it.cur,it.pv,it);
-      var l1=el('div','cmp-d');
-      l1.appendChild(el('span','cmp-t','전월'));
-      if(dp){
-        var s1=el('span','cmp-n'+(dp.zero?'':(dp.up?' up':' dn')), dp.txt+(dp.pct?' ('+dp.pct+')':''));
-        l1.appendChild(s1);
-      } else l1.appendChild(el('span','cmp-n','—'));
-      c.appendChild(l1);
-      if(lastY){
-        var dy=delta(it.cur,it.ly,it);
-        var l2=el('div','cmp-d');
-        l2.appendChild(el('span','cmp-t','전년'));
-        if(dy) l2.appendChild(el('span','cmp-n'+(dy.zero?'':(dy.up?' up':' dn')), dy.txt+(dy.pct?' ('+dy.pct+')':'')));
-        else l2.appendChild(el('span','cmp-n','—'));
-        c.appendChild(l2);
-      }
-      grid.appendChild(c);
+    var flow=el('div','flow');
+    steps.forEach(function(st2,i){
+      var row=el('div','flow-r');
+      row.appendChild(el('div','flow-n',st2.n));
+      var track=el('div','flow-t');
+      var bar=el('div','flow-b'+(i===0?' first':(i===steps.length-1?' last':'')));
+      bar.style.width=Math.max(st2.y||0,2)+'%';
+      track.appendChild(bar);
+      row.appendChild(track);
+      var v=el('div','flow-v');
+      v.appendChild(el('b',null,f(st2.kg,0)+' kg'));
+      v.appendChild(el('span','flow-y',st2.y==null?'':st2.y.toFixed(1)+'%'));
+      row.appendChild(v);
+      if(i>0){
+        var prevKg=steps[i-1].kg, loss=prevKg-st2.kg;
+        var l=el('div','flow-l');
+        if(loss>0) l.textContent='− '+f(loss,0)+' kg';
+        else if(loss<0) l.textContent='+ '+f(-loss,0)+' kg';
+        row.appendChild(l);
+      } else row.appendChild(el('div','flow-l'));
+      flow.appendChild(row);
     });
-    k.appendChild(grid);
+    k.appendChild(flow);
 
-    var note=el('div','cmp-base');
-    note.appendChild(el('span',null,'기준 · '+ym.replace('-','년 ')+'월'));
-    note.appendChild(el('span',null,'전월 동기간 '+prevYm(ym).replace('-','년 ')+'월 '+upto+'일차'));
-    note.appendChild(el('span',null,'전월 전체 '+f(pAll.rmKg,1)+' kg'));
-    if(lastY) note.appendChild(el('span',null,'전년 '+lastYm.replace('-','년 ')+'월 '+f(lastY.rmKg,1)+' kg'));
-    k.appendChild(note);
+    /* 2) 일별 최종수율 추이 */
+    var byDay={};
+    cur.rows.forEach(function(r){
+      if(!r._first||!r.rmKg) return;
+      var x=byDay[r.date]=byDay[r.date]||{rm:0,meat:0};
+      x.rm+=r.rmKg; x.meat+=r._grpMeat||r.meatKg;
+    });
+    var days=Object.keys(byDay).sort();
+    var pts=days.map(function(d){ return {d:d, v:byDay[d].rm? byDay[d].meat/byDay[d].rm*100 : null}; })
+                .filter(function(x){ return x.v!=null; });
+    if(pts.length>1){
+      var avg=cur.rmKg? cur.meatKg/cur.rmKg*100 : 0;
+      var vals=pts.map(function(x){return x.v;});
+      var lo=Math.min.apply(null,vals), hi=Math.max.apply(null,vals);
+      var pad=Math.max((hi-lo)*0.25, 2);
+      lo=Math.floor(lo-pad); hi=Math.ceil(hi+pad);
+      var W=100, H=42;
+      function X(i){ return pts.length<2?0:(i/(pts.length-1))*W; }
+      function Y(v){ return H-((v-lo)/(hi-lo))*H; }
+      var ch=el('div','chart');
+      var chd=el('div','chart-hd');
+      chd.appendChild(el('b',null,'일별 최종수율'));
+      chd.appendChild(el('span','erp','평균 '+avg.toFixed(1)+'% · 최저 '+Math.min.apply(null,vals).toFixed(1)+'% · 최고 '+Math.max.apply(null,vals).toFixed(1)+'%'));
+      ch.appendChild(chd);
+      var svgns='http://www.w3.org/2000/svg';
+      var svg=document.createElementNS(svgns,'svg');
+      svg.setAttribute('viewBox','0 0 '+W+' '+H);
+      svg.setAttribute('preserveAspectRatio','none');
+      svg.setAttribute('class','spark');
+      var ay=Y(avg);
+      var al=document.createElementNS(svgns,'line');
+      al.setAttribute('x1',0); al.setAttribute('x2',W);
+      al.setAttribute('y1',ay); al.setAttribute('y2',ay);
+      al.setAttribute('class','avg');
+      svg.appendChild(al);
+      var dstr=pts.map(function(p2,i){ return (i?'L':'M')+X(i).toFixed(2)+' '+Y(p2.v).toFixed(2); }).join(' ');
+      var area=document.createElementNS(svgns,'path');
+      area.setAttribute('d',dstr+' L'+W+' '+H+' L0 '+H+' Z');
+      area.setAttribute('class','area');
+      svg.appendChild(area);
+      var line=document.createElementNS(svgns,'path');
+      line.setAttribute('d',dstr); line.setAttribute('class','line');
+      svg.appendChild(line);
+      pts.forEach(function(p2,i){
+        var c=document.createElementNS(svgns,'circle');
+        c.setAttribute('cx',X(i)); c.setAttribute('cy',Y(p2.v)); c.setAttribute('r',0.9);
+        c.setAttribute('class','dot'+(p2.v<avg-3?' low':(p2.v>avg+3?' high':'')));
+        var ti=document.createElementNS(svgns,'title');
+        ti.textContent=p2.d.slice(5)+' · '+p2.v.toFixed(1)+'%';
+        c.appendChild(ti); svg.appendChild(c);
+      });
+      ch.appendChild(svg);
+      var ax=el('div','chart-ax');
+      pts.forEach(function(p2,i){
+        if(pts.length<=12 || i===0 || i===pts.length-1 || i%Math.ceil(pts.length/8)===0)
+          ax.appendChild(el('span',null,p2.d.slice(5)));
+        else ax.appendChild(el('span','',''));
+      });
+      ch.appendChild(ax);
+      /* 눈에 띄는 날 */
+      var low=pts.filter(function(p2){return p2.v<avg-3;}).sort(function(a,b){return a.v-b.v;}).slice(0,3);
+      if(low.length){
+        var w=el('div','chart-note');
+        w.appendChild(el('span','warn','평균보다 낮은 날'));
+        low.forEach(function(p2){
+          w.appendChild(el('span','wpill',p2.d.slice(5)+' '+p2.v.toFixed(1)+'%'));
+        });
+        ch.appendChild(w);
+      }
+      k.appendChild(ch);
+    }
+
+    /* 3) 전월 대비는 수율만 */
+    function y(x,key){return x&&x.rmKg?x[key]/x.rmKg*100:null;}
+    var cmp=el('div','ycmp');
+    var ch2=el('div','ycmp-hd');
+    ch2.appendChild(el('b',null,'전월 대비 수율'));
+    ch2.appendChild(el('span','erp','전월 같은 일차('+upto+'일차)까지 잘라 비교'
+      +(lastY?'':' · 전년 자료 없음')));
+    cmp.appendChild(ch2);
+    var g=el('div','ycmp-g');
+    [['전처리','ppKg'],['자숙','ckKg'],['파쇄','shKg'],['최종','meatKg']].forEach(function(x){
+      var a=y(cur,x[1]), b=y(pSame,x[1]), c2=y(lastY,x[1]);
+      var d=el('div','ycmp-c');
+      d.appendChild(el('div','ycmp-k',x[0]+' 수율'));
+      d.appendChild(el('div','ycmp-v',a==null?'—':a.toFixed(1)+'%'));
+      function line(lab,base){
+        if(base==null||a==null) return;
+        var diff=a-base;
+        var r=el('div','ycmp-d');
+        r.appendChild(el('span','cmp-t',lab));
+        r.appendChild(el('span','cmp-n'+(Math.abs(diff)<0.05?'':(diff>0?' up':' dn')),
+          (diff>=0?'▲ ':'▼ ')+Math.abs(diff).toFixed(1)+'%p'));
+        r.appendChild(el('span','erp',base.toFixed(1)+'%'));
+        d.appendChild(r);
+      }
+      line('전월',b); if(lastY) line('전년',c2);
+      g.appendChild(d);
+    });
+    cmp.appendChild(g);
+    k.appendChild(cmp);
     return k;
   }
 

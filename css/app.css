@@ -272,19 +272,59 @@ body.folded .shell{grid-template-columns:var(--rail-w) 0 1fr}
 .est-note::before{content:"";display:inline-block;width:9px;height:9px;background:#FEF3C7;
   border:1px solid #E3C77A;margin-right:5px;vertical-align:baseline}
 
-/* 비교 스트립 */
-.cmp-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(148px,1fr));
+/* 병합된 셀 */
+.mono-t td.mgspan{vertical-align:middle;background:#F4F8FA;
+  box-shadow:inset 0 0 0 1px #C9D9E2}
+.mono-t tr.dalt td.mgspan{background:#EFF5F8}
+.mono-t td.mgspan.est{background:#FEF3C7;box-shadow:inset 0 0 0 1px #E3C77A}
+
+/* 흐름도 */
+.flow{margin:2px 0 18px}
+.flow-r{display:grid;grid-template-columns:74px 1fr 132px 96px;gap:10px;align-items:center;
+  padding:5px 0}
+.flow-n{font-size:12.5px;font-weight:600;color:var(--ink-2);text-align:right}
+.flow-t{height:26px;background:#F1F5F7;border-radius:4px;overflow:hidden}
+.flow-b{height:100%;background:linear-gradient(90deg,#2E7D9A,#0F6E8C);border-radius:4px;
+  transition:width .3s}
+.flow-b.first{background:linear-gradient(90deg,#5C7484,#3F5867)}
+.flow-b.last{background:linear-gradient(90deg,#2A9D63,#1F8A4C)}
+.flow-v{display:flex;flex-direction:column;line-height:1.25}
+.flow-v b{font-family:var(--mono);font-size:14px;font-weight:700}
+.flow-y{font-family:var(--mono);font-size:11px;color:var(--steel)}
+.flow-l{font-family:var(--mono);font-size:11.5px;color:#B4342C;text-align:right}
+
+/* 추이 그래프 */
+.chart{margin-bottom:16px;padding:12px 14px;border:1px solid var(--line);border-radius:8px;background:#FCFDFE}
+.chart-hd{display:flex;align-items:baseline;gap:10px;margin-bottom:8px}
+.chart-hd b{font-size:13px}
+.spark{width:100%;height:118px;display:block;overflow:visible}
+.spark .area{fill:rgba(15,110,140,.10);stroke:none}
+.spark .line{fill:none;stroke:#0F6E8C;stroke-width:.7;vector-effect:non-scaling-stroke;
+  stroke-linejoin:round;stroke-linecap:round}
+.spark .avg{stroke:#B0BEC6;stroke-width:.6;stroke-dasharray:2 2;vector-effect:non-scaling-stroke}
+.spark .dot{fill:#0F6E8C}
+.spark .dot.low{fill:#B4342C;r:1.4}
+.spark .dot.high{fill:#1F8A4C}
+.chart-ax{display:flex;justify-content:space-between;margin-top:4px;
+  font-family:var(--mono);font-size:10px;color:var(--steel2)}
+.chart-ax span{flex:1;text-align:center;white-space:nowrap}
+.chart-note{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:10px}
+.chart-note .warn{font-size:11.5px;font-weight:600;color:#B4342C}
+.wpill{font-family:var(--mono);font-size:11px;padding:2px 7px;border-radius:999px;
+  background:#FBEDEC;color:#B4342C;border:1px solid #EFCFCC}
+
+/* 수율 비교 */
+.ycmp-hd{display:flex;align-items:baseline;gap:10px;margin-bottom:8px}
+.ycmp-hd b{font-size:13px}
+.ycmp-g{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));
   gap:1px;background:var(--line);border:1px solid var(--line);border-radius:8px;overflow:hidden}
-.cmp-c{background:var(--sf);padding:10px 12px 11px;display:flex;flex-direction:column;gap:2px}
-.cmp-k{font-size:11.5px;color:var(--steel)}
-.cmp-v{font-family:var(--mono);font-size:17px;font-weight:700;letter-spacing:-.02em;line-height:1.25}
-.cmp-d{display:flex;align-items:baseline;gap:5px;font-size:11px;line-height:1.4}
-.cmp-t{color:var(--steel2);flex:none;min-width:22px}
+.ycmp-c{background:var(--sf);padding:10px 13px 11px}
+.ycmp-k{font-size:11.5px;color:var(--steel)}
+.ycmp-v{font-family:var(--mono);font-size:20px;font-weight:700;letter-spacing:-.02em;line-height:1.3}
+.ycmp-d{display:flex;align-items:baseline;gap:6px;font-size:11px;margin-top:1px}
+.cmp-t{color:var(--steel2);min-width:22px}
 .cmp-n{font-family:var(--mono);color:var(--steel)}
 .cmp-n.up{color:#1F8A4C} .cmp-n.dn{color:#B4342C}
-.cmp-base{display:flex;flex-wrap:wrap;gap:14px;margin-top:9px;font-size:11.5px;color:var(--steel2)}
-.cmp-base span::before{content:"·";margin-right:5px;color:var(--line)}
-.cmp-base span:first-child::before{content:""}
 
 /* 필터칩 */
 .chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
