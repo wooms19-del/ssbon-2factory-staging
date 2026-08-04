@@ -5,5 +5,5 @@ window.SSBON = window.SSBON || {};
 window.SSBON.config = {
   restUrl: 'https://jazyhsyylqrmvnazsgqt.supabase.co/rest/v1',
   anonKey: 'sb_publishable_d5Ehy03ghIozA7RrjFsa5g_rAaHaPyD',
-  version: 'v0.9.11-shell'
+  version: 'v0.9.12-shell'
 };

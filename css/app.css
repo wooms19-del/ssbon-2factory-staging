@@ -230,6 +230,46 @@ body.folded .shell{grid-template-columns:var(--rail-w) 0 1fr}
 .mp-sum .fchip{margin-left:auto}
 
 .tscroll{overflow-x:auto}
+
+/* 틀 고정 스크롤 영역 */
+.tscroll.frozen{overflow:auto;max-height:min(62vh,640px);
+  border:1px solid #D5DEE4;border-radius:6px}
+.tscroll.frozen .mono-t{border-collapse:separate;border-spacing:0}
+.tscroll.frozen .mono-t th,.tscroll.frozen .mono-t td{
+  border-right:1px solid #D5DEE4;border-bottom:1px solid #D5DEE4;border-top:0;border-left:0}
+
+/* 세로 고정 — 헤더 2줄 */
+.tscroll.frozen thead th{position:sticky;z-index:4;background:#EEF3F6}
+.tscroll.frozen thead tr:nth-child(1) th{top:0}
+.tscroll.frozen thead tr:nth-child(2) th{top:28px}
+.tscroll.frozen thead th.sec{background:#E1E9EE}
+.tscroll.frozen thead th.keyh{background:#DEEBF2}
+
+/* 가로 고정 — 앞 3열 */
+.tscroll.frozen tbody td:nth-child(1),
+.tscroll.frozen tbody td:nth-child(2){position:sticky;z-index:2;background:var(--sf)}
+.tscroll.frozen tbody td.pcell{position:sticky;left:90px;z-index:2;background:var(--sf);
+  box-shadow:2px 0 4px -1px rgba(0,0,0,.14)}
+.tscroll.frozen th:nth-child(1),.tscroll.frozen tbody td:nth-child(1){left:0}
+.tscroll.frozen th:nth-child(2),.tscroll.frozen tbody td:nth-child(2){left:34px}
+.tscroll.frozen thead th:nth-child(3){left:90px;box-shadow:2px 0 4px -1px rgba(0,0,0,.14)}
+.tscroll.frozen thead th:nth-child(-n+3){z-index:6}
+.tscroll.frozen tbody tr.dalt td:nth-child(1),
+.tscroll.frozen tbody tr.dalt td:nth-child(2),
+.tscroll.frozen tbody tr.dalt td.pcell{background:#FAFCFD}
+.tscroll.frozen tbody tr:hover td:nth-child(1),
+.tscroll.frozen tbody tr:hover td:nth-child(2),
+.tscroll.frozen tbody tr:hover td.pcell{background:#E8F2F7}
+
+/* 합계 행 하단 고정 */
+.tscroll.frozen tr.sum td{position:sticky;bottom:29px;z-index:3;background:#E5EBEF}
+.tscroll.frozen tr.sum2 td{position:sticky;bottom:0;z-index:3;background:#F2F5F7}
+.tscroll.frozen tr.sum td:nth-child(1),
+.tscroll.frozen tr.sum2 td:nth-child(1){z-index:5}
+
+.mp-foot{display:flex;justify-content:space-between;align-items:center;
+  margin-top:8px;flex-wrap:wrap;gap:8px}
+
 .mono-t{border-collapse:collapse;width:100%}
 .mono-t th,.mono-t td{border:1px solid #D5DEE4}
 .mono-t th{background:#EEF3F6;font-size:11px;font-weight:600;color:var(--ink-2);
