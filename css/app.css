@@ -220,6 +220,14 @@ body.folded .shell{grid-template-columns:var(--rail-w) 0 1fr}
 .est-note::before{content:"";display:inline-block;width:9px;height:9px;background:#FEF3C7;
   border:1px solid #E3C77A;margin-right:5px;vertical-align:baseline}
 
+/* 월단위 툴바 */
+.mp-tools{display:flex;flex-wrap:wrap;gap:14px;align-items:center;margin:8px 0 12px;
+  padding:9px 12px;background:#F7F9FA;border:1px solid var(--line);border-radius:8px}
+.tgroup{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.tlab{font-size:12px;font-weight:600;color:var(--steel)}
+.tchk{display:flex;align-items:center;gap:4px;font-size:12.5px;cursor:pointer;white-space:nowrap}
+.tchk input{width:14px;height:14px;accent-color:var(--sig);cursor:pointer}
+
 /* 필터칩 */
 .chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
 .fchip{height:32px;padding:0 12px;border:1px solid var(--line);border-radius:999px;
