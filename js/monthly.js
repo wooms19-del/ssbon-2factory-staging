@@ -531,13 +531,12 @@
     flow.appendChild(flg);
 
     var FPL=46, FPR=20, FPT=26, FPB=58;
-    var fw=steps.length*118+FPL+FPR, fhh=290;
+    var fw=steps.length*150+FPL+FPR, fhh=300;
     var TOP=110;
     function FY(v){ return FPT + (TOP-v)/TOP*(fhh-FPT-FPB); }
     var slot=(fw-FPL-FPR)/steps.length;
-    var bw=hasPrev?26:36, gap=6;
+    var bw=hasPrev?34:46, gap=8;
     var svgF=svgEl('svg',{viewBox:'0 0 '+fw+' '+fhh,'class':'g2'});
-    svgF.setAttribute('width',fw);
 
     for(var gg=0; gg<=100; gg+=20){
       svgF.appendChild(svgEl('line',{x1:FPL,x2:fw-FPR,y1:FY(gg),y2:FY(gg),'class':'g-grid'}));
