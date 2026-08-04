@@ -551,7 +551,7 @@
     flow.appendChild(flg);
 
     var FPL=46, FPR=20, FPT=26, FPB=58;
-    var fw=Math.max(steps.length*146+FPL+FPR, 720), fhh=290;
+    var fw=steps.length*118+FPL+FPR, fhh=290;
     var TOP=110;
     function FY(v){ return FPT + (TOP-v)/TOP*(fhh-FPT-FPB); }
     var slot=(fw-FPL-FPR)/steps.length;
@@ -602,7 +602,68 @@
     });
     svgF.appendChild(svgEl('line',{x1:FPL,x2:fw-FPR,y1:base,y2:base,'class':'g-axis'}));
     var fsc=el('div','gscroll'); fsc.appendChild(svgF);
-    flow.appendChild(fsc);
+
+    /* 오른쪽 해설 — 전월 대비 차이를 문장으로 */
+    var side=el('div','fside');
+    if(hasPrev){
+      var fin=steps[steps.length-1];
+      var gapY=fin.y-fin.py;
+      var hd2=el('div','fs-hd');
+      hd2.appendChild(el('b',null,'전월 대비 최종수율'));
+      var big=el('div','fs-big'+(gapY>0?' up':(gapY<0?' dn':'')));
+      big.appendChild(el('span','fs-v',(gapY>=0?'▲ ':'▼ ')+Math.abs(gapY).toFixed(1)+'%p'));
+      big.appendChild(el('span','fs-s',fin.py.toFixed(1)+'% → '+fin.y.toFixed(1)+'%'));
+      hd2.appendChild(big);
+      side.appendChild(hd2);
+
+      /* 공정별 기여: 각 단계 수율차 (직전 대비) */
+      var conts=[];
+      for(var i3=1;i3<steps.length;i3++){
+        var a2=steps[i3], b2=steps[i3-1];
+        var nowStep=b2.y? a2.y/b2.y*100 : null;
+        var pvStep =b2.py? a2.py/b2.py*100 : null;
+        if(nowStep==null||pvStep==null) continue;
+        conts.push({n:a2.n, now:nowStep, pv:pvStep, d:nowStep-pvStep});
+      }
+      conts.sort(function(x,y2){ return Math.abs(y2.d)-Math.abs(x.d); });
+
+      var body=el('div','fs-body');
+      if(conts.length){
+        var top=conts[0];
+        var p1=el('p','fs-p');
+        p1.appendChild(document.createTextNode('가장 크게 달라진 공정은 '));
+        p1.appendChild(el('b',null,top.n));
+        p1.appendChild(document.createTextNode('입니다. 직전 단계 대비 수율이 '));
+        p1.appendChild(el('b','n'+(top.d>0?' up':' dn'), top.pv.toFixed(1)+'% → '+top.now.toFixed(1)+'%'));
+        p1.appendChild(document.createTextNode('로 '+(top.d>0?'올랐':'내렸')+'습니다.'));
+        body.appendChild(p1);
+      }
+      var ul=el('ul','fs-list');
+      conts.forEach(function(c2){
+        var li=el('li');
+        li.appendChild(el('span','fs-n',c2.n));
+        li.appendChild(el('span','fs-d'+(Math.abs(c2.d)<0.05?'':(c2.d>0?' up':' dn')),
+              (c2.d>=0?'▲ ':'▼ ')+Math.abs(c2.d).toFixed(1)+'%p'));
+        li.appendChild(el('span','fs-sub',c2.pv.toFixed(1)+'% → '+c2.now.toFixed(1)+'%'));
+        ul.appendChild(li);
+      });
+      body.appendChild(ul);
+
+      /* 같은 원육을 썼다면 얼마나 더 나왔을까 */
+      var extra=cur.rmKg*(gapY/100);
+      var p2b=el('p','fs-p muted');
+      p2b.appendChild(document.createTextNode('이번 달 원육 '+f(cur.rmKg,0)+'kg 기준으로, 전월 수율이었다면 완제품이 '));
+      p2b.appendChild(el('b',null,f(Math.abs(extra),0)+'kg'));
+      p2b.appendChild(document.createTextNode(extra>0?' 적게 나왔을 값입니다.':' 더 나왔을 값입니다.'));
+      body.appendChild(p2b);
+      side.appendChild(body);
+    } else {
+      side.appendChild(el('div','fs-none','전월 자료가 없어 비교하지 않습니다.'));
+    }
+
+    var wrap2=el('div','fwrap');
+    wrap2.appendChild(fsc); wrap2.appendChild(side);
+    flow.appendChild(wrap2);
     k.appendChild(flow);
 
     /* 2) 일별 최종수율 추이 */
