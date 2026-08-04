@@ -540,54 +540,78 @@
     fh.appendChild(el('span','erp','원육 100%에서 시작해 각 공정을 지나며 남는 비율입니다.'));
     flow.appendChild(fh);
 
-    var W=100, H=44, PT=4, PB=4;
-    function fx(i){ return 6 + (i/(steps.length-1))*(W-12); }
-    function fy(v){ return PT + (100-v)/100*(H-PT-PB); }
-    var svgF=svgEl('svg',{viewBox:'0 0 '+W+' '+H, preserveAspectRatio:'none', 'class':'spark flowchart'});
-    [100,75,50,25].forEach(function(g){
-      svgF.appendChild(svgEl('line',{x1:0,x2:W,y1:fy(g),y2:fy(g),'class':'grid'}));
-    });
     var hasPrev=steps.every(function(x){return x.py!=null;});
-    if(hasPrev){
-      var pd=steps.map(function(x,i){return (i?'L':'M')+fx(i).toFixed(2)+' '+fy(x.py).toFixed(2);}).join(' ');
-      svgF.appendChild(svgEl('path',{d:pd,'class':'pline'}));
-    }
-    var cd2=steps.map(function(x,i){return (i?'L':'M')+fx(i).toFixed(2)+' '+fy(x.y).toFixed(2);}).join(' ');
-    svgF.appendChild(svgEl('path',{d:cd2+' L'+fx(steps.length-1)+' '+fy(0)+' L'+fx(0)+' '+fy(0)+' Z','class':'area'}));
-    svgF.appendChild(svgEl('path',{d:cd2,'class':'line'}));
-    steps.forEach(function(x,i){
-      if(hasPrev){
-        var pc2=svgEl('circle',{cx:fx(i),cy:fy(x.py),r:0.8,'class':'pdot'});
-        svgF.appendChild(pc2);
-      }
-      var c=svgEl('circle',{cx:fx(i),cy:fy(x.y),r:1.1,'class':'dot'});
-      var ti=svgEl('title'); ti.textContent=x.n+' '+x.y.toFixed(1)+'%'+(x.py!=null?' (전월 '+x.py.toFixed(1)+'%)':'');
-      c.appendChild(ti); svgF.appendChild(c);
+    var flg=el('div','lgd');
+    [['이번달','d-nm'],(hasPrev?['전월 동기간','d-pavg']:null)].filter(Boolean).forEach(function(x){
+      var i2=el('span','lgd-i');
+      i2.appendChild(el('span','lgd-m '+x[1]));
+      i2.appendChild(document.createTextNode(x[0]));
+      flg.appendChild(i2);
     });
-    flow.appendChild(svgF);
+    flow.appendChild(flg);
 
-    var fax=el('div','flow-ax');
+    var fall=steps.map(function(x){return x.y;}).concat(hasPrev?steps.map(function(x){return x.py;}):[]);
+    var flo=Math.floor((Math.min.apply(null,fall)-6)/10)*10;
+    var fhi=Math.ceil((Math.max.apply(null,fall)+4)/10)*10;
+    if(flo<0) flo=0;
+    var FPL=46, FPR=24, FPT=18, FPB=52;
+    var fw=Math.max(steps.length*150+FPL+FPR, 720), fhh=270;
+    function FX(i){ return FPL + (i/(steps.length-1))*(fw-FPL-FPR); }
+    function FY(v){ return FPT + (fhi-v)/(fhi-flo)*(fhh-FPT-FPB); }
+    var svgF=svgEl('svg',{viewBox:'0 0 '+fw+' '+fhh,'class':'g2'});
+    svgF.setAttribute('width',fw);
+    for(var gg=flo; gg<=fhi; gg+=10){
+      svgF.appendChild(svgEl('line',{x1:FPL,x2:fw-FPR,y1:FY(gg),y2:FY(gg),'class':'g-grid'}));
+      var yl2=svgEl('text',{x:FPL-8,y:FY(gg)+3.5,'class':'g-ylab'});
+      yl2.textContent=gg+'%'; svgF.appendChild(yl2);
+    }
+    if(hasPrev){
+      var pd2=steps.map(function(x,i){return (i?'L':'M')+FX(i).toFixed(1)+' '+FY(x.py).toFixed(1);}).join(' ');
+      svgF.appendChild(svgEl('path',{d:pd2,'class':'g-pline'}));
+    }
+    var cd3=steps.map(function(x,i){return (i?'L':'M')+FX(i).toFixed(1)+' '+FY(x.y).toFixed(1);}).join(' ');
+    svgF.appendChild(svgEl('path',{d:cd3+' L'+FX(steps.length-1).toFixed(1)+' '+FY(flo)+' L'+FX(0)+' '+FY(flo)+' Z','class':'g-area'}));
+    svgF.appendChild(svgEl('path',{d:cd3,'class':'g-line'}));
+
     steps.forEach(function(x,i){
-      var c=el('div','fax-c');
-      c.appendChild(el('div','fax-n',x.n));
-      c.appendChild(el('div','fax-y',x.y.toFixed(1)+'%'));
-      c.appendChild(el('div','fax-kg',f(x.kg,0)+' kg'));
+      var cx=FX(i);
+      if(hasPrev){
+        var pdt=svgEl('circle',{cx:cx,cy:FY(x.py),r:3.4,'class':'g-pdot'});
+        var pti=svgEl('title'); pti.textContent='전월 '+x.py.toFixed(1)+'%';
+        pdt.appendChild(pti); svgF.appendChild(pdt);
+      }
+      var cls=(i===0)?'d-nm':(i===steps.length-1?'d-hi':'d-nm');
+      svgF.appendChild(svgEl('circle',{cx:cx,cy:FY(x.y),r:6.5,'class':'g-halo '+cls}));
+      var c2=svgEl('circle',{cx:cx,cy:FY(x.y),r:4.6,'class':'g-dot '+cls});
+      var ti2=svgEl('title');
+      ti2.textContent=x.n+' '+x.y.toFixed(1)+'% · '+f(x.kg,0)+'kg'+(x.py!=null?' (전월 '+x.py.toFixed(1)+'%)':'');
+      c2.appendChild(ti2); svgF.appendChild(c2);
+
+      var ly2=FY(x.y)-15;
+      var gl=svgEl('g',{'class':'g-lab '+cls});
+      gl.appendChild(svgEl('rect',{x:cx-25,y:ly2-11,width:50,height:16,rx:4,'class':'g-labbg'}));
+      var tx2=svgEl('text',{x:cx,y:ly2+1,'class':'g-labtx'});
+      tx2.textContent=x.y.toFixed(1)+'%'; gl.appendChild(tx2); svgF.appendChild(gl);
+
+      var n1=svgEl('text',{x:cx,y:fhh-32,'class':'g-xlab step'}); n1.textContent=x.n;
+      svgF.appendChild(n1);
+      var n2=svgEl('text',{x:cx,y:fhh-19,'class':'g-xlab2'}); n2.textContent=f(x.kg,0)+' kg';
+      svgF.appendChild(n2);
       if(i>0){
         var loss=steps[i-1].kg-x.kg;
-        c.appendChild(el('div','fax-l',(loss>0?'−':'+')+f(Math.abs(loss),0)+' kg'));
+        var n3=svgEl('text',{x:cx,y:fhh-6,'class':'g-xloss'+(loss>0?'':' plus')});
+        n3.textContent=(loss>0?'−':'+')+f(Math.abs(loss),0)+' kg';
+        svgF.appendChild(n3);
         if(x.py!=null){
-          var df=x.y-x.py;
-          c.appendChild(el('div','fax-d'+(Math.abs(df)<0.05?'':(df>0?' up':' dn')),
-            (df>=0?'▲':'▼')+Math.abs(df).toFixed(1)+'%p'));
+          var df2=x.y-x.py;
+          var dg=svgEl('text',{x:cx+34,y:FY(x.y)+4,'class':'g-delta '+(df2>0?'up':'dn')});
+          dg.textContent=(df2>=0?'▲':'▼')+Math.abs(df2).toFixed(1)+'p';
+          svgF.appendChild(dg);
         }
-      } else c.appendChild(el('div','fax-l',''));
-      fax.appendChild(c);
+      }
     });
-    flow.appendChild(fax);
-    var flg=el('div','chart-lg');
-    flg.appendChild(el('span','lg-line','이번달'));
-    if(hasPrev) flg.appendChild(el('span','lg-pline','전월 동기간'));
-    flow.appendChild(flg);
+    var fsc=el('div','gscroll'); fsc.appendChild(svgF);
+    flow.appendChild(fsc);
     k.appendChild(flow);
 
     /* 2) 일별 최종수율 추이 */

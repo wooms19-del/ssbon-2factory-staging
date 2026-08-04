@@ -279,12 +279,10 @@ body.folded .shell{grid-template-columns:var(--rail-w) 0 1fr}
 .mono-t td.mgspan.est{background:#FEF3C7;box-shadow:inset 0 0 0 1px #E3C77A}
 
 /* 단계별 수율 그래프 */
-.flowchart{height:150px !important}
 .spark .grid{stroke:#E8EDF1;stroke-width:.5;vector-effect:non-scaling-stroke}
 .spark .pline{fill:none;stroke:#C9761F;stroke-width:.7;stroke-dasharray:3 2;
   vector-effect:non-scaling-stroke;stroke-linejoin:round}
 .spark .pdot{fill:#C9761F;opacity:.75}
-.flow-ax{display:grid;grid-template-columns:repeat(5,1fr);margin-top:6px}
 .fax-c{text-align:center;line-height:1.35;padding:0 2px}
 .fax-n{font-size:12px;font-weight:700;color:var(--ink)}
 .fax-y{font-family:var(--mono);font-size:15px;font-weight:700;color:var(--sig);letter-spacing:-.02em}
@@ -328,6 +326,15 @@ body.folded .shell{grid-template-columns:var(--rail-w) 0 1fr}
 .g-reflab.r-hi{fill:#15803D} .g-reflab.r-lo{fill:#DC2626}
 .g-reflab.r-avg{fill:#7C3AED} .g-reflab.r-pavg{fill:#9CA3AF}
 .g-line{fill:none;stroke:#7E8C97;stroke-width:1.8;stroke-linejoin:round;stroke-linecap:round}
+.g-pline{fill:none;stroke:#9CA3AF;stroke-width:1.6;stroke-dasharray:5 4;
+  stroke-linejoin:round;stroke-linecap:round}
+.g-pdot{fill:#fff;stroke:#9CA3AF;stroke-width:1.6}
+.g-area{fill:rgba(59,130,246,.07);stroke:none}
+.g-xlab.step{font-size:12px;font-weight:700;fill:var(--ink)}
+.g-xloss{font-family:var(--mono);font-size:10.5px;fill:#DC2626;text-anchor:middle}
+.g-xloss.plus{fill:#15803D}
+.g-delta{font-family:var(--mono);font-size:10.5px;text-anchor:start}
+.g-delta.up{fill:#15803D} .g-delta.dn{fill:#DC2626}
 .g-halo{opacity:.16}
 .g-halo.d-nm{fill:#3B82F6} .g-halo.d-mid{fill:#D97706}
 .g-halo.d-hi{fill:#15803D} .g-halo.d-lo{fill:#DC2626}
