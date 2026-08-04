@@ -512,48 +512,72 @@
     a.download='월단위생산실적_'+st.ym+'.csv'; a.click(); URL.revokeObjectURL(a.href);
   }
 
-  /* ── 전월 대비 ── */
-  function compare(ym,cur,pSame,pAll,upto){
+  /* ── 비교 (표 아래 가로) ── */
+  function compare(ym,cur,pSame,pAll,upto,lastY,lastYm){
     var k=el('div','card');
-    k.appendChild(el('h2',null,'전월 대비 비교'));
-    k.appendChild(el('p','sub-t','동기간은 전월 같은 일차('+upto+'일차)까지만 잘라 비교한 값입니다.'));
-    var pm=prevYm(ym);
-    var t=el('table','tbl');
-    t.innerHTML='<thead><tr><th>구분</th>'+
-      '<th class="num" style="width:118px">'+ym.replace('-','년 ')+'월</th>'+
-      '<th class="num" style="width:158px">'+pm.replace('-','년 ')+'월 동기간 ('+upto+'일차)</th>'+
-      '<th class="num" style="width:130px">'+pm.replace('-','년 ')+'월 (전체)</th>'+
-      '<th class="num" style="width:126px">차이 (vs 동기간)</th>'+
-      '<th class="num" style="width:96px">증감율</th></tr></thead>';
-    var tb=el('tbody');
-    function row(lab,a,b,c,unit,dec,isPct){
-      var tr=el('tr');
-      tr.appendChild(el('td','nm',lab));
-      function cell(v){ return el('td','num', v==null?'—':(isPct?pt(v,1):Number(v).toLocaleString('ko-KR',{minimumFractionDigits:dec,maximumFractionDigits:dec})+(unit?' '+unit:''))); }
-      tr.appendChild(cell(a)); tr.appendChild(cell(b)); tr.appendChild(cell(c));
-      var df=(a==null||b==null)?null:a-b;
-      var dc=el('td','num', df==null?'—':(df>=0?'▲ ':'▼ ')+(isPct?Math.abs(df).toFixed(1)+'%p'
-        :Math.abs(df).toLocaleString('ko-KR',{minimumFractionDigits:dec,maximumFractionDigits:dec})+(unit?' '+unit:'')));
-      if(df) dc.style.color=df>0?'#1F8A4C':'#B4342C';
-      tr.appendChild(dc);
-      var p=(b?df/b*100:null);
-      var pc=el('td','num', p==null?'—':(p>=0?'▲ ':'▼ ')+Math.abs(p).toFixed(1)+'%');
-      if(p) pc.style.color=p>0?'#1F8A4C':'#B4342C';
-      tr.appendChild(pc);
-      tb.appendChild(tr);
+    var hd=el('div','mp-head');
+    hd.appendChild(el('h2',null,'비교'));
+    hd.appendChild(el('span','sub-t','동기간은 전월 같은 일차('+upto+'일차)까지만 잘라 비교한 값입니다.'
+      +(lastY?'':' 전년 같은 달 자료가 없어 전년 비교는 표시하지 않습니다.')));
+    k.appendChild(hd);
+
+    function avg(x){return x&&x.dayCount?x.rmKg/x.dayCount:null;}
+    function y(x,key){return x&&x.rmKg?x[key]/x.rmKg*100:null;}
+    var items=[
+      {lab:'일평균 원육사용량', cur:avg(cur), pv:avg(pSame), ly:avg(lastY), unit:'kg', dec:1},
+      {lab:'생산일수', cur:cur.dayCount, pv:pSame.dayCount, ly:lastY&&lastY.dayCount, unit:'일', dec:0},
+      {lab:'월 누적 원육', cur:cur.rmKg, pv:pSame.rmKg, ly:lastY&&lastY.rmKg, unit:'kg', dec:1},
+      {lab:'월 누적 EA', cur:cur.ea, pv:pSame.ea, ly:lastY&&lastY.ea, unit:'EA', dec:0},
+      {lab:'완제품 고기중량', cur:cur.meatKg, pv:pSame.meatKg, ly:lastY&&lastY.meatKg, unit:'kg', dec:1},
+      {lab:'전처리 수율', cur:y(cur,'ppKg'), pv:y(pSame,'ppKg'), ly:y(lastY,'ppKg'), pct:1},
+      {lab:'자숙 수율', cur:y(cur,'ckKg'), pv:y(pSame,'ckKg'), ly:y(lastY,'ckKg'), pct:1},
+      {lab:'파쇄 수율', cur:y(cur,'shKg'), pv:y(pSame,'shKg'), ly:y(lastY,'shKg'), pct:1},
+      {lab:'최종 수율', cur:y(cur,'meatKg'), pv:y(pSame,'meatKg'), ly:y(lastY,'meatKg'), pct:1}
+    ];
+    function fv(v,it){
+      if(v==null||isNaN(v)) return '—';
+      return it.pct? v.toFixed(1)+'%' : Number(v).toLocaleString('ko-KR',
+        {minimumFractionDigits:it.dec,maximumFractionDigits:it.dec})+(it.unit?' '+it.unit:'');
     }
-    function avg(x){return x.dayCount?x.rmKg/x.dayCount:null;}
-    function y(x,key){return x.rmKg?x[key]/x.rmKg*100:null;}
-    row('일평균 원육사용량',avg(cur),avg(pSame),avg(pAll),'kg',2);
-    row('생산일수',cur.dayCount,pSame.dayCount,pAll.dayCount,'일',0);
-    row('월 누적 원육사용량',cur.rmKg,pSame.rmKg,pAll.rmKg,'kg',2);
-    row('월 누적 EA (외포장)',cur.ea,pSame.ea,pAll.ea,'EA',0);
-    row('완제품 고기중량',cur.meatKg,pSame.meatKg,pAll.meatKg,'kg',2);
-    row('전처리 수율',y(cur,'ppKg'),y(pSame,'ppKg'),y(pAll,'ppKg'),'',1,true);
-    row('자숙 수율',y(cur,'ckKg'),y(pSame,'ckKg'),y(pAll,'ckKg'),'',1,true);
-    row('파쇄 수율',y(cur,'shKg'),y(pSame,'shKg'),y(pAll,'shKg'),'',1,true);
-    row('최종 수율',y(cur,'meatKg'),y(pSame,'meatKg'),y(pAll,'meatKg'),'',1,true);
-    t.appendChild(tb); k.appendChild(t);
+    function delta(a,b,it){
+      if(a==null||b==null||isNaN(a)||isNaN(b)) return null;
+      var d=a-b;
+      var txt=(d>=0?'▲ ':'▼ ')+(it.pct?Math.abs(d).toFixed(1)+'%p'
+        :Math.abs(d).toLocaleString('ko-KR',{minimumFractionDigits:it.dec,maximumFractionDigits:it.dec}));
+      var pctv=b?((d/b)*100):null;
+      return {txt:txt, pct:pctv==null?null:(pctv>=0?'▲ ':'▼ ')+Math.abs(pctv).toFixed(1)+'%', up:d>0, zero:d===0};
+    }
+    var grid=el('div','cmp-grid');
+    items.forEach(function(it){
+      var c=el('div','cmp-c');
+      c.appendChild(el('div','cmp-k',it.lab));
+      c.appendChild(el('div','cmp-v',fv(it.cur,it)));
+      var dp=delta(it.cur,it.pv,it);
+      var l1=el('div','cmp-d');
+      l1.appendChild(el('span','cmp-t','전월'));
+      if(dp){
+        var s1=el('span','cmp-n'+(dp.zero?'':(dp.up?' up':' dn')), dp.txt+(dp.pct?' ('+dp.pct+')':''));
+        l1.appendChild(s1);
+      } else l1.appendChild(el('span','cmp-n','—'));
+      c.appendChild(l1);
+      if(lastY){
+        var dy=delta(it.cur,it.ly,it);
+        var l2=el('div','cmp-d');
+        l2.appendChild(el('span','cmp-t','전년'));
+        if(dy) l2.appendChild(el('span','cmp-n'+(dy.zero?'':(dy.up?' up':' dn')), dy.txt+(dy.pct?' ('+dy.pct+')':'')));
+        else l2.appendChild(el('span','cmp-n','—'));
+        c.appendChild(l2);
+      }
+      grid.appendChild(c);
+    });
+    k.appendChild(grid);
+
+    var note=el('div','cmp-base');
+    note.appendChild(el('span',null,'기준 · '+ym.replace('-','년 ')+'월'));
+    note.appendChild(el('span',null,'전월 동기간 '+prevYm(ym).replace('-','년 ')+'월 '+upto+'일차'));
+    note.appendChild(el('span',null,'전월 전체 '+f(pAll.rmKg,1)+' kg'));
+    if(lastY) note.appendChild(el('span',null,'전년 '+lastYm.replace('-','년 ')+'월 '+f(lastY.rmKg,1)+' kg'));
+    k.appendChild(note);
     return k;
   }
 
@@ -580,18 +604,21 @@
     WRAP.innerHTML=''; WRAP.appendChild(bar());
     if(!CACHE){ WRAP.appendChild(el('div','empty','불러오는 중…')); return; }
     WRAP.appendChild(mainTable(CACHE.cur,CACHE.pSame));
-    WRAP.appendChild(compare(st.ym,CACHE.cur,CACHE.pSame,CACHE.pAll,CACHE.upto));
+    WRAP.appendChild(compare(st.ym,CACHE.cur,CACHE.pSame,CACHE.pAll,CACHE.upto,CACHE.lastY,CACHE.lastYm));
   }
   function reload(){
     CACHE=null; WRAP.innerHTML=''; WRAP.appendChild(bar());
     var body=el('div'); body.appendChild(el('div','empty','불러오는 중…')); WRAP.appendChild(body);
-    Promise.all([loadMonth(st.ym),loadMonth(prevYm(st.ym))]).then(function(a){
+    var lastYm=(+st.ym.slice(0,4)-1)+'-'+st.ym.slice(5,7);
+    Promise.all([loadMonth(st.ym),loadMonth(prevYm(st.ym)),loadMonth(lastYm)]).then(function(a){
       var cur=build(a[0]);
       var upto=0; cur.rows.forEach(function(r){ upto=Math.max(upto,+r.date.slice(8,10)); });
       if(!upto) upto=lastDay(st.ym);
       var days={}; cur.rows.forEach(function(r){days[r.date]=1;});
       var dayIdx=Object.keys(days).length||1;
-      CACHE={cur:cur, pSame:build(a[1],uptoNth(a[1],dayIdx)), pAll:build(a[1]), upto:dayIdx};
+      var lastY=build(a[2]);
+      CACHE={cur:cur, pSame:build(a[1],uptoNth(a[1],dayIdx)), pAll:build(a[1]),
+             lastY: lastY.rows.length? lastY : null, lastYm:lastYm, upto:dayIdx};
       redraw();
     }).catch(function(e){
       WRAP.innerHTML=''; WRAP.appendChild(bar());
