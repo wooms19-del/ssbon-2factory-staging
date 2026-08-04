@@ -523,51 +523,71 @@
 
     /* 1) 단계별 흐름 — 막대 길이가 곧 남은 비율 */
     function yv(x,key){ return x&&x.rmKg? x[key]/x.rmKg*100 : null; }
+    var SV='http://www.w3.org/2000/svg';
+    function svgEl(t,at){ var e=document.createElementNS(SV,t);
+      for(var k2 in (at||{})) e.setAttribute(k2,at[k2]); return e; }
+
     var steps=[
-      {n:'원육 투입', kg:cur.rmKg,   y:100,                  py:100},
-      {n:'전처리',   kg:cur.ppKg,   y:yv(cur,'ppKg'),       py:yv(pSame,'ppKg')},
-      {n:'자숙',     kg:cur.ckKg,   y:yv(cur,'ckKg'),       py:yv(pSame,'ckKg')},
-      {n:'파쇄',     kg:cur.shKg,   y:yv(cur,'shKg'),       py:yv(pSame,'shKg')},
-      {n:'완제품',   kg:cur.meatKg, y:yv(cur,'meatKg'),     py:yv(pSame,'meatKg')}
+      {n:'원육',   kg:cur.rmKg,   y:100,               py:100},
+      {n:'전처리', kg:cur.ppKg,   y:yv(cur,'ppKg'),    py:yv(pSame,'ppKg')},
+      {n:'자숙',   kg:cur.ckKg,   y:yv(cur,'ckKg'),    py:yv(pSame,'ckKg')},
+      {n:'파쇄',   kg:cur.shKg,   y:yv(cur,'shKg'),    py:yv(pSame,'shKg')},
+      {n:'완제품', kg:cur.meatKg, y:yv(cur,'meatKg'),  py:yv(pSame,'meatKg')}
     ];
-    var flow=el('div','flow');
-    var lg=el('div','flow-lg');
-    lg.appendChild(el('span','lg-now','이번달'));
-    lg.appendChild(el('span','lg-prev','전월 동기간'));
-    flow.appendChild(lg);
-    steps.forEach(function(st2,i){
-      var row=el('div','flow-r');
-      row.appendChild(el('div','flow-n',st2.n));
-      var track=el('div','flow-t');
-      var bar=el('div','flow-b'+(i===0?' first':(i===steps.length-1?' last':'')));
-      bar.style.width=Math.max(st2.y||0,2)+'%';
-      track.appendChild(bar);
-      if(st2.py!=null && i>0){
-        var mk=el('div','flow-prev');
-        mk.style.left=Math.max(st2.py,2)+'%';
-        mk.title='전월 동기간 '+st2.py.toFixed(1)+'%';
-        track.appendChild(mk);
-      }
-      row.appendChild(track);
-      var v=el('div','flow-v');
-      v.appendChild(el('b',null,f(st2.kg,0)+' kg'));
-      v.appendChild(el('span','flow-y',st2.y==null?'':st2.y.toFixed(1)+'%'));
-      row.appendChild(v);
-      var d=el('div','flow-l');
-      if(i>0){
-        var loss=steps[i-1].kg-st2.kg;
-        var ls=el('div','flow-loss', (loss>0?'− ':'+ ')+f(Math.abs(loss),0)+' kg');
-        d.appendChild(ls);
-        if(st2.py!=null && st2.y!=null){
-          var diff=st2.y-st2.py;
-          var dd=el('div','flow-diff'+(Math.abs(diff)<0.05?'':(diff>0?' up':' dn')),
-            '전월 '+(diff>=0?'▲ ':'▼ ')+Math.abs(diff).toFixed(1)+'%p');
-          d.appendChild(dd);
-        }
-      }
-      row.appendChild(d);
-      flow.appendChild(row);
+    var flow=el('div','chart');
+    var fh=el('div','chart-hd');
+    fh.appendChild(el('b',null,'단계별 수율'));
+    fh.appendChild(el('span','erp','원육 100%에서 시작해 각 공정을 지나며 남는 비율입니다.'));
+    flow.appendChild(fh);
+
+    var W=100, H=44, PT=4, PB=4;
+    function fx(i){ return 6 + (i/(steps.length-1))*(W-12); }
+    function fy(v){ return PT + (100-v)/100*(H-PT-PB); }
+    var svgF=svgEl('svg',{viewBox:'0 0 '+W+' '+H, preserveAspectRatio:'none', 'class':'spark flowchart'});
+    [100,75,50,25].forEach(function(g){
+      svgF.appendChild(svgEl('line',{x1:0,x2:W,y1:fy(g),y2:fy(g),'class':'grid'}));
     });
+    var hasPrev=steps.every(function(x){return x.py!=null;});
+    if(hasPrev){
+      var pd=steps.map(function(x,i){return (i?'L':'M')+fx(i).toFixed(2)+' '+fy(x.py).toFixed(2);}).join(' ');
+      svgF.appendChild(svgEl('path',{d:pd,'class':'pline'}));
+    }
+    var cd2=steps.map(function(x,i){return (i?'L':'M')+fx(i).toFixed(2)+' '+fy(x.y).toFixed(2);}).join(' ');
+    svgF.appendChild(svgEl('path',{d:cd2+' L'+fx(steps.length-1)+' '+fy(0)+' L'+fx(0)+' '+fy(0)+' Z','class':'area'}));
+    svgF.appendChild(svgEl('path',{d:cd2,'class':'line'}));
+    steps.forEach(function(x,i){
+      if(hasPrev){
+        var pc2=svgEl('circle',{cx:fx(i),cy:fy(x.py),r:0.8,'class':'pdot'});
+        svgF.appendChild(pc2);
+      }
+      var c=svgEl('circle',{cx:fx(i),cy:fy(x.y),r:1.1,'class':'dot'});
+      var ti=svgEl('title'); ti.textContent=x.n+' '+x.y.toFixed(1)+'%'+(x.py!=null?' (전월 '+x.py.toFixed(1)+'%)':'');
+      c.appendChild(ti); svgF.appendChild(c);
+    });
+    flow.appendChild(svgF);
+
+    var fax=el('div','flow-ax');
+    steps.forEach(function(x,i){
+      var c=el('div','fax-c');
+      c.appendChild(el('div','fax-n',x.n));
+      c.appendChild(el('div','fax-y',x.y.toFixed(1)+'%'));
+      c.appendChild(el('div','fax-kg',f(x.kg,0)+' kg'));
+      if(i>0){
+        var loss=steps[i-1].kg-x.kg;
+        c.appendChild(el('div','fax-l',(loss>0?'−':'+')+f(Math.abs(loss),0)+' kg'));
+        if(x.py!=null){
+          var df=x.y-x.py;
+          c.appendChild(el('div','fax-d'+(Math.abs(df)<0.05?'':(df>0?' up':' dn')),
+            (df>=0?'▲':'▼')+Math.abs(df).toFixed(1)+'%p'));
+        }
+      } else c.appendChild(el('div','fax-l',''));
+      fax.appendChild(c);
+    });
+    flow.appendChild(fax);
+    var flg=el('div','chart-lg');
+    flg.appendChild(el('span','lg-line','이번달'));
+    if(hasPrev) flg.appendChild(el('span','lg-pline','전월 동기간'));
+    flow.appendChild(flg);
     k.appendChild(flow);
 
     /* 2) 일별 최종수율 추이 */
