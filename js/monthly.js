@@ -337,7 +337,7 @@
     /* 2단 헤더 */
     var thead=el('thead');
     var tr1=el('tr'), tr2=el('tr');
-    [['일',34],['생산일',56],['원육',52],['제품명',168]].forEach(function(x){
+    [['일',34],['생산일',56],['제품명',214]].forEach(function(x){
       var th=el('th',null,x[0]); th.rowSpan=2; th.style.width=x[1]+'px'; tr1.appendChild(th);
     });
     var secs=[];
@@ -377,7 +377,6 @@
         var x=m[key], tr=el('tr','dstart');
         tr.appendChild(el('td','cnum',String(Object.keys(x.days).length)));
         tr.appendChild(el('td','cnum','일'));
-        tr.appendChild(el('td','cnum','-'));
         var c=el('td','pcell'); c.appendChild(el('span','nm',x.key)); tr.appendChild(c);
         C.forEach(function(cd){
           var td=el('td','num'+(cd.key?' key':''));
@@ -417,13 +416,9 @@
               var c1=el('td','cnum',String(no)); c1.rowSpan=d.n; tr.appendChild(c1);
               var c2=el('td','cnum',d.date.slice(5)); c2.rowSpan=d.n; tr.appendChild(c2);
             }
-            if(i===0){
-              var c3=el('td','cnum'); c3.rowSpan=grp.list.length;
-              if(r.part) c3.appendChild(el('span','badge g-'+r.part,r.part));
-              tr.appendChild(c3);
-            }
-            var pcell=el('td','pcell');
+            var pcell=el('td','pcell'+(i>0?' gsub':''));
             pcell.appendChild(el('span','nm',r.product));
+            if(r.part) pcell.appendChild(el('span','badge g-'+r.part,r.part));
             tr.appendChild(pcell);
             C.forEach(function(cd){
               var td=el('td','num'+(cd.key?' key':''));
@@ -458,7 +453,7 @@
     }
     function footRow(lab,obj,cls){
       var tr=el('tr',cls);
-      var c0=el('td','cnum',lab); c0.colSpan=4; c0.style.fontWeight='700'; tr.appendChild(c0);
+      var c0=el('td','cnum',lab); c0.colSpan=3; c0.style.fontWeight='700'; tr.appendChild(c0);
       C.forEach(function(cd){
         var td=el('td','num'+(cd.key?' key':''));
         td.textContent=(cd.get==='EA')?f(obj.ea,0):cd.get(obj);
