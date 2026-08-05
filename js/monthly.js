@@ -156,8 +156,13 @@
       r._g=key; r._isEst=isEst;
       (grp[key]=grp[key]||[]).push(r);
     });
-    var nonEst={};
-    rows.forEach(function(r){ if(r._g&&!r._isEst) nonEst[r.date+'|'+r.part]=true; });
+    var nonEst={}, dayPartMeat={};
+    rows.forEach(function(r){
+      if(!r._g) return;
+      if(!r._isEst) nonEst[r.date+'|'+r.part]=true;
+      var k2=r.date+'|'+r.part;
+      dayPartMeat[k2]=(dayPartMeat[k2]||0)+r.meatKg;
+    });
 
     Object.keys(grp).forEach(function(key){
       var arr=grp[key], p=key.split('|'), dt=p[0], pn=p[1], isEst=p[2]==='EST';
@@ -166,18 +171,31 @@
       if(isEst){
         var thaw=thDT[dk]||0;
         if(!(thaw>0) || EST_FORCE[dt]){
+          /* 가안: 방혈 기록이 없거나 지정 예외일이면 6월 평균수율로 역산 */
           var cfgE=EST_YIELD[arr[0].product];
           var meat=arr.reduce(function(s,r){return s+r.meatKg;},0);
           rm=cfgE.final? r2(meat/cfgE.final):0;
           ppKg=r2(rm*cfgE.pp); ckKg=r2(rm*cfgE.ck); shKg=r2(rm*cfgE.sh); est=true;
-        } else if(nonEst[dk]){
-          rm=0; ppKg=0; ckKg=0; shKg=0;
         } else {
-          rm=thaw; ppKg=(ppDT[dk]||{}).kg||0; ckKg=(ckDT[dk]||{}).kg||0; shKg=(shDT[dk]||{}).kg||0;
+          /* 방혈 실측이 있으면 같은 날·같은 부위 전체를 고기중량 비율로 나눠 갖는다.
+             (역산을 얹으면 이중 계산이 된다 — 본서버 규칙) */
+          var mine=arr.reduce(function(s,r){return s+r.meatKg;},0);
+          var whole=dayPartMeat[dk]||mine;
+          var sh2=whole>0? mine/whole : 1;
+          rm=r2(thaw*sh2);
+          ppKg=r2(((ppDT[dk]||{}).kg||0)*sh2);
+          ckKg=r2(((ckDT[dk]||{}).kg||0)*sh2);
+          shKg=r2(((shDT[dk]||{}).kg||0)*sh2);
         }
       } else {
-        rm=thDT[dk]||0;
-        ppKg=(ppDT[dk]||{}).kg||0; ckKg=(ckDT[dk]||{}).kg||0; shKg=(shDT[dk]||{}).kg||0;
+        /* 일반 그룹: 같은 날·같은 부위에 가안 그룹이 따로 있으면 그만큼 빼고 나눠 갖는다 */
+        var mine2=arr.reduce(function(s,r){return s+r.meatKg;},0);
+        var whole2=dayPartMeat[dk]||mine2;
+        var sh3=whole2>0? mine2/whole2 : 1;
+        rm=r2((thDT[dk]||0)*sh3);
+        ppKg=r2(((ppDT[dk]||{}).kg||0)*sh3);
+        ckKg=r2(((ckDT[dk]||{}).kg||0)*sh3);
+        shKg=r2(((shDT[dk]||{}).kg||0)*sh3);
       }
       arr.forEach(function(r,i){
         r._first=(i===0);
