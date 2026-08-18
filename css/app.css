@@ -445,6 +445,12 @@ body.folded .shell{grid-template-columns:var(--rail-w) 0 1fr}
 .cmp-n{font-family:var(--mono);color:var(--steel)}
 .cmp-n.up{color:#1F8A4C} .cmp-n.dn{color:#B4342C}
 
+/* 일정표 계획/실적 */
+.plan-act{font-family:var(--mono);color:#1F8A4C}
+.plan-rate{font-weight:700}
+.plan-rate.ok{color:#15803D} .plan-rate.bad{color:#B4342C}
+.plan.actonly{border-left-color:#1F8A4C;background:#F2FAF6}
+
 /* 필터칩 */
 .chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
 .fchip{height:32px;padding:0 12px;border:1px solid var(--line);border-radius:999px;
