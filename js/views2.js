@@ -17,8 +17,12 @@
     var k=el('div','card'); k.appendChild(el('h2',null,'불러오지 못했습니다.'));
     k.appendChild(el('p','sub-t',String(e.message||e))); w.appendChild(k);
   }
-  function mins(s){ if(!s) return null; var t=String(s).replace('T',' ').slice(11,16).split(':');
-    return t.length<2?null:(+t[0])*60+(+t[1]); }
+  function mins(s){
+    if(!s) return null;
+    var v=String(s).replace('T',' ');
+    var m=v.match(/(\d{1,2}):(\d{2})/);   /* 'HH:MM:SS' 와 날짜+시각 모두 처리 */
+    return m? (+m[1])*60+(+m[2]) : null;
+  }
   function hhmm(m){ return m==null?'—':String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0'); }
   function lastDay(ym){return new Date(+ym.slice(0,4),+ym.slice(5,7),0).getDate();}
   function prevYm(ym){var y=+ym.slice(0,4),m=+ym.slice(5,7)-1;if(m===0){y--;m=12;}return y+'-'+String(m).padStart(2,'0');}
@@ -388,22 +392,33 @@
       var key=d+'|'+g;
       actual[key]=(actual[key]||0)+(parseInt(a.ea,10)||0);
     });
+    /* 같은 날·같은 제품에 계획이 여러 건이면 계획을 합쳐 한 줄로 본다.
+       실적은 제품 단위 총량이므로 나눠 붙이면 중복이 된다. */
+    var merged={};
+    plans.forEach(function(p){
+      var key=p.plan_date+'|'+p.product_group;
+      var x=merged[key]=merged[key]||{date:p.plan_date, product_group:p.product_group,
+        plan_ea:0, parts:[], n:0};
+      x.plan_ea+=p.plan_ea||0; x.n++;
+      if(p.part_id) x.parts.push(PARTN[p.part_id]);
+    });
+    Object.keys(actual).forEach(function(key){
+      if(merged[key]) return;
+      var p2=key.split('|');
+      merged[key]={date:p2[0], product_group:p2[1], plan_ea:null, parts:[], n:0, _actOnly:true};
+    });
+    var byDate={};
+    Object.keys(merged).forEach(function(key){
+      var x=merged[key];
+      (byDate[x.date]=byDate[x.date]||[]).push(x);
+    });
+
     var k=el('div','card');
     k.appendChild(el('h2',null,'월간 생산 일정'));
     k.appendChild(el('p','sub-t','계획과 실제 생산을 나란히 봅니다. 계획은 계획 화면에서 넣습니다.'));
 
     var last=lastDay(SC.ym);
     var first=new Date(+SC.ym.slice(0,4),+SC.ym.slice(5,7)-1,1).getDay();
-    var byDate={};
-    plans.forEach(function(p){ (byDate[p.plan_date]=byDate[p.plan_date]||[]).push(p); });
-    Object.keys(actual).forEach(function(key){
-      var p2=key.split('|'), d=p2[0], g=p2[1];
-      var list=byDate[d]=byDate[d]||[];
-      var found=false;
-      list.forEach(function(x){ if(x.product_group===g) found=true; });
-      if(!found) list.push({plan_date:d, product_group:g, plan_ea:null, _actOnly:true});
-    });
-
     var t=el('table','cal');
     var th=el('thead'), tr=el('tr');
     ['일','월','화','수','목','금','토'].forEach(function(d,i){
@@ -425,8 +440,12 @@
         var act=actual[date+'|'+p.product_group]||0;
         var b=el('div','plan'+(p._actOnly?' actonly':''));
         b.appendChild(el('div','plan-p',p.product_group));
-        if(p.plan_ea!=null) b.appendChild(el('div','plan-ea','계획 '+f(p.plan_ea)+'ea'));
-        if(act) {
+        if(p.plan_ea){
+          var pl=el('div','plan-ea','계획 '+f(p.plan_ea)+'ea');
+          if(p.n>1) pl.appendChild(el('span','erp',' ('+p.n+'건'+(p.parts.length?' '+p.parts.join('·'):'')+')'));
+          b.appendChild(pl);
+        }
+        if(act){
           var a2=el('div','plan-act','실적 '+f(act)+'ea');
           if(p.plan_ea){
             var rate=act/p.plan_ea*100;
@@ -442,15 +461,23 @@
     tb.appendChild(row); t.appendChild(tb);
     k.appendChild(t);
 
-    var pe=plans.reduce(function(s,p){return s+(p.plan_ea||0);},0);
-    var ae=Object.keys(actual).reduce(function(s,x){return s+actual[x];},0);
+    /* 합계: 계획이 있는 날·제품만 달성률 대상 */
+    var pe=0, ae=0, cnt=0;
+    Object.keys(merged).forEach(function(key){
+      var x=merged[key];
+      if(x.plan_ea){ pe+=x.plan_ea; ae+=actual[key]||0; cnt+=x.n; }
+    });
+    var allAct=Object.keys(actual).reduce(function(s2,x){return s2+actual[x];},0);
     var g=el('div','stat-grid');
-    [['계획 EA',f(pe)+' EA'],['실적 EA',f(ae)+' EA'],
-     ['달성률',pe?pt(ae/pe*100):'—'],['계획 건수',plans.length+'건']
+    [['계획 EA',f(pe)+' EA'],['계획분 실적',f(ae)+' EA'],
+     ['달성률',pe?pt(ae/pe*100):'—'],
+     ['전체 생산',f(allAct)+' EA'],['계획 건수',cnt+'건']
     ].forEach(function(x){
       var s2=el('div','stat'); s2.appendChild(el('div','k',x[0])); s2.appendChild(el('div','v',x[1])); g.appendChild(s2);
     });
     k.appendChild(g);
+    if(pe && allAct>ae)
+      k.appendChild(el('div','erp','달성률은 계획이 입력된 날·제품만 대상으로 합니다. 계획 없이 생산한 분량은 전체 생산에만 잡힙니다.'));
     return k;
   }
 
