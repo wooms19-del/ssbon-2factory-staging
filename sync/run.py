@@ -27,6 +27,11 @@ else:
 
 print(f"[동기화 시작] 범위: {SINCE or '전체'}", flush=True)
 
+# 부위 번호는 item_master 에서 읽어 온다 (하드코딩 금지 — common.py 주석 참고)
+PART.update(load_part_map(fetch))
+PARTN.update({v: k for k, v in PART.items()})
+print("   부위 매핑:", ", ".join(f"{k}={v}" for k, v in sorted(PART.items(), key=lambda x: x[1])), flush=True)
+
 # 기존 웹 제품명 -> 품목 마스터 제품군 (이름이 다른 것만)
 ALIAS = {
     "미니쇠고기 장조림 70g 맥스용": "미니쇠고기 장조림 70g 맥스용(5입)",
@@ -306,6 +311,7 @@ for i in items:
 
 UNRESOLVED = []
 MISMATCH = []   # typeKgs 수동입력과 대차 추적이 어긋난 건
+NOPART = []     # item_master 에 없는 부위
 
 
 def part_kg(o):
@@ -434,6 +440,10 @@ for o in pk:
     eas = split_ea(o.get("ea"), pkk)
     PKSPLIT[(prod, d)] = dict(eas)
     for pn, kg in pkk.items():
+        if pn not in PART:
+            # 마스터에 없는 부위. 임의 번호로 넣으면 엉뚱한 품목이 되므로 건너뛴다.
+            NOPART.append((d, prod, pn))
+            continue
         parts_rows.append({"pk_id": pid, "part_id": PART[pn],
                            "item_id": IM.get((prod, pn)),
                            "input_kg": round(kg, 3) if kg else None,
@@ -526,6 +536,9 @@ for coll, table, key, ptab, eaf, docs in [
             continue
         eas = split_ea(o.get(eaf), {k: max(v, 1) for k, v in base.items()})
         for pn, ea in eas.items():
+            if pn not in PART:
+                NOPART.append((d, prod, pn))
+                continue
             rr.append({key: oid, "part_id": PART[pn], "item_id": IM.get((prod, pn)), "ea": ea})
     upsert(ptab, rr, f"{key},part_id")
 
@@ -606,6 +619,12 @@ if AUDIT:
 else:
     print("\n부위 배분 점검: 이상 없음", flush=True)
 
+if NOPART:
+    kinds = sorted({x[2] for x in NOPART})
+    print(f"\nitem_master 에 없는 부위 {len(NOPART)}건 — 건너뛰었습니다: {', '.join(kinds)}", flush=True)
+    print("  해당 부위를 item_master 에 원육으로 등록해야 실적에 잡힙니다.", flush=True)
+    for x in NOPART[:10]:
+        print(f"    {x[0]} {x[1]} — {x[2]}", flush=True)
 if BADDATE:
     print(f"\n날짜 이상으로 비운 값 {len(BADDATE)}건", flush=True)
     for x in BADDATE[:10]:

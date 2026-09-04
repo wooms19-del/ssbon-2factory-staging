@@ -169,6 +169,22 @@ def wagons(s):
     return [x.strip() for x in str(s or "").replace("，", ",").split(",") if x.strip()]
 
 
-PART = {"홍두깨": 1, "설도": 2, "우둔": 3, "설깃": 4}
-PARTN = {1: "홍두깨", 2: "설도", 3: "우둔", 4: "설깃"}
+# 부위·원산지 번호는 item_master 에서 읽어 온다.
+# 예전에는 {"홍두깨":1, "설도":2, "우둔":3, "설깃":4} 로 적어 두었는데,
+# 마스터가 ERP 코드순으로 재정렬되며 우둔이 24번으로 밀리는 바람에
+# 3번 자리의 프리미엄진간장, 4번 자리의 정백당으로 기록되고 있었다.
+# 번호를 손으로 들고 있으면 마스터가 바뀔 때 조용히 어긋난다.
+def load_part_map(fetch_fn):
+    """item_master 의 원육 품목에서 {부위명: item_id} 를 만든다."""
+    m = {}
+    for r in fetch_fn("item_master", "item_id,name,category,part"):
+        if r.get("category") == "원육" and r.get("part"):
+            m[r["part"].strip()] = r["item_id"]
+    if not m:
+        raise SystemExit("item_master 에 원육 품목이 없다. 부위를 판정할 수 없어 중단한다.")
+    return m
+
+
+PART = {}    # load_part_map() 으로 채운다
+PARTN = {}   # 역방향
 ORIGIN = {"호주": 1, "뉴질랜드": 2}
