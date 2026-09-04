@@ -222,41 +222,73 @@ _MAPS = {}
 
 
 def maps(date):
-    """그날의 와곤->부위 지도. 기존 dataLayer._buildWagonTypeMap 과 같다."""
+    """그날의 와곤->부위 지도.
+
+    대차 번호는 한정돼 있어 하루에 재사용된다. 실제로 자숙 대차를 두 부위가
+    같은 날 쓰는 사례가 있어, 번호 하나에 부위 하나로 두면 나중 것이 버려진다.
+    그래서 번호별로 후보를 모두 담고, 쓸 때 무게·시각으로 고른다.
+    """
     if date in _MAPS:
         return _MAPS[date]
     ck_d = [c for c in ALL_CK if dt(c.get("date")) == date and not istest(c)]
     sh_d = [s for s in ALL_SH if dt(s.get("date")) == date and not istest(s)]
+
+    def add(m, wn, part, end, kg):
+        m.setdefault(wn, []).append({"part": part, "end": end or "", "kg": kg or 0.0})
+
     ckW = {}
     for c in ck_d:
         t = (c.get("type") or "").strip()
         if not t:
             continue
+        od = c.get("wagonOutDist") or {}
         for wn in wagons(c.get("wagonOut")):
-            ckW.setdefault(wn, t)
+            add(ckW, wn, t, c.get("end"), num(od.get(wn)) or num(c.get("kg")))
     shW = {}
     for s in sh_d:
-        # 파쇄 기록에 부위가 직접 있으면 그것을 쓴다.
-        # 자숙까지 거슬러 올라가면 두 부위가 같은 자숙 대차를 공유할 때 섞인다.
+        od = s.get("wagonOutDist") or {}
+        washed = num(s.get("kgWashed")) or num(s.get("kg")) or 0.0
+        osum = sum(num(v) or 0 for v in od.values()) if od else 0.0
         own = (s.get("type") or "").strip()
-        if own in PART:
-            for wn in wagons(s.get("wagonOut")):
-                shW.setdefault(wn, own)
+        if own not in PART:
+            inT, dist = {}, (s.get("wagonInDist") or {})
+            for wn in wagons(s.get("wagonIn")):
+                t = pick(ckW, wn)
+                if not t:
+                    continue
+                inT[t] = inT.get(t, 0) + (num(dist.get(wn)) or 1)
+            own = sorted(inT, key=lambda k: -inT[k])[0] if inT else ""
+        if not own:
             continue
-        inT, dist = {}, (s.get("wagonInDist") or {})
-        for wn in wagons(s.get("wagonIn")):
-            t = ckW.get(wn)
-            if not t:
-                continue
-            inT[t] = inT.get(t, 0) + (num(dist.get(wn)) or 1)
-        if not inT:
-            continue
-        best = sorted(inT, key=lambda k: -inT[k])[0]
         for wn in wagons(s.get("wagonOut")):
-            shW.setdefault(wn, best)
+            # 포장이 받는 건 세척 후 무게이므로 세척 후 기준으로 환산해 둔다
+            kg = washed * ((num(od.get(wn)) or 0) / osum) if osum > 0 else washed
+            add(shW, wn, own, s.get("end"), kg)
+
     types = sorted({(c.get("type") or "").strip() for c in ck_d if (c.get("type") or "").strip()})
     _MAPS[date] = (shW, ckW, types)
     return _MAPS[date]
+
+
+def pick(m, wn, use_kg=0.0, before=None):
+    """와곤 번호의 부위. 후보가 여럿이면 무게 > 시각 순으로 고른다."""
+    c = m.get(str(wn))
+    if not c:
+        return None
+    if len(c) == 1:
+        return c[0]["part"]
+    if use_kg > 0:
+        hit = [x for x in c if abs(x["kg"] - use_kg) < 0.5]
+        if len(hit) == 1:
+            return hit[0]["part"]
+        if hit:
+            c = hit
+    ordered = sorted(c, key=lambda x: x["end"])
+    if before:
+        prev = [x for x in ordered if x["end"] and x["end"] <= before]
+        if prev:
+            return prev[-1]["part"]
+    return ordered[-1]["part"]
 
 
 items = fetch("item_master", "item_id,product_group,part,category,no_meat")
@@ -288,10 +320,12 @@ def part_kg(o):
     if d:
         shW, ckW, types = maps(d)
         acc = collections.defaultdict(float)
+        start = o.get("start")
         for wn, kg in (o.get("wagonDist") or {}).items():
-            t = shW.get(str(wn)) or ckW.get(str(wn))
+            v = num(kg) or 0
+            t = pick(shW, wn, v, start) or pick(ckW, wn, v, start)
             if t:
-                acc[t] += num(kg) or 0
+                acc[t] += v
         if acc and sum(acc.values()) > 0:
             # 수동 입력(typeKgs)과 부위 구성이 다르면 기록만 남기고 대차 추적을 따른다.
             if tk and set(tk) != set(acc):
@@ -306,7 +340,7 @@ def part_kg(o):
         shW, ckW, types = maps(d)
         got = set()
         for wn in wagons(o.get("wagon")):
-            t = shW.get(wn) or ckW.get(wn)
+            t = pick(shW, wn, 0.0, o.get("start")) or pick(ckW, wn, 0.0, o.get("start"))
             if t:
                 got.add(t)
         f = FORCE_PART.get((d, prod))
