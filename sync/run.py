@@ -564,6 +564,48 @@ if MISMATCH:
         tk = ", ".join(f"{k} {v:g}" for k, v in x["typeKgs"].items())
         wd = ", ".join(f"{k} {v:g}" for k, v in x["wagonDist"].items())
         print(f"    {x['date']} {x['product']}  입력[{tk}]  실제[{wd}]", flush=True)
+
+# ── 부위 배분 총량 대조 ───────────────────────────────
+# 날짜·부위별로 "포장이 받은 양"과 "파쇄가 내보낸 양(세척 후)"을 비교한다.
+# 대차 판정이 한쪽으로 몰리거나 새면 여기서 드러난다.
+# 4~9월 실적으로는 5% 기준에서도 0건이라, 뜨면 실제 신호로 봐도 된다.
+def audit_parts():
+    days = sorted({dt(o.get("date")) for o in pk if not istest(o)})
+    bad = []
+    for d in days:
+        shW, ckW, _ = maps(d)
+        got = collections.defaultdict(float)
+        for o in pk:
+            if dt(o.get("date")) != d or istest(o):
+                continue
+            start = o.get("start")
+            for wn, kg in (o.get("wagonDist") or {}).items():
+                v = num(kg) or 0
+                t = pick(shW, wn, v, start) or pick(ckW, wn, v, start)
+                if t:
+                    got[t] += v
+        made = collections.defaultdict(float)
+        for s in ALL_SH:
+            if dt(s.get("date")) != d or istest(s):
+                continue
+            t = (s.get("type") or "").strip()
+            if t:
+                made[t] += num(s.get("kgWashed")) or num(s.get("kg")) or 0
+        for t in set(got) | set(made):
+            a, b = got.get(t, 0), made.get(t, 0)
+            if b > 0 and abs(a - b) / b > 0.05:
+                bad.append((d, t, a, b, (a - b) / b * 100))
+    return bad
+
+AUDIT = audit_parts()
+if AUDIT:
+    print(f"\n부위 배분 점검 — 포장이 받은 양과 파쇄 산출이 5% 넘게 다른 건 {len(AUDIT)}건:", flush=True)
+    print("  (이월·잔여면 정상. 한쪽 부위로 몰렸는지 확인이 필요한 신호다)", flush=True)
+    for d, t, a, b, r in AUDIT[:20]:
+        print(f"    {d} {t}: 포장 {a:,.1f} vs 파쇄 {b:,.1f} ({r:+.1f}%)", flush=True)
+else:
+    print("\n부위 배분 점검: 이상 없음", flush=True)
+
 if BADDATE:
     print(f"\n날짜 이상으로 비운 값 {len(BADDATE)}건", flush=True)
     for x in BADDATE[:10]:
