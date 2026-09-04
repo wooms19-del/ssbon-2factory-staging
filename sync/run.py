@@ -236,6 +236,13 @@ def maps(date):
             ckW.setdefault(wn, t)
     shW = {}
     for s in sh_d:
+        # 파쇄 기록에 부위가 직접 있으면 그것을 쓴다.
+        # 자숙까지 거슬러 올라가면 두 부위가 같은 자숙 대차를 공유할 때 섞인다.
+        own = (s.get("type") or "").strip()
+        if own in PART:
+            for wn in wagons(s.get("wagonOut")):
+                shW.setdefault(wn, own)
+            continue
         inT, dist = {}, (s.get("wagonInDist") or {})
         for wn in wagons(s.get("wagonIn")):
             t = ckW.get(wn)
@@ -266,15 +273,18 @@ for i in items:
         IM_NOMEAT.setdefault(i["product_group"], i["item_id"])
 
 UNRESOLVED = []
+MISMATCH = []   # typeKgs 수동입력과 대차 추적이 어긋난 건
 
 
 def part_kg(o):
-    """부위별 투입 kg. 근거: typeKgs > wagonDist×와곤부위 > 단일판정."""
+    """부위별 투입 kg. 근거: wagonDist×와곤부위 > typeKgs > 단일판정.
+
+    대차 추적(wagonDist)이 파쇄 기록과 직접 연결되므로 가장 믿을 수 있다.
+    typeKgs 는 현장 수동 입력이라 실제 대차 흐름과 어긋나는 사례가 있어 뒤로 둔다.
+    """
     d, prod = dt(o.get("date")), pg_of(o.get("product") or "")
     tk = {k: float(v) for k, v in (o.get("typeKgs") or {}).items()
           if k in PART and float(v or 0) > 0}
-    if tk:
-        return tk, "typeKgs"
     if d:
         shW, ckW, types = maps(d)
         acc = collections.defaultdict(float)
@@ -283,7 +293,17 @@ def part_kg(o):
             if t:
                 acc[t] += num(kg) or 0
         if acc and sum(acc.values()) > 0:
+            # 수동 입력(typeKgs)과 부위 구성이 다르면 기록만 남기고 대차 추적을 따른다.
+            if tk and set(tk) != set(acc):
+                MISMATCH.append({
+                    "date": d, "product": prod,
+                    "typeKgs": dict(tk), "wagonDist": dict(acc),
+                })
             return dict(acc), "wagonDist"
+    if tk:
+        return tk, "typeKgs"
+    if d:
+        shW, ckW, types = maps(d)
         got = set()
         for wn in wagons(o.get("wagon")):
             t = shW.get(wn) or ckW.get(wn)
@@ -504,6 +524,12 @@ if UNRESOLVED:
     print(f"\n부위 미해결 {len(UNRESOLVED)}건:", flush=True)
     for x in UNRESOLVED[:20]:
         print("   ", x, flush=True)
+if MISMATCH:
+    print(f"\n부위 수동입력(typeKgs)과 대차 추적이 다른 건 {len(MISMATCH)}건 — 대차 추적을 따랐습니다:", flush=True)
+    for x in MISMATCH[:20]:
+        tk = ", ".join(f"{k} {v:g}" for k, v in x["typeKgs"].items())
+        wd = ", ".join(f"{k} {v:g}" for k, v in x["wagonDist"].items())
+        print(f"    {x['date']} {x['product']}  입력[{tk}]  실제[{wd}]", flush=True)
 if BADDATE:
     print(f"\n날짜 이상으로 비운 값 {len(BADDATE)}건", flush=True)
     for x in BADDATE[:10]:
